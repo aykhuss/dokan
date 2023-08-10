@@ -1,0 +1,48 @@
+{
+  "exe" : {
+    "path" : "/Users/alex/Work/Programs/nnlojet_release/install/bin/NNLOJET",
+    "policy" : 1
+  },
+  "job" : {
+    "order" : "NLO",
+    "batch_size" : 100,
+    "iseed_start" : 1,
+    "min_runtime" : 600,
+    "max_runtime" : 3600
+  },
+  "warmup" : {
+    "ncores" : 2,
+    "ncall_start" : 100,
+    "niter" : 2,
+    "max_increment" : 5,
+    "fac_increment" : 4.0
+  },
+  "production" : {
+    "ncores" : 1,
+    "ncall_start" : 100,
+    "niter" : 2,
+    "max_n_increment" : 5,
+    "fac_increment" : 4.0
+  },
+  "channel": {
+    "LO" : {
+      "ncall_start" : 2000
+    },
+    "V" : {
+      "ncall_start" : 500
+    },
+    "R" : {
+      "ncall_start" : 500
+    },
+    "VV" : {
+      "ncall_start" : 100
+    },
+    "RV" : {
+      "ncall_start" : 100
+    },
+    "RR" : {
+      "ncall_start" : 100
+    }
+  }
+}
+
