@@ -13,15 +13,15 @@ class Task(luigi.Task):
 
     Attributes:
         config (dict): to pass down the configuration for the jobs (once task is dispatched job's CONFIG no longer available)
-        dir_list (list): path *relative* to CONFIG.job_path as a list of directory names
+        local_path (list): path *relative* (local) to CONFIG.job_path as a list of directory names
     """
 
     config: dict = luigi.DictParameter()
-    dir_list: list = luigi.ListParameter()
+    local_path: list = luigi.ListParameter()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._path = os.path.join(self.config["job"]["path"], *self.dir_list)
+        self._path = os.path.join(self.config["job"]["path"], *self.local_path)
         os.makedirs(self._path, exist_ok=True)
 
     def _local(self, *path):

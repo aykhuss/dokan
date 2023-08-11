@@ -6,6 +6,7 @@ needed to execute a full NNLOJET workflow.
 Attributes:
     CONFIG (_Config): an instance in global scope
 """
+
 from collections import UserDict
 import os
 import json
@@ -67,7 +68,7 @@ class _Config(UserDict):
                         continue  # this is set at runtime and should not be cached?
                     self.data[sect][key] = value
 
-    def dump_config(self):
+    def write_config(self):
         out_config_path = self._get_config_path(must_exist=False)
         if out_config_path == _default_config:
             raise RuntimeError("can't overwrite default config file")

@@ -1,0 +1,62 @@
+
+!###############################################!
+!##                                           ##!
+!##     _  ___  ____   ____     ____________  ##!
+!##    / |/ / |/ / /  / __ \__ / / __/_  __/  ##!
+!##   /    /    / /__/ /_/ / // / _/  / /     ##!
+!##  /_/|_/_/|_/____/\____/\___/___/ /_/      ##!
+!##                                           ##!
+!##                                RUNCARD    ##!
+!###############################################!
+
+
+PROCESS  Z
+  collider = pp
+  sqrts = 8000
+END_PROCESS
+
+
+RUN  Pine
+  PDF = NNPDF31_nnlo_as_0118[0]
+  scale_coefficients = .true.
+  multi_channel = 2
+  iseed   = 1
+  ${sweep}
+END_RUN
+
+
+PARAMETERS
+END_PARAMETERS
+
+
+SELECTORS
+  select  mll  min = 66  max = 116
+END_SELECTORS
+
+
+HISTOGRAMS
+
+  yz  min=-2.5  max=+2.5  nbins=10  !grid=pine
+  ptz  min=0    max=30  nbins=30  !grid=pine
+  etz  min=80  max=150  nbins=70  !grid=pine
+  mll  min=80  max=100  nbins=20  !grid=pine
+
+END_HISTOGRAMS
+
+
+SCALES
+
+  mur = 1   * mll  muf = 1   * mll
+  mur = 2   * mll  muf = 2   * mll
+  mur = 0.5 * mll  muf = 0.5 * mll
+  mur = 2   * mll  muf = 1   * mll
+  mur = 1   * mll  muf = 2   * mll
+  mur = 0.5 * mll  muf = 1   * mll
+  mur = 1   * mll  muf = 0.5 * mll
+
+END_SCALES
+
+
+CHANNELS
+  ${chan}
+END_CHANNELS
