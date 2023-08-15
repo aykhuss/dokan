@@ -96,22 +96,26 @@ def main():
         print(dokan.CONFIG.job_path)
         # sys.exit("we're debugging here...")
 
-        exe_args = {
-            "exe_type": dokan.ExecutionMode.WARMUP,
-            "channel": "LO_1",
-            "ncall": 100,
-            "niter": 5,
-            "iseed": 1
-        }
+        # exe_args = {
+        #     "exe_type": dokan.ExecutionMode.WARMUP,
+        #     "channel": "LO_1",
+        #     "ncall": 100,
+        #     "niter": 5,
+        #     "iseed": 1
+        # }
 
         luigi_result = luigi.build(
             [
-                dokan.Executor.factory(config=dokan.CONFIG, local_path=["data"], **exe_args)
+                dokan.DispatchChannel(config=dokan.CONFIG,
+                                      local_path=["data", "R_1"],
+                                      channel="R_1",
+                                      ntot=42)
+                #dokan.Executor.factory(config=dokan.CONFIG, local_path=["data"], **exe_args)
             ],
             worker_scheduler_factory=dokan.WorkerSchedulerFactory(
                 resources={"ncores": 8}),
             detailed_summary=True,
-            workers=5,
+            workers=10,
             local_scheduler=True,
             log_level='WARNING')  # 'INFO', 'DEBUG''
 

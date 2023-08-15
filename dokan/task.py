@@ -4,6 +4,7 @@ import shutil
 import json
 
 from dokan import CONFIG
+from luigi.parameter import ParameterVisibility
 
 
 class Task(luigi.Task):
@@ -16,7 +17,7 @@ class Task(luigi.Task):
         local_path (list): path *relative* (local) to CONFIG.job_path as a list of directory names
     """
 
-    config: dict = luigi.DictParameter()
+    config: dict = luigi.DictParameter(visibility=ParameterVisibility.HIDDEN)
     local_path: list = luigi.ListParameter()
 
     def __init__(self, *args, **kwargs):

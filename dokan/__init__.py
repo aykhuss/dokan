@@ -4,6 +4,7 @@ from . config import CONFIG
 from . task import Task
 from . scheduler import WorkerSchedulerFactory
 from . exe import ExecutionPolicy, ExecutionMode, Executor, LocalExec
+from . dispatch_channel import DispatchChannel
 
 __all__ = [
     'CONFIG',
@@ -12,6 +13,7 @@ __all__ = [
     'ExecutionPolicy',
     'ExecutionMode',
     'Executor',
-    'LocalExec'
+    'LocalExec',
+    'DispatchChannel'
 ]
 

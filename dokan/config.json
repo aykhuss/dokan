@@ -5,16 +5,16 @@
   },
   "job" : {
     "order" : "NLO",
-    "batch_size" : 100,
+    "batch_size" : 10,
     "iseed_start" : 1,
     "min_runtime" : 600,
     "max_runtime" : 3600
   },
   "warmup" : {
-    "ncores" : 2,
+    "ncores" : 1,
     "ncall_start" : 100,
     "niter" : 2,
-    "max_increment" : 5,
+    "max_increment" : 7,
     "fac_increment" : 4.0
   },
   "production" : {

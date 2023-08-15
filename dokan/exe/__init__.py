@@ -49,6 +49,9 @@ class ExecutionMode(IntEnum):
     WARMUP = 1
     PRODUCTION = 2
 
+    def __str__(self):
+        return self.name.lower()
+
 
 class Executor(Task, metaclass=ABCMeta):
 
@@ -61,9 +64,9 @@ class Executor(Task, metaclass=ABCMeta):
 
     #> if there's a previous warmup job pass the dir to it:
     #> need to get the `output_files` from there and copy over
-    input_local_path: list = luigi.ListParameter(default=[])
-    exe_type: ExecutionMode = luigi.EnumParameter(enum=ExecutionMode)
     channel = luigi.Parameter()
+    input_local_path: list = luigi.ListParameter(default=[])
+    exe_mode: int = luigi.IntParameter()
     ncores: int = luigi.IntParameter(default=1)
     ncall: int = luigi.IntParameter()
     niter: int = luigi.IntParameter()
@@ -75,7 +78,7 @@ class Executor(Task, metaclass=ABCMeta):
             "local_path": self.local_path,
             "channel": self.channel,
             "ncores": self.ncores,
-            "exe_type": self.exe_type,
+            "exe_mode": self.exe_mode,
             "ncall": self.ncall,
             "niter": self.niter,
             "iseed": self.iseed,
@@ -116,6 +119,9 @@ class Executor(Task, metaclass=ABCMeta):
                 wconfig = json.load(wfile)
                 #> check here if it's even an warmup?
                 for in_file in wconfig["output_files"]:
+                    #> always skip log (& dat) files
+                    #> if warmup copy over also txt files
+                    #> for production, only take the weights (skip txt)
                     if in_file in self._result["input_files"]:
                         continue  # already copied in the past
                     shutil.copyfile(self._input_local(in_file),
@@ -135,7 +141,8 @@ class Executor(Task, metaclass=ABCMeta):
         dokan.runcard.fill_template(runcard,
                                     self.config["job"]["template"],
                                     sweep='{} = {}[{}]'.format(
-                                        self.exe_type.name, self.ncall, self.niter),
+                                        ExecutionMode(self.exe_mode),
+                                        self.ncall, self.niter),
                                     run='',
                                     channels=channel_string,
                                     channels_region=channel_region,
