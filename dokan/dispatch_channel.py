@@ -180,8 +180,8 @@ class DispatchChannel(Task):
                 nprod += 1
                 prod_ntot = prod[0]['ncall'] * prod[0]['nit']
                 ntot += prod_ntot
-                sumt += prod_ntot[1]['elapsed_time']
-                sumt2 += prod_ntot[1]['elapsed_time']**2 / float(prod_ntot)
+                sumt += prod[1]['elapsed_time']
+                sumt2 += prod[1]['elapsed_time']**2 / float(prod_ntot)
             avg_time_per_evt = sumt / float(ntot)
             err_time_per_evt: float = 0.
             if nprod > 1:

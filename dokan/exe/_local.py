@@ -10,12 +10,12 @@ class LocalExec(Executor):
     """Execution on the local machine
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
     @property
     def resources(self):
         return {"ncores": self.ncores}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     def exe(self):
         print("   >>>   LocalExec {}".format(self.local_path))
