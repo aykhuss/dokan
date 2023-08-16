@@ -103,14 +103,13 @@ def main():
         #     "niter": 5,
         #     "iseed": 1
         # }
+        # dokan.Executor.factory(config=dokan.CONFIG, local_path=["data"], **exe_args)
 
         luigi_result = luigi.build(
             [
-                dokan.DispatchChannel(config=dokan.CONFIG,
-                                      local_path=["data", "R_1"],
-                                      channel="R_1",
-                                      ntot=42)
-                #dokan.Executor.factory(config=dokan.CONFIG, local_path=["data"], **exe_args)
+                dokan.Warmup(config=dokan.CONFIG,
+                             local_path=["data", "LO_1"],
+                             channel="LO_1")
             ],
             worker_scheduler_factory=dokan.WorkerSchedulerFactory(
                 resources={"ncores": 8}),

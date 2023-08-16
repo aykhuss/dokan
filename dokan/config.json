@@ -12,7 +12,7 @@
   },
   "warmup" : {
     "ncores" : 1,
-    "ncall_start" : 100,
+    "ncall_start" : 500,
     "niter" : 2,
     "max_increment" : 7,
     "fac_increment" : 4.0
@@ -20,9 +20,7 @@
   "production" : {
     "ncores" : 1,
     "ncall_start" : 100,
-    "niter" : 2,
-    "max_n_increment" : 5,
-    "fac_increment" : 4.0
+    "niter" : 2
   },
   "channel": {
     "LO" : {

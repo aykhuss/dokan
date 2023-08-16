@@ -19,9 +19,8 @@ def parse_runcard(runcard) -> dict:
             #> job_name
             match_job = re.match(r'^\s*RUN\s+([^\s!]+)', line, re.IGNORECASE)
             if match_job:
-                runcard_data["job_name"] =  match_job.group(1)
+                runcard_data["job_name"] = match_job.group(1)
     return runcard_data
-
 
 
 def make_template(runcard, template):

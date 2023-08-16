@@ -16,13 +16,34 @@ _default_config = os.path.join(os.path.dirname(os.path.realpath(__file__)),
 
 _attributes = {
     "exe": (
-        "path",  # tralalal
-        "policy"),  # nnlojet-combine.py, nnlojet-merge-pineappl
-    "job": ("path", "name", "template", "order", "min_runtime", "max_runtime",
-            "batch_size", "iseed_start"),
-    "process": ("name", "channels"),
-    "warmup":
-    ("ncores", "ncall_start", "niter", "max_increment", "fac_increment")
+        "path",  # absolute path to NNLOJET
+        "policy"),  # how to execute (local, htcondor, slurm, ...)
+    "job": (
+        "path",  # absolute path to job directory
+        "name",  # job name
+        "template",  # absolute path to the template file
+        "order",  # what order to comput (LO, NLO, NNLO)
+        "min_runtime",  # minimum runtime (in sec) for a single NNLOJET run
+        "max_runtime",  # maximum runtime (in sec) for a single NNLOJET run
+        "batch_size",  #@todo: size of runs to batch
+        "iseed_start"  # seed number offset
+    ),
+    "process": (
+        "name",  # name of the process in NNLOJET
+        "channels"  # all channels for the process (auto-filled)
+    ),
+    "warmup": (
+        "ncores",  # #of cores to allocate to a single warmup run
+        "ncall_start",  # initial number of events (per iteration)
+        "niter",  # number of iterations in a single job (>=2 for chi2dof)
+        "max_increment",  # up to how many rounds of warmups we want to run
+        "fac_increment"  # the factor by which we increment the statistics each round
+    ),
+    "production": (
+        "ncores",  # #of cores to allocate to a single production run
+        "ncall_start",  # initial number of events (per iteration)
+        "niter"  # number of iterations in a single job (>=2 for chi2dof)
+    )
 }
 
 
