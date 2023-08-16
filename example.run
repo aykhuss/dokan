@@ -1,4 +1,3 @@
-
 !###############################################!
 !##                                           ##!
 !##     _  ___  ____   ____     ____________  ##!
@@ -16,7 +15,7 @@ PROCESS  Z
 END_PROCESS
 
 
-RUN  Pine
+RUN  example
   PDF = NNPDF31_nnlo_as_0118[0]
   scale_coefficients = .true.
   multi_channel = 2

@@ -110,7 +110,7 @@ def main():
                 dokan.Production(config=dokan.CONFIG,
                                  local_path=["data", "LO_1"],
                                  channel="LO_1",
-                                 iseed=46)
+                                 iseed=42)
             ],
             worker_scheduler_factory=dokan.WorkerSchedulerFactory(
                 resources={"ncores": 8}),
