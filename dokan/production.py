@@ -120,21 +120,23 @@ class Production(Task):
                 prod_ntot = prod[0]['ncall'] * prod[0]['niter']
                 ntot += prod_ntot
                 sumt += prod[1]['elapsed_time']
-                sumt2 += prod[1]['elapsed_time']**2 / float(prod_ntot)
+                sumt2 += ((prod[1]['elapsed_time'] * 0.01)**2 +
+                          prod[1]['elapsed_time']**2 / float(prod_ntot))
             avg_time_per_evt = sumt / float(ntot)
-            err_time_per_evt: float = 0.
-            if nprod > 1:
-                err_time_per_evt = math.sqrt(sumt2 - sumt**2 /
-                                             float(ntot)) / float(ntot)
+            err_time_per_evt: float = math.sqrt(sumt2 - sumt**2 /
+                                                float(ntot)) / float(ntot)
             #> exactly hit min_runtime
-            ncall = int(self.config['job']['min_runtime'] / avg_time_per_evt /
-                        float(niter))
+            ncall_min: int = int(self.config['job']['min_runtime'] /
+                                 avg_time_per_evt / float(niter))
             #> aim for max_rumtime with a 5-sigma buffer
+            ncall_max: int = int(self.config['job']['max_runtime'] /
+                                 (avg_time_per_evt + 5. * err_time_per_evt) /
+                                 float(niter))
             #> (always overrides min_runtime)
-            if err_time_per_evt > 0.:
-                ncall = int(self.config['job']['max_runtime'] /
-                            (avg_time_per_evt + 20 * err_time_per_evt) /
-                            float(niter))
+            if nprod > 1:
+                ncall = ncall_max
+            else:
+                ncall = min(ncall_min, ncall_max)
 
         #> None in the 2nd entry indicates that job is "pending"
         #> `policy`, `config` & `channel` are added later

@@ -25,7 +25,6 @@ class Warmup(Task):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        print("Warmup: {}".format(id(self)))
 
         if self.channel not in self.config["process"]["channels"]:
             raise RuntimeError("Warmup: unknown channel: {}".format(
