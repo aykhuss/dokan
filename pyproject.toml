@@ -1,0 +1,21 @@
+[project]
+name = "dokan"
+authors = [
+  {name = "Alexander Huss", email = "alexander.huss@cern.ch"},
+]
+maintainers = [
+  {name = "All the contributors"},
+]
+description = "Automating the NNLOJET workflow"
+keywords = ["pyOpenSci"]
+readme = "README.md"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+]
+requires-python = ">=3.8"
+dependencies = [
+  "luigi",
+]
+license = {text = "Apache License (2.0)"}
