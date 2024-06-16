@@ -21,7 +21,7 @@ class Task(luigi.Task):
         Needed because once a Task is dispatched, global CONFIG is no longer
         available. Also facilitates the possibility of overrides that propagate
         down stream.
-    local_path : list
+    local_path : list[str]
         path *relative* (local) to CONFIG.job_path as a list of directory names
     """
 
@@ -29,7 +29,6 @@ class Task(luigi.Task):
     local_path: list[str] = luigi.ListParameter()
 
     def __init__(self, *args, **kwargs):
-        # > important for luigi magic
         super().__init__(*args, **kwargs)
         self._path: Path = Path(self.config["job"]["path"]).joinpath(*self.local_path)
         self._path.mkdir(parents=True, exist_ok=True)
