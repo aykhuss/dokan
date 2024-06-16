@@ -21,7 +21,6 @@ class ExecutionPolicy(IntEnum):
 
     LOCAL = 1
     HTCONDOR = 2
-
     # SLURM = 3
     # LSF = 4
     # ...
@@ -106,7 +105,7 @@ class Executor(Task, metaclass=ABCMeta):
     #   return hash_md5.hexdigest()
 
     def requires(self):
-        return None
+        return []
 
     @abstractmethod
     def exe(self):

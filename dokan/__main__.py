@@ -69,9 +69,6 @@ def main():
         if "job_name" not in runcard_data:
             sys.exit("invalid runcard \"{}\": could not find RUN block".format(
                 args.runcard))
-        if "job_name" not in runcard_data:
-            sys.exit("invalid runcard \"{}\": could not find RUN block".format(
-                args.runcard))
         dokan.CONFIG.set_exe(path=nnlojet_exe)
         if args.job_path is not None:
             dokan.CONFIG.set_job_path(args.job_path)
@@ -110,7 +107,7 @@ def main():
                 dokan.Production(config=dokan.CONFIG,
                                  local_path=["data", "LO_1"],
                                  channel="LO_1",
-                                 iseed=42)
+                                 iseed=5)
             ],
             worker_scheduler_factory=dokan.WorkerSchedulerFactory(
                 resources={"ncores": 8}),
