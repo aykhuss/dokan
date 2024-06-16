@@ -1,4 +1,6 @@
-
+# SPDX-FileCopyrightText: 2024-present Alexander Huss <alexander.huss@cern.ch>
+#
+# SPDX-License-Identifier: MIT
 
 from . config import CONFIG
 from . task import Task
