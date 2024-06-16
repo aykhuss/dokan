@@ -9,9 +9,10 @@ collection of helper functions to parse and manipulate NNLOJET runcards
 
 import re
 import string
+from os import PathLike
 
 
-def parse_runcard(runcard) -> dict:
+def parse_runcard(runcard: PathLike) -> dict:
     """parse an NNLOJET runcard
 
     Extract settings for a calculation and return as a dictionary
@@ -20,7 +21,7 @@ def parse_runcard(runcard) -> dict:
 
     Parameters
     ----------
-    runcard : FileDescriptorOrPath
+    runcard : PathLike
         A NNLOJET runcard file
 
     Returns
@@ -42,7 +43,7 @@ def parse_runcard(runcard) -> dict:
     return runcard_data
 
 
-def make_template(runcard, template):
+def make_template(runcard: PathLike, template: PathLike):
     """create an NNLOJET runcard template file from a generic runcard.
 
     parse the runcard and inject variables that can be ppopulated late.
@@ -53,9 +54,9 @@ def make_template(runcard, template):
 
     Parameters
     ----------
-    runcard : FileDescriptorOrPath
+    runcard : PathLike
         A NNLOJET runcard file
-    template : FileDescriptorOrPath
+    template : PathLike
         The template file to write ou
 
     Raises
@@ -117,7 +118,7 @@ def make_template(runcard, template):
         t.write("\n${toplevel}\n")
 
 
-def fill_template(runcard, template, **kwargs):
+def fill_template(runcard: PathLike, template: PathLike, **kwargs):
     """create an NNLOJET runcard from a template.
 
     parse the runcard and inject variables that can be ppopulated late.
@@ -128,9 +129,9 @@ def fill_template(runcard, template, **kwargs):
 
     Parameters
     ----------
-    runcard : FileDescriptorOrPath
+    runcard : PathLike
         NNLOJET runcard file to write out
-    template : FileDescriptorOrPath
+    template : PathLike
         The template file to use
     **kwargs
         values for the variables in the template to be substituted.
