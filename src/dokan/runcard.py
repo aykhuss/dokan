@@ -8,6 +8,22 @@ import string
 
 
 def parse_runcard(runcard) -> dict:
+    """parse an NNLOJET runcard
+
+    Extract settings for a calculation and return as a dictionary
+    * process_name
+    * job_name
+
+    Parameters
+    ----------
+    runcard : FileDescriptorOrPath
+        A NNLOJET runcard file
+
+    Returns
+    -------
+    dict
+        extracted settings
+    """
     runcard_data = {}
     with open(runcard, 'r') as f:
         for line in f:
@@ -24,6 +40,26 @@ def parse_runcard(runcard) -> dict:
 
 
 def make_template(runcard, template):
+    """create an NNLOJET runcard template file from a generic runcard.
+
+    parse the runcard and inject variables that can be ppopulated late.
+    * run
+    * channels
+    * channels_region
+    * toplevel
+
+    Parameters
+    ----------
+    runcard : FileDescriptorOrPath
+        A NNLOJET runcard file
+    template : FileDescriptorOrPath
+        The template file to write ou
+
+    Raises
+    ------
+    RuntimeError
+        invalid syntax encountered in runcard.
+    """
     kill_matches = [
         #> kill symbol that will be inserted
         re.compile(r'\s*${run}'),
@@ -77,5 +113,25 @@ def make_template(runcard, template):
 
 
 def fill_template(runcard, template, **kwargs):
+    """create an NNLOJET runcard from a template.
+
+    parse the runcard and inject variables that can be ppopulated late.
+    * run
+    * channels
+    * channels_region
+    * toplevel
+
+    Parameters
+    ----------
+    runcard : FileDescriptorOrPath
+        NNLOJET runcard file to write out
+    template : FileDescriptorOrPath
+        The template file to use
+    **kwargs
+        values for the variables in the template to be substituted.
+    """
     with open(template, 'r') as t, open(runcard, 'w') as f:
         f.write(string.Template(t.read()).substitute(kwargs))
+    print("asdf")
+
+
