@@ -74,6 +74,7 @@ class LocalExec(Executor):
         self._result["chi2dof"] = self._result['iterations'][-1]["chi"]
 
         #> keep track of files that were generated
+        #> new recommendation is to use os.scandir()
         for file in os.listdir(self._path):
             if file in [
                     Executor._file_run, Executor._file_res, Executor._file_tmp,

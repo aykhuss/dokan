@@ -11,7 +11,6 @@ from . import *
 
 
 class Production(Task):
-
     _file_res: str = "production.json"
     _file_tmp: str = "production.tmp"
 
@@ -20,18 +19,16 @@ class Production(Task):
 
     @property
     def resources(self) -> dict:
-        """limit to one production in `run` at a time
-        """
-        return {"production_" + '_'.join(map(str, self.local_path)): 1}
+        """limit to one production in `run` at a time"""
+        return {"production_" + "_".join(map(str, self.local_path)): 1}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         print("Production: {}".format(id(self)))
 
         if self.channel not in self.config["process"]["channels"]:
-            raise RuntimeError("Production: unknown channel: {}".format(
-                self.channel))
-        #> dict of tuples: { 'p<iseed>': [ dict(exe_args), [None|dict(result)] ] }
+            raise RuntimeError("Production: unknown channel: {}".format(self.channel))
+        # > dict of tuples: { 'p<iseed>': [ dict(exe_args), [None|dict(result)] ] }
         self._data: dict = dict()
         self.load_data()
 
