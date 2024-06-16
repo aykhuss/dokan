@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: © 2024-present NNLOJET
+#
+# SPDX-License-Identifier: MIT
+
 """NNLOJET runcard manipulation
 
 collection of helper functions to parse and manipulate NNLOJET runcards

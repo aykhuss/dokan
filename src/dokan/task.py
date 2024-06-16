@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: © 2024-present NNLOJET
+#
+# SPDX-License-Identifier: MIT
+
 """Task class within the dokan workflow
 
 sub-class of a luigi Task to impose mandatory attributes to a workflow task.

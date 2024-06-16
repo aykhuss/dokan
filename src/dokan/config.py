@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: © 2024-present NNLOJET
+#
+# SPDX-License-Identifier: MIT
+
 """configuration for the dokan workflow.
 
 We use a custom dictionary class to store all settings that we need to exeucute

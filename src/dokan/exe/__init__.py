@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: © 2024-present NNLOJET
+#
+# SPDX-License-Identifier: MIT
+
 """NNLOJET execution
 
 module that defines all ways of executing NNLOJET (platforms, modes, ...)

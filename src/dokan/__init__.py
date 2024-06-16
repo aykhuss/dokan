@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2024-present Alexander Huss <alexander.huss@cern.ch>
+# SPDX-FileCopyrightText: © 2024-present NNLOJET
 #
 # SPDX-License-Identifier: MIT
 

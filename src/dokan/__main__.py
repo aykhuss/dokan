@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: © 2024-present NNLOJET
+#
+# SPDX-License-Identifier: MIT
+
 """The main execution of the NNLOJET workflow"""
 
 import luigi

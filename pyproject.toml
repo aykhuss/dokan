@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: © 2024-present NNLOJET
+#
+# SPDX-License-Identifier: MIT
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
