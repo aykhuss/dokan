@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dokan"
-version = "0.1"
+version = "0.0.1"
 description = "Automating the NNLOJET workflow"
 readme = "README.md"
 requires-python = ">=3.8"
