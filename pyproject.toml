@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dokan"
-dynamic = ["version"]
+version = "0.1"
 description = "Automating the NNLOJET workflow"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -21,9 +21,12 @@ classifiers = [
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: Implementation :: CPython",
-  "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
   "luigi",
 ]
+
+[project.urls]
+Documentation = "https://github.com/aykhuss/dokan#readme"
+Issues = "https://github.com/aykhuss/dokan/issues"
+Source = "https://github.com/aykhuss/dokan"
