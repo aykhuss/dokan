@@ -11,7 +11,7 @@ import json
 import math
 
 import luigi
-from . import Task, Executor
+from . import Task, Executor, ExecutionMode
 
 
 class Warmup(Task):
@@ -40,10 +40,10 @@ class Warmup(Task):
             shutil.move(self._local(Warmup._file_res), self._local(Warmup._file_tmp))
 
     def requires(self):
-        return []
+        return None
 
     def output(self):
-        return [luigi.LocalTarget(self._local(Warmup._file_res))]
+        return luigi.LocalTarget(self._local(Warmup._file_res))
 
     @property
     def data(self):
