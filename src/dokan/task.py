@@ -37,14 +37,14 @@ class Task(luigi.Task):
         self._path: Path = Path(self.config["job"]["path"]).joinpath(*self.local_path)
         self._path.mkdir(parents=True, exist_ok=True)
 
-    def _local(self, *path: PathLike) -> Path:
+    def _local(self, *path: str) -> Path:
         """get the "Task local" path
 
         take path and append to local path of the dokan task.
 
         Parameters
         ----------
-        path : Tuple[PathLike]
+        path : Tuple[str]
             list of paths (directories, filename) that will be concatenated.
 
         Returns

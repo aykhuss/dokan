@@ -105,7 +105,7 @@ class Warmup(Task):
         )
         # test_chi2dof = (0.8 < self._data[-1][1]['chi2dof']
         #                 and self._data[-1][1]['chi2dof'] < 1.2)
-        test_chi2dof = self._data[-1][1]["chi2dof"] < 1.5
+        test_chi2dof = self._data[-1][1]["chi2dof"] < self.config["warmup"]["max_chi2"]
         print("_done: test_accuracy = {}".format(test_accuracy))
         print("_done: test_chi2dof = {}".format(test_chi2dof))
         if test_accuracy and test_chi2dof:
@@ -113,11 +113,12 @@ class Warmup(Task):
         if len(self._data) < 2:
             test_scaling = False  # not enough data to test
         else:
-            # > check last two iterations have correct scaling modulo buffer
+            # > check last two iterations have correct scaling (1/sqrt(N))
+            # > allow for a buffer/window
             val_scaling = (
                 self._data[-1][1]["error"] / self._data[-2][1]["error"]
             ) ** 2 / self.config["warmup"]["fac_increment"]
-            test_scaling = 0.6 < val_scaling and val_scaling < 1.4
+            test_scaling = abs(val_scaling-1.) < self.config["warmup"]["scaling_window"]
         print("_done: test_scaling = {}".format(test_scaling))
         # grid_file = self._result['results'][-1]['grid_file']
         test_grid = True  # @todo
