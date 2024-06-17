@@ -18,10 +18,27 @@ This is the implementation of an automated workflow for NNLOJET computations bas
 ## Installation
 
 ```console
-pip install dokan
+pip install -e .
 ```
 
 ## Usage
+
+Some example usage:
+```console
+
+# help
+pyton -m dokan --help
+pyton -m dokan init --help
+pyton -m dokan submit --help
+
+# initialise a job
+pyton -m dokan init example.run
+
+# submit a job
+python -m dokan submit example
+
+```
+
 
 ## License
 
