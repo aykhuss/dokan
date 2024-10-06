@@ -5,6 +5,7 @@
 """The main execution of the NNLOJET workflow"""
 
 import luigi
+from luigi.execution_summary import LuigiRunResult
 import dokan
 import dokan.runcard
 import dokan.nnlojet
@@ -13,17 +14,10 @@ import os
 import shutil
 import sys
 
-# > check that we run the module as a runnable package
-assert __package__ is not None and len(__package__) > 0, """
-
-The '__main__' module does not seem to have been run in the context of a
-runnable package ... did you forget to add the '-m' flag?
-
-Usage: python -m dokan
-"""
+from rich import console
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="dokan: an automated NNLOJET workflow")
     parser.add_argument("--exe", dest="exe", help="executable")
     subparsers = parser.add_subparsers(dest="action")

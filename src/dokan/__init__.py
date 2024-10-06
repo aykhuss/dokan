@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
+from .__main__ import main
 from .config import CONFIG
 from .task import Task
 from .scheduler import WorkerSchedulerFactory
@@ -11,6 +12,7 @@ from .production import Production
 from .dispatch_channel import DispatchChannel
 
 __all__ = [
+    "main",
     "CONFIG",
     "Task",
     "WorkerSchedulerFactory",
