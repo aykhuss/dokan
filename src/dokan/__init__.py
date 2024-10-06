@@ -6,6 +6,7 @@ from .__main__ import main
 from .config import CONFIG
 from .task import Task
 from .scheduler import WorkerSchedulerFactory
+from .db import JobStatus, Part, Job, DBTask, DBInit
 from .exe import ExecutionPolicy, ExecutionMode, Executor, LocalExec
 from .warmup import Warmup
 from .production import Production
@@ -23,4 +24,9 @@ __all__ = [
     "Warmup",
     "Production",
     "DispatchChannel",
+    "JobStatus",
+    "Part",
+    "Job",
+    "DBTask",
+    "DBInit",
 ]

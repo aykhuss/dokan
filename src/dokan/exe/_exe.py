@@ -8,8 +8,6 @@ module that defines all the different ways of executing NNLOJET
 (platforms, modes, ...)
 """
 
-from ._local import LocalExec
-
 from enum import IntEnum, unique
 from abc import ABCMeta, abstractmethod
 import luigi
@@ -58,6 +56,8 @@ class ExecutionMode(IntEnum):
         return self.name.lower()
 
 
+# >@todo:  make this a standard luigi task?]
+# > give all needed parameters for an NNLOcalculation explicitly as parameters?
 class Executor(Task, metaclass=ABCMeta):
     # > define some class-local variables for file name conventions
     _file_run: str = "job.run"
@@ -99,6 +99,8 @@ class Executor(Task, metaclass=ABCMeta):
     @staticmethod
     def factory(policy=ExecutionPolicy.LOCAL, *args, **kwargs):
         if policy == ExecutionPolicy.LOCAL:
+            from ._local import LocalExec
+
             return LocalExec(*args, **kwargs)
         # if policy == ExecutionPolicy.HTCONDOR: return HTCondorExec(*args, **kwargs)
         raise TypeError("invalid ExecutionPolicy")
@@ -161,4 +163,3 @@ class Executor(Task, metaclass=ABCMeta):
 
     def output(self):
         return luigi.LocalTarget(self._local(Executor._file_res))
-

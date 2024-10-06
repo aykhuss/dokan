@@ -104,11 +104,16 @@ def main() -> None:
 
         luigi_result = luigi.build(
             [
-                dokan.Production(
+                # dokan.Production(
+                #     config=dokan.CONFIG,
+                #     local_path=["data", "LO_1"],
+                #     channel="LO_1",
+                #     iseed=123,
+                # )
+                dokan.DBInit(
                     config=dokan.CONFIG,
-                    local_path=["data", "LO_1"],
-                    channel="LO_1",
-                    iseed=123,
+                    local_path=[],
+                    channels=dokan.CONFIG.process["channels"],
                 )
             ],
             worker_scheduler_factory=dokan.WorkerSchedulerFactory(
