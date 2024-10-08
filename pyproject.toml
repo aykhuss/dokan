@@ -4,11 +4,12 @@
 
 [project]
 name = "dokan"
-version = "0.0.1"
+# version = "0.0.1"
 description = "Automating the NNLOJET workflow"
 readme = "README.md"
 requires-python = ">=3.8"
 license = "MIT"
+dynamic = ["version"]
 keywords = []
 authors = [
   { name = "Alexander Huss", email = "alexander.huss@cern.ch" },
@@ -32,3 +33,5 @@ dokan = "dokan:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.version]
+path = "src/dokan/__about__.py"
