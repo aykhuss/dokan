@@ -27,7 +27,7 @@ class LocalExec(Executor):
         job_env["OMP_NUM_THREADS"] = "{}".format(self.ncores)
         job_env["OMP_STACKSIZE"] = "1024M"
 
-        start_time = time()
+        start_time = time()  # save in exe after copying input files
         with open(self._local(Executor._file_out), "w") as of, open(
             self._local(Executor._file_err), "w"
         ) as ef:

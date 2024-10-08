@@ -31,7 +31,7 @@ def get_lumi(exe: PathLike, proc: str) -> dict:
         channel/luminosity information following the structure:
         label = "RRa_42" -> {
           "part" : "RR", ["region" : "a"]
-          "part_id" : 42,
+          "part_num" : 42,
           "string" : "1 2 3 ... ! channel: ..."
         }
 
@@ -56,7 +56,7 @@ def get_lumi(exe: PathLike, proc: str) -> dict:
         match = re.match(r"^([^_]+)_(\d+)$", label)
         if match:
             chan["part"] = match.group(1)
-            chan["part_id"] = int(match.group(2))
+            chan["part_num"] = int(match.group(2))
             if chan["part"][-1] == "a" or chan["part"][-1] == "b":
                 chan["region"] = chan["part"][-1]
                 chan["part"] = chan["part"][:-1]

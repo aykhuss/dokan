@@ -56,7 +56,7 @@ class ExecutionMode(IntEnum):
         return self.name.lower()
 
 
-# >@todo:  make this a standard luigi task?]
+# >@todo:  make this a standard luigi task?
 # > give all needed parameters for an NNLOcalculation explicitly as parameters?
 class Executor(Task, metaclass=ABCMeta):
     # > define some class-local variables for file name conventions
@@ -114,7 +114,7 @@ class Executor(Task, metaclass=ABCMeta):
     #   return hash_md5.hexdigest()
 
     def requires(self):
-        return None
+        return []
 
     @abstractmethod
     def exe(self):
@@ -162,4 +162,4 @@ class Executor(Task, metaclass=ABCMeta):
         shutil.move(self._local(Executor._file_tmp), self._local(Executor._file_res))
 
     def output(self):
-        return luigi.LocalTarget(self._local(Executor._file_res))
+        return [luigi.LocalTarget(self._local(Executor._file_res))]
