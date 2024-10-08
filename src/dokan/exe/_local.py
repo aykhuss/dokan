@@ -1,14 +1,17 @@
-
-from ._exe import Executor
+import luigi
 import subprocess
 import json
 import os
 import re
 from time import time
 
+from ._exe import Executor
+
 
 class LocalExec(Executor):
     """Execution on the local machine"""
+
+    ncores: int = luigi.OptionalIntParameter(default=1)
 
     @property
     def resources(self):
@@ -16,6 +19,7 @@ class LocalExec(Executor):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.data["policy_settings"]["ncores"] = self.ncores
 
     def exe(self):
         print("   >>>   LocalExec {}".format(self.local_path))
@@ -41,7 +45,7 @@ class LocalExec(Executor):
                 return  # safer way to exit -> Task will be flagged as "failed"
         elapsed_time = time() - start_time
 
-        self._result["elapsed_time"] = elapsed_time
+        self.data["elapsed_time"] = elapsed_time
 
         # > parse the output file to extract some information
         with open(self._local(Executor._file_out), "r") as of:
@@ -73,13 +77,13 @@ class LocalExec(Executor):
                 )
                 if match_chi2it:
                     iteration["chi"] = float(match_chi2it.group(1))
-                    self._result["iterations"].append(iteration)
+                    self.data["iterations"].append(iteration)
                     iteration = {}
 
         # > save the accumulated result
-        self._result["integral"] = self._result["iterations"][-1]["acc_val"]
-        self._result["error"] = self._result["iterations"][-1]["acc_err"]
-        self._result["chi2dof"] = self._result["iterations"][-1]["chi"]
+        self.data["integral"] = self.data["iterations"][-1]["acc_val"]
+        self.data["error"] = self.data["iterations"][-1]["acc_err"]
+        self.data["chi2dof"] = self.data["iterations"][-1]["chi"]
 
         # > keep track of files that were generated
         # > new recommendation is to use os.scandir()
@@ -95,7 +99,7 @@ class LocalExec(Executor):
             if os.stat(self._local(file)).st_mtime < start_time:
                 continue
             # > genuine output file that was generated/modified
-            self._result["output_files"].append(file)
+            self.data["output_files"].append(file)
 
         with open(self._local(Executor._file_tmp), "w") as outfile:
-            json.dump(self._result, outfile, indent=2)
+            json.dump(self.data, outfile, indent=2)
