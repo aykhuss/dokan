@@ -1,6 +1,3 @@
-# SPDX-FileCopyrightText: © 2024-present NNLOJET
-#
-# SPDX-License-Identifier: MIT
 
 """NNLOJET interface
 

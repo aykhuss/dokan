@@ -1,6 +1,3 @@
-# SPDX-FileCopyrightText: © 2024-present NNLOJET
-#
-# SPDX-License-Identifier: MIT
 
 from .__main__ import main
 from .config import CONFIG
