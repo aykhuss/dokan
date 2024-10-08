@@ -110,14 +110,13 @@ def main() -> None:
                 #     channel="LO_1",
                 #     iseed=123,
                 # )
-                dokan.DBInit(
+                dokan.Start(
                     config=dokan.CONFIG,
                     local_path=[],
-                    channels=dokan.CONFIG.process["channels"],
                 )
             ],
             worker_scheduler_factory=dokan.WorkerSchedulerFactory(
-                resources={"ncores": 8}
+                resources={"ncores": 8}, check_complete_on_run=False
             ),
             detailed_summary=True,
             workers=10,

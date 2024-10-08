@@ -9,13 +9,17 @@ class WorkerSchedulerFactory:
     """The dokan scheduler factory
 
     This scheduler factory is almost identical to the one within luigi.
-    It's minimally adapted to allow for `resources` to be passed to the scheduler.
+    It's minimally adapted to allow for additional options to be passed to the scheduler.
     We do this since we want to avoid the use of a `luigi.cfg` file
     and want to use the `luigi.build` function to start the workflow.
     """
 
-    def __init__(self, resources=None):
-        self.resources = resources
+    def __init__(self, **kwargs):
+        self.resources = kwargs.pop("resources", None)
+        self.cache_task_completion = kwargs.pop("cache_task_completion", None)
+        self.check_complete_on_run = kwargs.pop("check_complete_on_run", None)
+        if kwargs:
+            raise RuntimeError(f"WorkerSchedulerFactory: left-over options {kwargs}")
 
     def create_local_scheduler(self):
         return scheduler.Scheduler(
@@ -27,5 +31,9 @@ class WorkerSchedulerFactory:
 
     def create_worker(self, scheduler, worker_processes, assistant=False):
         return worker.Worker(
-            scheduler=scheduler, worker_processes=worker_processes, assistant=assistant
+            scheduler=scheduler,
+            worker_processes=worker_processes,
+            assistant=assistant,
+            cache_task_completion=self.cache_task_completion,
+            check_complete_on_run=self.check_complete_on_run,
         )
