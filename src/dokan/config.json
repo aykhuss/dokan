@@ -1,14 +1,16 @@
 {
   "exe" : {
-    "path" : "/Users/alex/Work/Programs/nnlojet_release/install/bin/NNLOJET",
+    "path" : "/path/to/nnlojet/install/bin/NNLOJET",
     "policy" : 1
   },
   "job" : {
-    "order" : "NLO",
+    "order" : "NNLO",
+    "target_rel_acc" : 0.01,
+    "single_max_runtime" : 3600,
+    "max_number" : -1,
+    "max_concurrent" : 1,
     "batch_size" : 10,
-    "iseed_start" : 1,
-    "min_runtime" : 600,
-    "max_runtime" : 3600
+    "seed_offset" : 0
   },
   "warmup" : {
     "ncores" : 1,

@@ -24,6 +24,7 @@ import dokan.runcard
 class ExecutionPolicy(IntEnum):
     """policies on how/where to execute NNLOJET"""
 
+    NULL = 0
     LOCAL = 1
     HTCONDOR = 2
     # SLURM = 3
@@ -56,42 +57,51 @@ class ExecutionMode(IntEnum):
         return self.name.lower()
 
 
-# >@todo:  make this a standard luigi task?
 # > give all needed parameters for an NNLOcalculation explicitly as parameters?
 class Executor(Task, metaclass=ABCMeta):
     # > define some class-local variables for file name conventions
     _file_run: str = "job.run"
     _file_res: str = "job.json"
     _file_tmp: str = "job.tmp"
-    _file_out: str = "job.out"
-    _file_err: str = "job.err"
 
-    # > if there's a previous warmup job pass the dir to it:
+    # > if there's a previous wzarmup job pass the dir to it:
     # > need to get the `output_files` from there and copy over
-    channel = luigi.Parameter()
-    input_local_path: list = luigi.ListParameter(default=[])  # wamrup we need
-    exe_mode: int = luigi.IntParameter()
-    ncores: int = luigi.IntParameter(default=1)
+    job_ids: list[int] = luigi.ListParameter()
+    seeds: list[int] = luigi.ListParameter()
+    policy: int = luigi.OptionalIntParameter(default=ExecutionPolicy.NULL)
+    mode: int = luigi.IntParameter()
+    input_local_path: list = luigi.ListParameter(default=[])  # warmup we need
     ncall: int = luigi.IntParameter()
     niter: int = luigi.IntParameter()
-    iseed: int = luigi.IntParameter()
 
     # @todo: add options for overrides here?
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._result = {
+        # > create data structure for the executor
+        # @todo abstract away this datastructure to something more rigid like CONFIG?
+        self._data = {
+            "job_ids": self.job_ids,
+            "seeds": self.seeds,
             "local_path": self.local_path,
-            "channel": self.channel,
-            "ncores": self.ncores,
-            "exe_mode": self.exe_mode,
+            "policy": self.policy,
+            "policy_settings": {},
+            "mode": self.mode,
             "ncall": self.ncall,
             "niter": self.niter,
-            "iseed": self.iseed,
             "input_files": [],
             "output_files": [],
             "iterations": [],
         }
+        # > some consistency checks
+        if len(self.job_ids) != len(self.seeds):
+            raise ValueError("Executor: job_ids and seeds must have the same length")
+        if (len(self.seeds) > 1) and all(
+            self.seeds[i] + 1 == self.seeds[i + 1] for i in range(len(self.seeds) - 1)
+        ):
+            raise ValueError(
+                f"Executor: seeds must be a consecutive list! {self.seeds}"
+            )
 
     def _input_local(self, *path: PathLike) -> Path:
         return Path(self.config["job"]["path"]).joinpath(*self.input_local_path, *path)
@@ -99,11 +109,12 @@ class Executor(Task, metaclass=ABCMeta):
     @staticmethod
     def factory(policy=ExecutionPolicy.LOCAL, *args, **kwargs):
         if policy == ExecutionPolicy.LOCAL:
+            # > local import to avoid cyclic dependence
             from ._local import LocalExec
 
             return LocalExec(*args, **kwargs)
         # if policy == ExecutionPolicy.HTCONDOR: return HTCondorExec(*args, **kwargs)
-        raise TypeError("invalid ExecutionPolicy")
+        raise TypeError(f"invalid ExecutionPolicy: {policy!r}")
 
     # @staticmethod
     # def compute_md5(file_name: str):
@@ -121,7 +132,8 @@ class Executor(Task, metaclass=ABCMeta):
         pass
 
     def run(self):
-        if len(self.input_local_path) > 0:
+        #> copy over input files
+        if self.input_local_path:
             print("Executor: copy files from {}".format(self.input_local_path))
             with open(self._input_local(Executor._file_res), "r") as wfile:
                 wconfig = json.load(wfile)
@@ -136,6 +148,7 @@ class Executor(Task, metaclass=ABCMeta):
                     self._result["input_files"].append(in_file)
         else:
             print("<<< brand new warmup >>>")
+        #> generate a job runcard
         runcard = self._local(Executor._file_run)
         # > tempalte variables: {sweep, run, channels, channels_region, toplevel}
         channel_string = self.config["process"]["channels"][self.channel]["string"]

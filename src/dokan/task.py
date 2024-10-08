@@ -37,7 +37,7 @@ class Task(luigi.Task):
         self._path: Path = Path(self.config["job"]["path"]).joinpath(*self.local_path)
         self._path.mkdir(parents=True, exist_ok=True)
 
-    def _local(self, *path: str) -> Path:
+    def _local(self, *path: PathLike) -> Path:
         """get the "Task local" path
 
         take path and append to local path of the dokan task.

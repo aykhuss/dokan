@@ -40,7 +40,9 @@ def get_lumi(exe: PathLike, proc: str) -> dict:
     RuntimeError
         encountered parsing error of the -listobs output
     """
-    exe_out = subprocess.run([exe, "-listlumi", proc], capture_output=True, text=True)
+    exe_out = subprocess.run(
+        [exe, "-listlumi", proc], capture_output=True, text=True, check=True
+    )
     chan_list = dict()
     for line in exe_out.stdout.splitlines():
         if not re.search(r" ! channel: ", line):
