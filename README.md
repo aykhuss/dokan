@@ -3,7 +3,7 @@
 [![PyPI - Version](https://img.shields.io/pypi/v/dokan.svg)](https://pypi.org/project/dokan)
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/dokan.svg)](https://pypi.org/project/dokan)
 
-> <img src="./doc/img/pipe.png" height="23px">&emsp;<img src="./doc/img/dokan.webp" height="23px">&emsp;A pipeline for automating the NNLOJET workflow
+> <img src="./doc/img/dokan.png" height="23px">&emsp;A pipeline for automating the NNLOJET workflow
 
 -----
 
