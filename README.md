@@ -42,5 +42,5 @@ python -m dokan submit example
 
 ## License
 
-`dokan` is distributed under the terms of the [MIT](https://spdx.org/licenses/MIT.html) license.
+`dokan` is distributed under the terms of the [GPL-3.0](https://spdx.org/licenses/GPL-3.0-or-later.html) license.
 
