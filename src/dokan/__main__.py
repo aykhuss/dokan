@@ -107,7 +107,7 @@ def main() -> None:
                 #     channel="LO_1",
                 #     iseed=123,
                 # )
-                dokan.Start(
+                dokan.Entry(
                     config=dokan.CONFIG,
                     local_path=[],
                 )
