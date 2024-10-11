@@ -1,6 +1,6 @@
 """NNLOJET job database
 
-module that handles everything to do with the job database
+module defining the job database
 """
 
 from ._jobstatus import JobStatus
@@ -31,9 +31,9 @@ class Part(JobDB):
     part_num: Mapped[int]
     region: Mapped[str | None]
 
-    #@todo: future features
-    #variation: Mapped[int]  # <- to identify different setups (rewgt, etc)
-    #active: Mapped[bool]
+    # @todo: future features
+    # variation: Mapped[int]  # <- to identify different setups (rewgt, etc)
+    # active: Mapped[bool]
 
     # > result of the last merge
     result: Mapped[float | None]
@@ -52,18 +52,21 @@ class Job(JobDB):
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
-    #> every job is associated with a `Part`
+    # > every job is associated with a `Part`
     part_id: Mapped[int] = mapped_column(ForeignKey("part.id"))
     part: Mapped["Part"] = relationship(back_populates="jobs")
 
-    #> tag is the same & unique for one invocation of `dokan submit`
-    tag: Mapped[str]
     status: Mapped[int]
+    # > zero: not started, > 0 : current job, < 0: past merged job
+    timestamp: Mapped[float]
+    path: Mapped[str | None]  # relative path to the job directory (set by DBRunner)
 
-    #>
-    seed: Mapped[int | None]
-    ncall: Mapped[int | None]
-    nit: Mapped[int | None]
+    # >
+    mode: Mapped[int]  # [warmup|production]
+    policy: Mapped[int]  # how to run
+    seed: Mapped[int | None] # set in DBDispatch
+    ncall: Mapped[int | None] # set before DBDispatch or auto-determined in DBRunner
+    nit: Mapped[int | None] # set before DBDispatch or auto-determined in DBRunner
     elapsed_time: Mapped[float | None]
     result: Mapped[float | None]
     error: Mapped[float | None]
