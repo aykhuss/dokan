@@ -30,14 +30,17 @@ _attributes: dict = {
         "policy",  # how to execute (local, htcondor, slurm, ...)
     ),
     "job": (
-        "path",  # absolute path to job directory
         "name",  # job name
+        "path",  # absolute path to job directory
         "template",  # absolute path to the template file
         "order",  # what order to comput (LO, NLO, NNLO)
-        "min_runtime",  # minimum runtime (in sec) for a single NNLOJET run
+        "target_rel_acc",  # target relative accuracy
         "max_runtime",  # maximum runtime (in sec) for a single NNLOJET run
+        "max_total",  # mmaximum number of total (production?) jobs
+        "max_concurrent",  # maximum number of concurrent jobs
         "batch_size",  # @todo: size of runs to batch
-        "iseed_start",  # seed number offset
+        "seed_offset",  # seed number offset
+        "timestamps",  # list of timestamps when `run` was called
     ),
     "process": (
         "name",  # name of the process in NNLOJET
@@ -193,8 +196,8 @@ class _Config(UserDict):
         job_path = Path(path)
         if not job_path.exists():
             job_path.mkdir(parents=True)
-        self.data["job"]["path"] = str(job_path.resolve())
-        self.set_job(template=str((job_path / "template.run").resolve()))
+        self.data["job"]["path"] = str(job_path.absolute())
+        self.set_job(template=str((job_path / "template.run").relative_to(job_path)))
 
     # def set_test_mode_enabled(self, val: bool):
     #     if isinstance(val, bool):

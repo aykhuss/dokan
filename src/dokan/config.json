@@ -6,7 +6,7 @@
   "job" : {
     "order" : "NNLO",
     "target_rel_acc" : 0.01,
-    "single_max_runtime" : 3600,
+    "max_runtime" : 3600,
     "max_number" : -1,
     "max_concurrent" : 1,
     "batch_size" : 10,
