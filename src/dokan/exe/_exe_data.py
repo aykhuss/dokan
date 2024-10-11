@@ -12,6 +12,7 @@ _scheme : dict
 
 from collections import UserDict
 import json
+import shutil
 from pathlib import Path
 from os import PathLike
 
@@ -34,10 +35,12 @@ _schema: dict = {
     "niter": 0,
     # ---
     "timestamp": float,
-    "input_files": [str],
+    "input_files": [str],  # first entry must be runcard?
     "output_files": [str],
     "results": [
         {
+            "job_id": int,
+            "seed": int,
             "elapsed_time": float,
             "result": float,
             "error": float,
@@ -75,8 +78,8 @@ class ExeData(UserDict):
             self.path.mkdir(parents=True)
         if not self.path.is_dir():
             raise ValueError(f"{path} is not a folder")
-        self._tmp: Path = self.path / self._file_tmp
-        self._fin: Path = self.path / self._file_fin
+        self.file_tmp: Path = self.path / self._file_tmp
+        self.file_fin: Path = self.path / self._file_fin
         # > load in order of precedence & set mutable state
         self.load()
 
@@ -106,23 +109,35 @@ class ExeData(UserDict):
         if not self.is_valid():
             raise ValueError(f"ExeData scheme forbids: {key} : {item}")
 
-    def load(self):
+    def load(self) -> None:
         self._mutable = True
-        if self._fin.exists():
-            with open(self._fin, "rt") as fin:
+        if self.file_fin.exists():
+            with open(self.file_fin, "rt") as fin:
                 self.data = json.load(fin)
                 self._mutable = False
-            if self._tmp.exists():
-                raise RuntimeError(f"ExeData: tmp & fin exist {self._tmp}!")
-        elif self._tmp.exists():
-            with open(self._tmp, "rt") as tmp:
+            if self.file_tmp.exists():
+                raise RuntimeError(f"ExeData: tmp & fin exist {self.file_tmp}!")
+        elif self.file_tmp.exists():
+            with open(self.file_tmp, "rt") as tmp:
                 self.data = json.load(tmp)
         if not self.is_valid():
             raise RuntimeError("ExeData load encountered conflict with schema")
 
-    def write(self):
-        with open(self._tmp, "w") as tmp:
+    def write(self) -> None:
+        with open(self.file_tmp, "w") as tmp:
             json.dump(self.data, tmp, indent=2)
+
+    def finalize(self) -> None:
+        if not self._mutable:
+            raise RuntimeError("ExeData already finalized?!")
+        shutil.move(self.file_tmp, self.file_fin)
+        self._mutable = False
+
+    def make_mutable(self) -> None:
+        if self._mutable:
+            return
+        shutil.move(self.file_fin, self.file_tmp)
+        self._mutable = True
 
     @property
     def mutable(self) -> bool:
