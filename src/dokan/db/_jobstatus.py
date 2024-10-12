@@ -17,3 +17,6 @@ class JobStatus(IntEnum):
 
     def __repr__(self):
         return str(self)
+
+    def terminated(self) -> bool:
+        return self in [JobStatus.DONE, JobStatus.MERGED, JobStatus.FAILED]
