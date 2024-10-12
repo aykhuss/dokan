@@ -4,8 +4,9 @@ module that defines all the different ways of executing NNLOJET
 (platforms, modes, ...)
 """
 
+from ._exe_config import ExecutionPolicy, ExecutionMode
 from ._exe_data import ExeData
-from ._exe import ExecutionPolicy, ExecutionMode, Executor
+from ._executor import Executor
 from ._local import LocalExec
 
 __all__ = ["ExeData", "ExecutionPolicy", "ExecutionMode", "Executor", "LocalExec"]

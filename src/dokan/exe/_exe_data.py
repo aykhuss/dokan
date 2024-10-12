@@ -16,13 +16,14 @@ import shutil
 from pathlib import Path
 from os import PathLike
 
-from . import ExecutionMode, ExecutionPolicy
+from ._exe_config import ExecutionMode, ExecutionPolicy
 
 # > deifne our own schema:
 # list -> expect arbitrary number of entries with all the same type
 # tuple -> expect list with exact number & types
 # both these cases map to tuples as JSON only has lists
 _schema: dict = {
+    "exe": str,
     "mode": ExecutionMode,
     "policy": ExecutionPolicy,
     "policy_settings": {
@@ -30,6 +31,7 @@ _schema: dict = {
         "local_ncores": int,
         # --- HTCONDOR
         "htcondor_id": int,
+        "htcondor_ncores": int,
     },
     "ncall": 0,
     "niter": 0,
@@ -37,9 +39,9 @@ _schema: dict = {
     "timestamp": float,
     "input_files": [str],  # first entry must be runcard?
     "output_files": [str],
-    "results": [
-        {
-            "job_id": int,
+    "jobs": {
+        int: {
+            #"job_id": int, # <-- now the key in a dict
             "seed": int,
             "elapsed_time": float,
             "result": float,
@@ -53,7 +55,7 @@ _schema: dict = {
                 }
             ],
         }
-    ],
+    },
 }
 
 
@@ -124,8 +126,11 @@ class ExeData(UserDict):
             raise RuntimeError("ExeData load encountered conflict with schema")
 
     def write(self) -> None:
-        with open(self.file_tmp, "w") as tmp:
-            json.dump(self.data, tmp, indent=2)
+        if self._mutable:
+            with open(self.file_tmp, "w") as tmp:
+                json.dump(self.data, tmp, indent=2)
+        else:
+            raise RuntimeError("ExeData can't write after finalize!")
 
     def finalize(self) -> None:
         if not self._mutable:
