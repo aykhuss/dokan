@@ -1,15 +1,19 @@
 import luigi
 import logging
+import time
+import json
 
 from abc import ABCMeta, abstractmethod
-
+from pathlib import Path
 
 from sqlalchemy import create_engine, Engine, select
 from sqlalchemy.orm import Session
 
 from ._jobstatus import JobStatus
 from ._sqla import JobDB, Part, Job
+
 from ..task import Task
+from ..exe import ExecutionMode, ExecutionPolicy, ExeData
 
 logger = logging.getLogger("luigi-interface")
 
@@ -17,10 +21,9 @@ logger = logging.getLogger("luigi-interface")
 class DBTask(Task, metaclass=ABCMeta):
     """the task class to interact with the database"""
 
-    # @todo: add database name as luigi parameter
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # @todo all DBTasks need to be started in the job root path: check?
         self.dbname: str = "sqlite:///" + str(self._local("db.sqlite"))
 
     @property
@@ -83,76 +86,193 @@ class DBInit(DBTask):
         self.print_job()
 
 
-# class DBDispatch(DBTask):
-#
-#     #> inactive selection: 0
-#     #> pick a specific `Job` by id: > 0
-#     #> restrict to specific `Part` by id: < 0 [take abs]
-#     id: int = luigi.IntParameter(default=0, significant=False)
-#
-#     def __init__(self, *args, **kwargs):
-#         super().__init__(*args, **kwargs)
-#         # # > queue up the jobs
-#         # with self.session as session:
-#         #     pt: Part = Part(name="dis" + self.jobs[0])
-#         #     for job_name in self.jobs:
-#         #         session.add(Job(name=job_name, status=JobStatus.QUEUED, part=pt))
-#         #     session.commit()
-#
-#     def complete(self) -> bool:
-#         with self.session as session:
-#             stmt = select(Job)
-#             if self.id > 0:
-#                 stmt = select(Job).where(Job.id == self.id)
-#             elif self.id < 0:
-#                 stmt = select(Job).where(Job.part_id == abs(self.id))
-#             for job in session.scalars(stmt):
-#                 if job.status == JobStatus.QUEUED:
-#                     return False
-#             return True
-#
-#     def run(self) -> None:
-#         with self.session as session:
-#             stmt = select(Job).where(Job.status == JobStatus.QUEUED).order_by(Job.id)
-#             job = session.scalars(stmt).first()
-#             if job:
-#                 logger.debug(f"{self.name} -> dispatch job: {job}")
-#                 job.status = JobStatus.DISPATCHED
-#                 session.commit()
-#                 yield DBRunner(id=job.id)
+class DBDispatch(DBTask):
+    # > inactive selection: 0
+    # > pick a specific `Job` by id: > 0
+    # > restrict to specific `Part` by id: < 0 [take abs]
+    id: int = luigi.IntParameter(default=0, significant=False)
+    # > mode and policy must be set already before dispatch!
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # > define the selector for the jobs
+        self.select_job = select(Job)
+        if self.id > 0:
+            self.select_job = select(Job).where(Job.id == self.id)
+        elif self.id < 0:
+            self.select_job = select(Job).where(Job.part_id == abs(self.id))
+        # # > queue up the jobs?
+        # with self.session as session:
+        #     pt: Part = Part(name="dis" + self.jobs[0])
+        #     for job_name in self.jobs:
+        #         session.add(Job(name=job_name, status=JobStatus.QUEUED, part=pt))
+        #     session.commit()
+
+    def complete(self) -> bool:
+        with self.session as session:
+            for job in session.scalars(self.select_job):
+                if job.status == JobStatus.QUEUED:
+                    return False
+            return True
+
+    def run(self):
+        with self.session as session:
+            stmt = self.select_job.where(Job.status == JobStatus.QUEUED).order_by(
+                Job.id.asc()
+            )
+            # @todo add batches
+            job = session.scalars(stmt).first()
+            if job:
+                logger.debug(f"{self.id} -> dispatch job:\n>  {job!r}")
+                #@todo set seeds here! (batch size rounding and ordering)
+                job.status = JobStatus.DISPATCHED
+                session.commit()
+                yield DBRunner(id=job.id)
 
 
-## class DBRunner(DBHandler):
-##     id: int = luigi.IntParameter()
-##     # priority = 100
-##
-##     def __init__(self, *args, **kwargs):
-##         super().__init__(*args, **kwargs)
-##
-##     def complete(self) -> bool:
-##         with self.session as session:
-##             job: Job = session.get_one(Job, self.id)
-##             return job.status in [JobStatus.DONE, JobStatus.MERGED, JobStatus.FAILED]
-##
-##     def run(self) -> None:
-##         with self.session as session:
-##             job: Job = session.get_one(Job, self.id)
-##             job.status = JobStatus.RUNNING
-##             session.commit()
-##             heavy = yield Heavy(name=job.name, seed=job.id)
-##
-##         logger.debug(f"{self.id}: collected heavy")
-##         # > save result of heavy:
-##         with heavy.open("r") as heavy_fh:
-##             res = json.load(heavy_fh)
-##             if "val" in res:
-##                 with self.session as session:
-##                     job: Job = session.get_one(Job, self.id)
-##                     logger.debug(
-##                         f"{self.id}: job: {job!r} gave back val = {res["val"]}"
-##                     )
-##                     job.result = res["val"]
-##                     job.status = JobStatus.DONE
-##                     session.commit()
-##
-##
+class DBRunner(DBTask):
+    # @todo make a list to accommodate batch jobs
+    id: int = luigi.IntParameter()
+    # priority = 100
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def complete(self) -> bool:
+        with self.session as session:
+            job: Job = session.get_one(Job, self.id)
+            # @todo add classmethod JobStatus to query properties
+            return job.status in [JobStatus.DONE, JobStatus.MERGED, JobStatus.FAILED]
+
+    def get_ntot(self) -> tuple[int, int]:
+        """determine statistics to fill `job_max_runtime` using past jobs"""
+        # should filder warmup & production separately.
+        # for warmup maybe use only last?
+        # of generally put in a bias towards newer runs?
+        ncall = 1
+        nit = 1
+        return ncall, nit
+
+    def run(self) -> None:
+        with self.session as session:
+            job: Job = session.get_one(Job, self.id)
+            # alterantively check for a exe path that is set?
+            if job.status == JobStatus.DISPATCHED:
+                # > get last warmup
+                last_warm = session.scalars(
+                    select(Job)
+                    .where(Job.part_id == job.part_id)
+                    .where(Job.mode == ExecutionMode.WARMUP)
+                    .order_by(Job.id.desc())
+                ).first()
+                if not last_warm:
+                    raise RuntimeError(f"no warmup found for {job.part.name}")
+                # > get last production
+                last_prod = session.scalars(
+                    select(Job)
+                    .where(Job.part_id == job.part_id)
+                    .where(Job.mode == ExecutionMode.PRODUCTION)
+                    .order_by(Job.id.desc())
+                ).first()
+                if last_prod:
+                    seed_start = last_prod.seed + 1
+                else:
+                    seed_start = self.config["process"]["seed_offset"]
+                # > assemble job path
+                root_path: Path = Path(self.config["job"]["path"])
+                job_path: Path = root_path.joinpath(
+                    "raw", str(job.mode), job.part.name, f"s{seed_start}"
+                )
+                # > create a ExeData tmp state and populate
+                exe_data = ExeData(job_path)
+                exe_data["exe"] = self.config["exe"]
+                exe_data["mode"] = job.mode
+                exe_data["policy"] = job.policy
+                if job.policy == ExecutionPolicy.LOCAL:
+                    exe_data["policy_settings"]["local_ncores"] = 1
+                elif job.policy == ExecutionPolicy.HTCONDOR:
+                    exe_data["policy_settings"]["htcondor_id"] = 42
+                exe_data["ncall"], exe_data["niter"] = self.get_ntot()
+                #@todo copy warmup stuff from `last_warm` <-> `copy_input` below
+                #@ todo FIRST put the runcard
+                exe_data["timestamp"] = time.time()  # @todo: better to do this in the executor run to alighn when job was actually started?
+                # > commit update
+                job.path = str(job_path)
+                job.status = JobStatus.RUNNING
+                session.commit()
+            # heavy = yield Heavy(name=job.name, seed=job.id)
+
+        # logger.debug(f"{self.id}: collected heavy")
+        # # > save result of heavy:
+        # with heavy.open("r") as heavy_fh:
+        #     res = json.load(heavy_fh)
+        #     if "val" in res:
+        #         with self.session as session:
+        #             job: Job = session.get_one(Job, self.id)
+        #             logger.debug(
+        #                 f"{self.id}: job: {job!r} gave back val = {res["val"]}"
+        #             )
+        #             job.result = res["val"]
+        #             job.status = JobStatus.DONE
+        #             session.commit()
+
+
+#    def copy_input(self):
+#        if not self.input_local_path:
+#            return
+#
+#        def input(*path: PathLike) -> Path:
+#            return Path(self.config["job"]["path"]).joinpath(
+#                *self.input_local_path, *path
+#            )
+#
+#        with open(input(Executor._file_res), "r") as in_res:
+#            in_data = json.load(in_res)
+#            # > check here if it's a warmup?
+#            for in_file in in_data["output_files"]:
+#                # > always skip log (& dat) files
+#                # > if warmup copy over also txt files
+#                # > for production, only take the weights (skip txt)
+#                if in_file in self.data["input_files"]:
+#                    continue  # already copied in the past
+#                shutil.copyfile(input(in_file), self._local(in_file))
+#                self.data["input_files"].append(in_file)
+#
+
+#    def write_runcard(self):
+#        runcard = self._local(Executor._file_run)
+#        # > tempalte variables: {sweep, run, channels, channels_region, toplevel}
+#        channel_string = self.config["process"]["channels"][self.channel]["string"]
+#        if "region" in self.config["process"]["channels"][self.channel]:
+#            channel_region = self.config["process"]["channels"][self.channel]["region"]
+#        else:
+#            channel_region = ""
+#        dokan.runcard.fill_template(
+#            runcard,
+#            self.config["job"]["template"],
+#            sweep=f"{self.mode!s} = {self.ncall}[{self.niter}]",
+#            run="",
+#            channels=channel_string,
+#            channels_region=channel_region,
+#            toplevel="",
+#        )
+#        self.data["input_files"].append(Executor._file_run)
+
+#        runcard = self._local(Executor._file_run)
+#        # > tempalte variables: {sweep, run, channels, channels_region, toplevel}
+#        channel_string = self.config["process"]["channels"][self.channel]["string"]
+#        if "region" in self.config["process"]["channels"][self.channel]:
+#            channel_region = self.config["process"]["channels"][self.channel]["region"]
+#        else:
+#            channel_region = ""
+#        dokan.runcard.fill_template(
+#            runcard,
+#            self.config["job"]["template"],
+#            sweep="{} = {}[{}]".format(
+#                ExecutionMode(self.exe_mode), self.ncall, self.niter
+#            ),
+#            run="",
+#            channels=channel_string,
+#            channels_region=channel_region,
+#            toplevel="",
+#        )

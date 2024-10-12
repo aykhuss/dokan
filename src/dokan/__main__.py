@@ -1,4 +1,3 @@
-
 """The main execution of the NNLOJET workflow"""
 
 import luigi
@@ -113,7 +112,7 @@ def main() -> None:
                 )
             ],
             worker_scheduler_factory=dokan.WorkerSchedulerFactory(
-                resources={"ncores": 8}, check_complete_on_run=False
+                resources={"ncores": 8, "DBTask": 1}, check_complete_on_run=False
             ),
             detailed_summary=True,
             workers=10,
