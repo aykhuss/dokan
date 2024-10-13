@@ -3,6 +3,7 @@
 import luigi
 from luigi.execution_summary import LuigiRunResult
 import dokan
+from dokan.exe._exe_config import ExecutionPolicy
 import dokan.runcard
 import dokan.nnlojet
 import argparse
@@ -10,10 +11,14 @@ import os
 import shutil
 import sys
 
-from rich import console
+from rich.console import Console
+
+from pathlib import Path
 
 
 def main() -> None:
+    console = Console()
+
     parser = argparse.ArgumentParser(description="dokan: an automated NNLOJET workflow")
     parser.add_argument("--exe", dest="exe", help="executable")
     subparsers = parser.add_subparsers(dest="action")
@@ -109,10 +114,11 @@ def main() -> None:
                 dokan.Entry(
                     config=dokan.CONFIG,
                     local_path=[],
+                    order=0,
                 )
             ],
             worker_scheduler_factory=dokan.WorkerSchedulerFactory(
-                resources={"ncores": 8, "DBTask": 1}, check_complete_on_run=False
+                resources={"local_ncores": 8, "DBTask": 1}, check_complete_on_run=False
             ),
             detailed_summary=True,
             workers=10,

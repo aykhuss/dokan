@@ -105,20 +105,15 @@ class DBDispatch(DBTask):
     id: int = luigi.IntParameter(default=0, significant=False)
     # > mode and policy must be set already before dispatch!
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    @property
+    def select_job(self):
         # > define the selector for the jobs
-        self.select_job = select(Job)
         if self.id > 0:
-            self.select_job = select(Job).where(Job.id == self.id)
+            return select(Job).where(Job.id == self.id)
         elif self.id < 0:
-            self.select_job = select(Job).where(Job.part_id == abs(self.id))
-        # # > queue up the jobs?
-        # with self.session as session:
-        #     pt: Part = Part(name="dis" + self.jobs[0])
-        #     for job_name in self.jobs:
-        #         session.add(Job(name=job_name, status=JobStatus.QUEUED, part=pt))
-        #     session.commit()
+            return select(Job).where(Job.part_id == abs(self.id))
+        else:
+            return select(Job)
 
     def complete(self) -> bool:
         with self.session as session:
@@ -136,10 +131,11 @@ class DBDispatch(DBTask):
             job = session.scalars(stmt).first()
             if job:
                 logger.debug(f"{self.id} -> dispatch job:\n>  {job!r}")
-                #@todo set seeds here! (batch size rounding and ordering)
+                # @todo set seeds here! (batch size rounding and ordering)
                 job.status = JobStatus.DISPATCHED
                 session.commit()
-                yield DBRunner(id=job.id)
+                #yield DBRunner(id=job.id)
+                yield self.clone(cls=DBRunner, id=job.id)
 
 
 class DBRunner(DBTask):
@@ -189,7 +185,7 @@ class DBRunner(DBTask):
                 if last_prod:
                     seed_start = last_prod.seed + 1
                 else:
-                    seed_start = self.config["process"]["seed_offset"]
+                    seed_start = self.config["job"]["seed_offset"]
                 # > assemble job path
                 root_path: Path = Path(self.config["job"]["path"])
                 job_path: Path = root_path.joinpath(
@@ -197,17 +193,20 @@ class DBRunner(DBTask):
                 )
                 # > create a ExeData tmp state and populate
                 exe_data = ExeData(job_path)
-                exe_data["exe"] = self.config["exe"]
-                exe_data["mode"] = job.mode
-                exe_data["policy"] = job.policy
+                exe_data["exe"] = self.config["exe"]["path"]
+                exe_data["mode"] = ExecutionMode(job.mode)
+                exe_data["policy"] = ExecutionPolicy(job.policy)
+                exe_data["policy_settings"] = {}
                 if job.policy == ExecutionPolicy.LOCAL:
                     exe_data["policy_settings"]["local_ncores"] = 1
                 elif job.policy == ExecutionPolicy.HTCONDOR:
                     exe_data["policy_settings"]["htcondor_id"] = 42
                 exe_data["ncall"], exe_data["niter"] = self.get_ntot()
-                #@todo copy warmup stuff from `last_warm` <-> `copy_input` below
-                #@ todo FIRST put the runcard
-                exe_data["timestamp"] = time.time()  # @todo: better to do this in the executor run to alighn when job was actually started?
+                # @todo copy warmup stuff from `last_warm` <-> `copy_input` below
+                # @ todo FIRST put the runcard
+                exe_data["timestamp"] = (
+                    time.time()
+                )  # @todo: better to do this in the executor run to alighn when job was actually started?
                 # > commit update
                 job.path = str(job_path)
                 job.status = JobStatus.RUNNING

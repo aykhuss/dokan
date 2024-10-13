@@ -33,8 +33,8 @@ _schema: dict = {
         "htcondor_id": int,
         "htcondor_ncores": int,
     },
-    "ncall": 0,
-    "niter": 0,
+    "ncall": int,
+    "niter": int,
     # ---
     "timestamp": float,
     "input_files": [str],  # first entry must be runcard?
