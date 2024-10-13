@@ -3,6 +3,7 @@
 module defining the job database
 """
 
+from dokan.exe._exe_config import ExecutionMode, ExecutionPolicy
 from ._jobstatus import JobStatus
 
 from sqlalchemy import ForeignKey
@@ -74,4 +75,4 @@ class Job(JobDB):
     chi2dof: Mapped[float | None]
 
     def __repr__(self) -> str:
-        return f"Job(id={self.id!r}, part_id={self.part_id!r}, seed={self.seed!r}, name={self.name!r}, status={JobStatus(self.status)!r}, result={self.result!r})"
+        return f"Job(id={self.id!r}, part_id={self.part_id!r}, status={(self.status)!r}, timestamp={self.timestamp!r}, mode={ExecutionMode(self.mode)!r}, policy={ExecutionPolicy(self.policy)!r})"
