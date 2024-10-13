@@ -1,21 +1,41 @@
-
 import luigi
 from sqlalchemy import select
 
-from .db import Job, DBTask
+from dokan.db._dbtask import DBDispatch
+
+from .db import Job, DBTask, JobStatus
+from .exe import ExecutionMode, ExecutionPolicy
 
 
 class PreProduction(DBTask):
-
     part_id: int = luigi.IntParameter()
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        with self.session as session:
-            self.last_warmup = session.scalars(
-                select(Job).where(Job.part_id == self.part_id).order_by(Job.id.asc())
-            ).first()
 
     def complete(self) -> bool:
         # get last warmup
         return False
+
+    def run(self):
+        print(f"PreProduction: run {self.part_id}")
+        with self.session as session:
+            last_warmup = session.scalars(
+                select(Job).where(Job.part_id == self.part_id).order_by(Job.id.desc())
+            ).first()
+            if not last_warmup:
+                new_warmup = Job(
+                    part_id=self.part_id,
+                    status=JobStatus.QUEUED,
+                    timestamp=0.0,
+                    mode=ExecutionMode.WARMUP,
+                    policy=ExecutionPolicy.LOCAL,
+                    # ncall=,
+                    # nit=,
+                )
+                session.add(new_warmup)
+                session.commit()
+                # yield DBDispatch(
+                #     config=self.config, local_path=self.local_path, id=new_warmup.id
+                # )
+                yield self.clone(cls=DBDispatch, id=new_warmup.id)
+            else:
+                # check if the last warmup passes QC criteria
+                pass
