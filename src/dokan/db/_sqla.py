@@ -30,6 +30,7 @@ class Part(JobDB):
     part: Mapped[str]
     part_num: Mapped[int]
     region: Mapped[str | None]
+    order: Mapped[int]
 
     # @todo: future features
     # variation: Mapped[int]  # <- to identify different setups (rewgt, etc)

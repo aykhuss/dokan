@@ -8,6 +8,7 @@ import re
 import subprocess
 from os import PathLike
 
+from .order import Order
 
 def get_lumi(exe: PathLike, proc: str) -> dict:
     """get channels for an NNLOJET process
@@ -29,7 +30,8 @@ def get_lumi(exe: PathLike, proc: str) -> dict:
         label = "RRa_42" -> {
           "part" : "RR", ["region" : "a"]
           "part_num" : 42,
-          "string" : "1 2 3 ... ! channel: ..."
+          "string" : "1 2 3 ... ! channel: ...",
+          "order" : Order.NNLO_ONLY,
         }
 
     Raises
@@ -59,6 +61,7 @@ def get_lumi(exe: PathLike, proc: str) -> dict:
             if chan["part"][-1] == "a" or chan["part"][-1] == "b":
                 chan["region"] = chan["part"][-1]
                 chan["part"] = chan["part"][:-1]
+            chan["order"] = Order.partparse(chan["part"])
         else:
             raise RuntimeError("couldn't parse channel line")
         chan_list[label] = chan
