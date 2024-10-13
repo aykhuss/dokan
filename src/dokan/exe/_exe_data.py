@@ -6,7 +6,7 @@ mutability and implements an atomic copy from temporary files.
 
 Attributes
 ----------
-_scheme : dict
+_schema : dict
     define the structure of ExeData
 """
 
@@ -41,7 +41,7 @@ _schema: dict = {
     "output_files": [str],
     "jobs": {
         int: {
-            #"job_id": int, # <-- now the key in a dict
+            # "job_id": int, # <-- now the key in a dict
             "seed": int,
             "elapsed_time": float,
             "result": float,
@@ -89,6 +89,14 @@ class ExeData(UserDict):
         if struct is None:
             return self.is_valid(self.data, schema)
         if isinstance(struct, dict) and isinstance(schema, dict):
+            # dict specified with type of key
+            if len(schema) == 1:
+                key, val = next(iter(schema.items()))
+                if isinstance(key, type):
+                    return all(
+                        isinstance(k, key) and self.is_valid(v, val)
+                        for k, v in struct.items()
+                    )
             # struct is a dict of types or other dicts
             return all(
                 k in schema and self.is_valid(struct[k], schema[k]) for k in struct
@@ -97,12 +105,11 @@ class ExeData(UserDict):
             # struct is list in the form [type or dict]
             return all(self.is_valid(struct[0], c) for c in schema)
         # @todo: case for a tuple -> list with fixed length & types
-        elif isinstance(schema, type):
+        if isinstance(schema, type):
             # struct is the type of schema
             return isinstance(struct, schema)
-        else:
-            # struct is neither a dict, nor list, not type
-            return False
+        # no match
+        return False
 
     def __setitem__(self, key, item) -> None:
         if not self._mutable:
