@@ -34,7 +34,7 @@ class Part(JobDB):
 
     # @todo: future features
     # variation: Mapped[int]  # <- to identify different setups (rewgt, etc)
-    # active: Mapped[bool]
+    active: Mapped[bool]
 
     # > result of the last merge
     result: Mapped[float | None]
@@ -45,7 +45,7 @@ class Part(JobDB):
     jobs: Mapped[list["Job"]] = relationship(back_populates="part")
 
     def __repr__(self) -> str:
-        return f"Part(id={self.id!r}, name={self.name!r}, string={self.string!r}, part={self.part!r}, part_num={self.part_num!r}, region={self.region!r}, result={self.result!r}, error={self.error!r})"
+        return f"Part(id={self.id!r}, name={self.name!r}, string={self.string!r}, part={self.part!r}, part_num={self.part_num!r}, region={self.region!r}, order={self.order!r}, active={self.active!r}, result={self.result!r}, error={self.error!r})"
 
 
 class Job(JobDB):

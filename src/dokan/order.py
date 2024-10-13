@@ -44,3 +44,13 @@ class Order(IntEnum):
         if s.upper() in ["N3LO_ONLY"]:
             return Order.N3LO_ONLY
         raise ValueError(f"Order.partparse: unknown part: {s}")
+
+    def is_in(self, other) -> bool:
+        if other.value < 0:
+            # exact matches for coefficients
+            return self.value == other.value
+        elif self.value < 0:  # other.value >= 0:
+            # NNLO = LO + NLO_ONLY + NNLO_ONLY
+            return abs(self.value) <= other.value
+        else:  # self.value >= 0 and other.value >= 0:
+            return self.value <= other.value

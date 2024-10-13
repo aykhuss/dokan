@@ -14,6 +14,7 @@ from ._sqla import JobDB, Part, Job
 
 from ..task import Task
 from ..exe import ExecutionMode, ExecutionPolicy, ExeData
+from ..order import Order
 
 logger = logging.getLogger("luigi-interface")
 
@@ -61,6 +62,7 @@ class DBTask(Task, metaclass=ABCMeta):
 class DBInit(DBTask):
     """initilization of the 'parts' table of the database with process channel information"""
 
+    order: int = luigi.IntParameter(default=Order.NNLO)
     channels: dict = luigi.DictParameter()
 
     def __init__(self, *args, **kwargs):
@@ -74,13 +76,23 @@ class DBInit(DBTask):
                 # stmt = select(Part).where(Part.name == pt).exists()
                 if not session.scalars(stmt).first():
                     return False
+                for db_pt in session.scalars(stmt):
+                    if db_pt.active != Order(db_pt.order).is_in(Order(self.order)):
+                        return False
+
         return True
 
     def run(self) -> None:
         with self.session as session:
+            for db_pt in session.scalars(select(Part)):
+                db_pt.active = False  # reset to be safe
             for pt in self.channels:
-                # catch case where it's already there and check it has same entries?
-                session.add(Part(name=pt, **self.channels[pt]))
+                stmt = select(Part).where(Part.name == pt)
+                # @ todo catch case where it's already there and check it has same entries?
+                if not session.scalars(stmt).first():
+                    session.add(Part(name=pt, active=False, **self.channels[pt]))
+                for db_pt in session.scalars(stmt):
+                    db_pt.active = Order(db_pt.order).is_in(Order(self.order))
             session.commit()
         self.print_part()
         self.print_job()
