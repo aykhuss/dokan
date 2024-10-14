@@ -16,7 +16,6 @@ import shutil
 from pathlib import Path
 from os import PathLike
 
-from ._exe_config import ExecutionMode, ExecutionPolicy
 
 # > deifne our own schema:
 # list -> expect arbitrary number of entries with all the same type
@@ -24,8 +23,8 @@ from ._exe_config import ExecutionMode, ExecutionPolicy
 # both these cases map to tuples as JSON only has lists
 _schema: dict = {
     "exe": str,
-    "mode": ExecutionMode,
-    "policy": ExecutionPolicy,
+    "mode": int,  # ExecutionMode
+    "policy": int,  # ExecutionPolicy
     "policy_settings": {
         # --- LOCAL
         "local_ncores": int,
