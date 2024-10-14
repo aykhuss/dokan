@@ -11,8 +11,13 @@ class PreProduction(DBTask):
     part_id: int = luigi.IntParameter()
 
     def complete(self) -> bool:
-        # get last warmup
-        return False
+        #@todo: placeholder. to be fixed with proper complete condition
+        with self.session as session:
+            one_job = session.scalars(select(Job).where(Job.part_id == self.part_id)).first()
+            if not one_job:
+                return False
+            else:
+                return True
 
     def run(self):
         print(f"PreProduction: run {self.part_id}")
@@ -35,6 +40,7 @@ class PreProduction(DBTask):
                 # yield DBDispatch(
                 #     config=self.config, local_path=self.local_path, id=new_warmup.id
                 # )
+                print(f"PreProduction: yield job id: {new_warmup.id}")
                 yield self.clone(cls=DBDispatch, id=new_warmup.id)
             else:
                 # check if the last warmup passes QC criteria

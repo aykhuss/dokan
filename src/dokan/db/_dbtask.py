@@ -83,6 +83,7 @@ class DBInit(DBTask):
         return True
 
     def run(self) -> None:
+        print(f"DBInit: run {Order(self.order)!r}")
         with self.session as session:
             for db_pt in session.scalars(select(Part)):
                 db_pt.active = False  # reset to be safe
@@ -102,7 +103,7 @@ class DBDispatch(DBTask):
     # > inactive selection: 0
     # > pick a specific `Job` by id: > 0
     # > restrict to specific `Part` by id: < 0 [take abs]
-    id: int = luigi.IntParameter(default=0, significant=False)
+    id: int = luigi.IntParameter(default=0)
     # > mode and policy must be set already before dispatch!
 
     @property
@@ -123,6 +124,7 @@ class DBDispatch(DBTask):
             return True
 
     def run(self):
+        print(f"DBDispatch: run {self.id}")
         with self.session as session:
             stmt = self.select_job.where(Job.status == JobStatus.QUEUED).order_by(
                 Job.id.asc()
@@ -162,6 +164,7 @@ class DBRunner(DBTask):
         return ncall, nit
 
     def run(self) -> None:
+        print(f"DBRunner: run {self.id}")
         with self.session as session:
             job: Job = session.get_one(Job, self.id)
             # alterantively check for a exe path that is set?
