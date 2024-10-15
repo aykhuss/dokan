@@ -126,7 +126,7 @@ def main() -> None:
             workers=10,
             local_scheduler=True,
             log_level="WARNING",
-        )  # 'INFO', 'DEBUG''
+        )  # 'WARNING', 'INFO', 'DEBUG''
 
         print(luigi_result.one_line_summary)
         print(luigi_result.status)

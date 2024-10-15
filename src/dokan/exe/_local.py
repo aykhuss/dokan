@@ -9,6 +9,7 @@ from pathlib import Path
 from ._executor import Executor
 
 
+#> just a master class to collect common properties for local execution
 class LocalExec(Executor):
     """Execution on the local machine"""
 
@@ -20,13 +21,19 @@ class LocalExec(Executor):
     def resources(self):
         return {"local_ncores": self.local_ncores}
 
-    def exe(self):
-        print(f"LocalExec: exe {self.path}")
 
-        yield [
+class BatchLocalExec(LocalExec):
+    """Batch execution on the local machine"""
+
+    def requires(self):
+        print(f"BatchLocalExec: requires {[job_id for job_id in self.exe_data["jobs"].keys()]}")
+        return [
             self.clone(cls=SingleLocalExec, job_id=job_id)
             for job_id in self.exe_data["jobs"].keys()
         ]
+
+    def exe(self):
+        print(f"BatchLocalExec: exe {self.path}")
 
 
 class SingleLocalExec(LocalExec):
@@ -44,6 +51,11 @@ class SingleLocalExec(LocalExec):
 
     def output(self):
         return [luigi.LocalTarget(self.file_out)]
+
+    def exe(self):
+        print(f"SingleLocalExec: exe {self.path}")
+        #> should never run since we overwrote run!
+        raise RuntimeError("SingleLocalExec: exe should never be called")
 
     def run(self):
         print(f"SingleLocalExec: run {self.path}")

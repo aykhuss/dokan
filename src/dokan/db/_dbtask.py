@@ -211,9 +211,12 @@ class DBRunner(DBTask):
                 exe_data["ncall"], exe_data["niter"] = self.get_ntot()
                 # @todo copy warmup stuff from `last_warm` <-> `copy_input` below
                 # @ todo FIRST put the runcard
-                exe_data["timestamp"] = (
-                    time.time()
-                )  # @todo: better to do this in the executor run to alighn when job was actually started?
+                exe_data["jobs"] = {}
+                exe_data["jobs"][db_job.id] = {
+                    "seed": db_job.seed,
+                }
+                # @todo: better to do this in the executor run to alighn when job was actually started?
+                exe_data["timestamp"] = time.time()
                 # save to tmp file
                 exe_data.write()
                 # > commit update
@@ -227,7 +230,6 @@ class DBRunner(DBTask):
             exe_data = ExeData(db_job.path)
             if not exe_data.is_final:
                 raise RuntimeError(f"{db_job.id} is not final?!")
-
 
         # logger.debug(f"{self.id}: collected heavy")
         # # > save result of heavy:

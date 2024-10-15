@@ -27,19 +27,16 @@ class Executor(luigi.Task, metaclass=ABCMeta):
     @staticmethod
     def factory(policy=ExecutionPolicy.LOCAL, *args, **kwargs):
         # > local import to avoid cyclic dependence
-        from ._local import LocalExec
+        from ._local import BatchLocalExec
 
         if policy == ExecutionPolicy.LOCAL:
-            print(f"factory: LocalExec ...")
-            return LocalExec(*args, **kwargs)
+            print(f"factory: BatchLocalExec ...")
+            return BatchLocalExec(*args, **kwargs)
 
         # if policy == ExecutionPolicy.HTCONDOR:
         #     return HTCondorExec(*args, **kwargs)
 
         raise TypeError(f"invalid ExecutionPolicy: {policy!r}")
-
-    def requires(self):
-        return []
 
     def output(self):
         return [luigi.LocalTarget(self.exe_data.file_fin)]
