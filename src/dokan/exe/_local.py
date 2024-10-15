@@ -21,7 +21,7 @@ class LocalExec(Executor):
         return {"local_ncores": self.local_ncores}
 
     def exe(self):
-        print("   >>>   LocalExec {}".format(self.path))
+        print(f"LocalExec: exe {self.path}")
 
         yield [
             self.clone(cls=SingleLocalExec, job_id=job_id)
@@ -46,7 +46,7 @@ class SingleLocalExec(LocalExec):
         return [luigi.LocalTarget(self.file_out)]
 
     def run(self):
-        print("   >>>   SingleLocalExec {}".format(self.path))
+        print(f"SingleLocalExec: run {self.path}")
 
         job_env = os.environ.copy()
         job_env["OMP_NUM_THREADS"] = "{}".format(self.local_ncores)

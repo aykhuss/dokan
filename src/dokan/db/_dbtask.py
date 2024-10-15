@@ -13,7 +13,7 @@ from ._jobstatus import JobStatus
 from ._sqla import JobDB, Part, Job
 
 from ..task import Task
-from ..exe import ExecutionMode, ExecutionPolicy, ExeData
+from ..exe import ExecutionMode, ExecutionPolicy, ExeData, Executor
 from ..order import Order
 
 logger = logging.getLogger("luigi-interface")
@@ -96,7 +96,6 @@ class DBInit(DBTask):
                     db_pt.active = Order(db_pt.order).is_in(Order(self.order))
             session.commit()
         self.print_part()
-        self.print_job()
 
 
 class DBDispatch(DBTask):
@@ -108,7 +107,7 @@ class DBDispatch(DBTask):
 
     @property
     def select_job(self):
-        # > define the selector for the jobs
+        # > define the selector for the jobs based on the id that was passed
         if self.id > 0:
             return select(Job).where(Job.id == self.id)
         elif self.id < 0:
@@ -126,6 +125,7 @@ class DBDispatch(DBTask):
     def run(self):
         print(f"DBDispatch: run {self.id}")
         with self.session as session:
+            # > get the front of the queue
             stmt = self.select_job.where(Job.status == JobStatus.QUEUED).order_by(
                 Job.id.asc()
             )
@@ -134,9 +134,20 @@ class DBDispatch(DBTask):
             if job:
                 logger.debug(f"{self.id} -> dispatch job:\n>  {job!r}")
                 # @todo set seeds here! (batch size rounding and ordering)
+                # > get last job that has a seed assigned to it
+                last_job = session.scalars(
+                    self.select_job.where(Job.mode == job.mode)
+                    .where(Job.seed.is_not(None))
+                    .order_by(Job.id.desc())
+                ).first()
+                if last_job:
+                    seed_start: int = last_job.seed + 1
+                else:
+                    seed_start: int = self.config["run"]["seed_offset"]
+                job.seed = seed_start
                 job.status = JobStatus.DISPATCHED
                 session.commit()
-                #yield DBRunner(id=job.id)
+                # yield DBRunner(id=job.id)
                 yield self.clone(cls=DBRunner, id=job.id)
 
 
@@ -163,46 +174,39 @@ class DBRunner(DBTask):
         nit = 1
         return ncall, nit
 
-    def run(self) -> None:
+    def run(self):
         print(f"DBRunner: run {self.id}")
         with self.session as session:
-            job: Job = session.get_one(Job, self.id)
+            db_job: Job = session.get_one(Job, self.id)
             # alterantively check for a exe path that is set?
-            if job.status == JobStatus.DISPATCHED:
+            if db_job.status == JobStatus.DISPATCHED:
                 # > get last warmup
                 last_warm = session.scalars(
                     select(Job)
-                    .where(Job.part_id == job.part_id)
+                    .where(Job.part_id == db_job.part_id)
                     .where(Job.mode == ExecutionMode.WARMUP)
                     .order_by(Job.id.desc())
                 ).first()
                 if not last_warm:
-                    raise RuntimeError(f"no warmup found for {job.part.name}")
-                # > get last production
-                last_prod = session.scalars(
-                    select(Job)
-                    .where(Job.part_id == job.part_id)
-                    .where(Job.mode == ExecutionMode.PRODUCTION)
-                    .order_by(Job.id.desc())
-                ).first()
-                if last_prod:
-                    seed_start = last_prod.seed + 1
-                else:
-                    seed_start = self.config["run"]["seed_offset"]
+                    raise RuntimeError(f"no warmup found for {db_job.part.name}")
                 # > assemble job path
                 root_path: Path = Path(self.config["run"]["path"])
                 job_path: Path = root_path.joinpath(
-                    "raw", str(job.mode), job.part.name, f"s{seed_start}"
+                    "raw",
+                    str(ExecutionMode(db_job.mode)),
+                    db_job.part.name,
+                    f"s{db_job.seed}",
                 )
                 # > create a ExeData tmp state and populate
                 exe_data = ExeData(job_path)
                 exe_data["exe"] = self.config["exe"]["path"]
-                exe_data["mode"] = ExecutionMode(job.mode)
-                exe_data["policy"] = ExecutionPolicy(job.policy)
+                exe_data["mode"] = ExecutionMode(db_job.mode)
+                exe_data["policy"] = ExecutionPolicy(db_job.policy)
+                # @todo: add policy settings
                 exe_data["policy_settings"] = {}
-                if job.policy == ExecutionPolicy.LOCAL:
+                if db_job.policy == ExecutionPolicy.LOCAL:
                     exe_data["policy_settings"]["local_ncores"] = 1
-                elif job.policy == ExecutionPolicy.HTCONDOR:
+                elif db_job.policy == ExecutionPolicy.HTCONDOR:
                     exe_data["policy_settings"]["htcondor_id"] = 42
                 exe_data["ncall"], exe_data["niter"] = self.get_ntot()
                 # @todo copy warmup stuff from `last_warm` <-> `copy_input` below
@@ -210,11 +214,20 @@ class DBRunner(DBTask):
                 exe_data["timestamp"] = (
                     time.time()
                 )  # @todo: better to do this in the executor run to alighn when job was actually started?
+                # save to tmp file
+                exe_data.write()
                 # > commit update
-                job.path = str(job_path)
-                job.status = JobStatus.RUNNING
+                db_job.path = str(job_path)
+                db_job.status = JobStatus.RUNNING
                 session.commit()
-            # heavy = yield Heavy(name=job.name, seed=job.id)
+            yield Executor.factory(
+                policy=ExecutionPolicy(db_job.policy), path=db_job.path
+            )
+            # @todo parse the return
+            exe_data = ExeData(db_job.path)
+            if not exe_data.is_final:
+                raise RuntimeError(f"{db_job.id} is not final?!")
+
 
         # logger.debug(f"{self.id}: collected heavy")
         # # > save result of heavy:

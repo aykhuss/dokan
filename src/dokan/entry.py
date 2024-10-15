@@ -60,3 +60,4 @@ class Entry(DBTask):
         print("Entry: yield preprods")
         yield preprods
         print("Entry: complete preprods")
+        self.print_job()

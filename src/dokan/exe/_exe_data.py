@@ -64,6 +64,7 @@ class ExeData(UserDict):
     _file_fin: str = "job.json"
 
     def __init__(self, path: PathLike, *args, **kwargs):
+        expect_tmp: bool = kwargs.pop("expect_tmp", False)
         # @todo: pass a path to a folder and automatically create a
         # tmp file if not existent, otherwise load file and go from there.
         # If final result file exists load that and make the thing immupable,
@@ -82,7 +83,7 @@ class ExeData(UserDict):
         self.file_tmp: Path = self.path / self._file_tmp
         self.file_fin: Path = self.path / self._file_fin
         # > load in order of precedence & set mutable state
-        self.load()
+        self.load(expect_tmp)
 
     def is_valid(self, struct=None, schema=_schema):
         if struct is None:
@@ -117,7 +118,7 @@ class ExeData(UserDict):
         if not self.is_valid():
             raise ValueError(f"ExeData scheme forbids: {key} : {item}")
 
-    def load(self) -> None:
+    def load(self, expect_tmp: bool = False) -> None:
         self._mutable = True
         if self.file_fin.exists():
             with open(self.file_fin, "rt") as fin:
@@ -128,6 +129,8 @@ class ExeData(UserDict):
         elif self.file_tmp.exists():
             with open(self.file_tmp, "rt") as tmp:
                 self.data = json.load(tmp)
+        elif expect_tmp:
+            raise RuntimeError(f"ExeData: tmp expected but not found {self.file_tmp}!")
         if not self.is_valid():
             raise RuntimeError("ExeData load encountered conflict with schema")
 
@@ -151,5 +154,9 @@ class ExeData(UserDict):
         self._mutable = True
 
     @property
-    def mutable(self) -> bool:
+    def is_final(self) -> bool:
+        return not self._mutable
+
+    @property
+    def is_mutable(self) -> bool:
         return self._mutable

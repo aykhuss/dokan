@@ -39,13 +39,13 @@ _schema: dict = {
     "process": {
         "name": str,  # name of the process in NNLOJET
         "channels": {
-          str: {
-            "string": str,
-            "part": str,
-            "part_num": int,
-            "region": str,
-            "order": int
-          },
+            str: {
+                "string": str,
+                "part": str,
+                "part_num": int,
+                "region": str,
+                "order": int,
+            },
         },  # all channels for the process (auto-filled)
     },
     "warmup": {
@@ -125,7 +125,7 @@ class Config(UserDict):
         if not self.is_valid():
             raise RuntimeError("ExeData load_defaults encountered conflict with schema")
 
-    def load(self, default_ok = True) -> None:
+    def load(self, default_ok: bool = True) -> None:
         if self.file_cfg.exists():
             with open(self.file_cfg, "rt") as fin:
                 print(f"Config: loading {self.file_cfg}")

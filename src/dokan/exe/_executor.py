@@ -22,7 +22,7 @@ class Executor(luigi.Task, metaclass=ABCMeta):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.exe_data: ExeData = ExeData(Path(self.path))
+        self.exe_data: ExeData = ExeData(Path(self.path), expect_tmp=True)
 
     @staticmethod
     def factory(policy=ExecutionPolicy.LOCAL, *args, **kwargs):
@@ -30,6 +30,7 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         from ._local import LocalExec
 
         if policy == ExecutionPolicy.LOCAL:
+            print(f"factory: LocalExec ...")
             return LocalExec(*args, **kwargs)
 
         # if policy == ExecutionPolicy.HTCONDOR:
@@ -48,6 +49,7 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         pass
 
     def run(self):
+        print(f"Executor: run {self.path}")
         self.exe_data["timestamp"] = time.time()
         # > more preparation for execution?
         # @todo check if job files are already there? (recovery mode?)
@@ -55,6 +57,7 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         # > exe done, generate the output file.
         self.exe_data["timestamp"] = time.time()
         # @todo: loop over all generated files, parse log files to populate results and errors
+        print(f"Executor: finalize {self.path}")
         self.exe_data.finalize()
 
 
