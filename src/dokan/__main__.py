@@ -3,7 +3,8 @@
 import luigi
 from luigi.execution_summary import LuigiRunResult
 import dokan
-from dokan.exe._exe_config import ExecutionPolicy
+from dokan.exe._exe_config import ExecutionMode, ExecutionPolicy
+from dokan.exe._exe_data import ExeData
 import dokan.runcard
 import dokan.nnlojet
 import argparse
@@ -68,30 +69,31 @@ def main() -> None:
             sys.exit(
                 'invalid runcard "{}": could not find RUN block'.format(args.runcard)
             )
-        dokan.CONFIG.set_exe(path=nnlojet_exe)
-        if args.job_path is not None:
-            dokan.CONFIG.set_job_path(args.job_path)
+        # > save all to the run config file
+        if args.job_path:
+            config: dokan.Config = dokan.Config(args.job_path)
         else:
-            dokan.CONFIG.set_job_path(os.path.relpath(runcard_data["job_name"]))
-        dokan.CONFIG.set_job(name=runcard_data["job_name"])
-        dokan.CONFIG.set_process(name=runcard_data["process_name"])
-        dokan.CONFIG.set_process(
-            channels=dokan.nnlojet.get_lumi(
-                dokan.CONFIG.exe["path"], dokan.CONFIG.process["name"]
+            config: dokan.Config = dokan.Config(
+                os.path.relpath(runcard_data["job_name"])
             )
+        config["exe"]["path"] = nnlojet_exe
+        config["run"]["name"] = runcard_data["job_name"]
+        config["process"]["name"] = runcard_data["process_name"]
+        config["process"]["channels"] = dokan.nnlojet.get_lumi(
+            config["exe"]["path"], config["process"]["name"]
         )
-        dokan.CONFIG.write_config()
-        dokan.runcard.make_template(args.runcard, dokan.CONFIG.job["template"])
+        config.write()
+        # dokan.runcard.make_template(args.runcard, config["run"]["template"])
+        dokan.runcard.make_template(
+            args.runcard, Path(config["run"]["path"]) / "template.run"
+        )
 
     # >-----
     if args.action == "submit":
-        dokan.CONFIG.set_job_path(args.job_path)
-        dokan.CONFIG.load_config(default_ok=False)
+        config: dokan.Config = dokan.Config(args.job_path, default_ok=False)
         if nnlojet_exe is not None:
-            dokan.CONFIG.set_exe(path=nnlojet_exe)
-        dokan.CONFIG.set_job(batch_size=123)
-        print(dokan.CONFIG.job)
-        print(dokan.CONFIG.job_path)
+            config["exe"]["path"] = nnlojet_exe
+        config["run"]["batch_size"] = 123
         # sys.exit("we're debugging here...")
 
         # exe_args = {
@@ -112,7 +114,7 @@ def main() -> None:
                 #     iseed=123,
                 # )
                 dokan.Entry(
-                    config=dokan.CONFIG,
+                    config=config,
                     local_path=[],
                     order=0,
                 )

@@ -1,6 +1,6 @@
 
 from .__main__ import main
-from .config import CONFIG
+from .config import Config
 from .task import Task
 from .scheduler import WorkerSchedulerFactory
 from .db import JobStatus, Part, Job, DBTask, DBInit
@@ -12,7 +12,7 @@ from .preproduction import PreProduction
 
 __all__ = [
     "main",
-    "CONFIG",
+    "Config",
     "Task",
     "WorkerSchedulerFactory",
     "ExecutionPolicy",

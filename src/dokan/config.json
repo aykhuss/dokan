@@ -1,16 +1,18 @@
 {
   "exe" : {
-    "path" : "/path/to/nnlojet/install/bin/NNLOJET",
     "policy" : 1
   },
-  "job" : {
-    "order" : "NNLO",
+  "run" : {
+    "order" : 2,
     "target_rel_acc" : 0.01,
     "max_runtime" : 3600,
-    "max_number" : -1,
+    "max_total" : -1,
     "max_concurrent" : 1,
     "batch_size" : 10,
     "seed_offset" : 0
+  },
+  "process" : {
+    "channels": {}
   },
   "warmup" : {
     "ncores" : 1,
@@ -25,26 +27,6 @@
     "ncores" : 1,
     "ncall_start" : 100,
     "niter" : 2
-  },
-  "channel": {
-    "LO" : {
-      "ncall_start" : 2000
-    },
-    "V" : {
-      "ncall_start" : 500
-    },
-    "R" : {
-      "ncall_start" : 500
-    },
-    "VV" : {
-      "ncall_start" : 100
-    },
-    "RV" : {
-      "ncall_start" : 100
-    },
-    "RR" : {
-      "ncall_start" : 100
-    }
   }
 }
 
