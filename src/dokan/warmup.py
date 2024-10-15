@@ -91,7 +91,7 @@ class Warmup(Task):
                 self._data[-1][1]["elapsed_time"]
                 * self.config["warmup"]["fac_increment"]
             )
-            > self.config["job"]["max_runtime"]
+            > self.config["run"]["max_runtime"]
         ):
             return True
         # > successful convergence?
@@ -126,7 +126,7 @@ class Warmup(Task):
         ncores: int = self.config["warmup"]["ncores"]
         ncall: int = self.config["warmup"]["ncall_start"]
         niter: int = self.config["warmup"]["niter"]
-        iseed: int = self.config["job"]["iseed_start"]
+        iseed: int = self.config["run"]["iseed_start"]
 
         last_warmup = None
         if len(self._data) > 0:

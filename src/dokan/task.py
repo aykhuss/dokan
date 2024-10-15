@@ -31,7 +31,7 @@ class Task(luigi.Task):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._path: Path = Path(self.config["job"]["path"]).joinpath(*self.local_path)
+        self._path: Path = Path(self.config["run"]["path"]).joinpath(*self.local_path)
         self._path.mkdir(parents=True, exist_ok=True)
 
     def _local(self, *path: PathLike) -> Path:

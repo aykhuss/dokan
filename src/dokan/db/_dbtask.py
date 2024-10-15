@@ -188,9 +188,9 @@ class DBRunner(DBTask):
                 if last_prod:
                     seed_start = last_prod.seed + 1
                 else:
-                    seed_start = self.config["job"]["seed_offset"]
+                    seed_start = self.config["run"]["seed_offset"]
                 # > assemble job path
-                root_path: Path = Path(self.config["job"]["path"])
+                root_path: Path = Path(self.config["run"]["path"])
                 job_path: Path = root_path.joinpath(
                     "raw", str(job.mode), job.part.name, f"s{seed_start}"
                 )
@@ -236,7 +236,7 @@ class DBRunner(DBTask):
 #            return
 #
 #        def input(*path: PathLike) -> Path:
-#            return Path(self.config["job"]["path"]).joinpath(
+#            return Path(self.config["run"]["path"]).joinpath(
 #                *self.input_local_path, *path
 #            )
 #
@@ -263,7 +263,7 @@ class DBRunner(DBTask):
 #            channel_region = ""
 #        dokan.runcard.fill_template(
 #            runcard,
-#            self.config["job"]["template"],
+#            self.config["run"]["template"],
 #            sweep=f"{self.mode!s} = {self.ncall}[{self.niter}]",
 #            run="",
 #            channels=channel_string,
@@ -281,7 +281,7 @@ class DBRunner(DBTask):
 #            channel_region = ""
 #        dokan.runcard.fill_template(
 #            runcard,
-#            self.config["job"]["template"],
+#            self.config["run"]["template"],
 #            sweep="{} = {}[{}]".format(
 #                ExecutionMode(self.exe_mode), self.ncall, self.niter
 #            ),
