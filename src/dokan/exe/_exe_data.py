@@ -93,6 +93,10 @@ class ExeData(UserDict):
             if len(schema) == 1:
                 key, val = next(iter(schema.items()))
                 if isinstance(key, type):
+                    # > this happens when converting to JSON
+                    if all(isinstance(k, str) for k in struct.keys()):
+                        for k in struct.keys():
+                            struct[key(k)] = struct.pop(k)
                     return all(
                         isinstance(k, key) and self.is_valid(v, val)
                         for k, v in struct.items()
