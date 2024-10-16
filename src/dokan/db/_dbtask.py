@@ -5,6 +5,7 @@ import json
 
 from abc import ABCMeta, abstractmethod
 from pathlib import Path
+import shutil
 
 from sqlalchemy import create_engine, Engine, select
 from sqlalchemy.orm import Session
@@ -15,6 +16,7 @@ from ._sqla import JobDB, Part, Job
 from ..task import Task
 from ..exe import ExecutionMode, ExecutionPolicy, ExeData, Executor
 from ..order import Order
+from ..runcard import Runcard, RuncardTemplate
 
 logger = logging.getLogger("luigi-interface")
 
@@ -170,25 +172,18 @@ class DBRunner(DBTask):
         # should filder warmup & production separately.
         # for warmup maybe use only last?
         # of generally put in a bias towards newer runs?
-        ncall = 1
-        nit = 1
+        ncall = 100
+        nit = 2
         return ncall, nit
 
     def run(self):
         print(f"DBRunner: run {self.id}")
         with self.session as session:
             db_job: Job = session.get_one(Job, self.id)
+            #@todo mode, policy, channel string, etc all should be extracted here for the
+            # entire batch before (maybe a dict?)
             # alterantively check for a exe path that is set?
             if db_job.status == JobStatus.DISPATCHED:
-                # > get last warmup
-                last_warm = session.scalars(
-                    select(Job)
-                    .where(Job.part_id == db_job.part_id)
-                    .where(Job.mode == ExecutionMode.WARMUP)
-                    .order_by(Job.id.desc())
-                ).first()
-                if not last_warm:
-                    raise RuntimeError(f"no warmup found for {db_job.part.name}")
                 # > assemble job path
                 root_path: Path = Path(self.config["run"]["path"])
                 job_path: Path = root_path.joinpath(
@@ -209,7 +204,45 @@ class DBRunner(DBTask):
                 elif db_job.policy == ExecutionPolicy.HTCONDOR:
                     exe_data["policy_settings"]["htcondor_id"] = 42
                 exe_data["ncall"], exe_data["niter"] = self.get_ntot()
-                # @todo copy warmup stuff from `last_warm` <-> `copy_input` below
+                # > create the runcard
+                run_file: Path = job_path / "job.run"
+                template = RuncardTemplate(
+                    Path(self.config["run"]["path"]) / self.config["run"]["template"]
+                )
+                channel_region:str = ""
+                if db_job.part.region:
+                    channel_region:str = f"region = {db_job.part.region}"
+                template.fill(
+                    run_file,
+                    sweep=f"{exe_data["mode"]!s} = {exe_data["ncall"]}[{exe_data["niter"]}]",
+                    run="",
+                    channels=db_job.part.string,
+                    channels_region=channel_region,
+                    toplevel="",
+                )
+                exe_data["input_files"] = ["job.run"]  # ensure it's always at the front
+                # > get last warmup to copy grid files
+                last_warm = session.scalars(
+                    select(Job)
+                    .where(Job.part_id == db_job.part_id)
+                    .where(Job.mode == ExecutionMode.WARMUP)
+                    .where(Job.status == JobStatus.DONE)
+                    .order_by(Job.id.desc())
+                ).first()
+                if not last_warm and db_job.mode == ExecutionMode.PRODUCTION:
+                    raise RuntimeError(
+                        f"no warmup found for production job {db_job.part.name}"
+                    )
+                if last_warm:
+                    if not last_warm.path:
+                        raise RuntimeError(f"last warmup {last_warm.id} has no path")
+                    last_warm_path: Path = Path(last_warm.path)
+                    last_warm_data: ExeData = ExeData(last_warm_path)
+                    if not last_warm_data.is_final:
+                        raise RuntimeError(f"last warmup {last_warm.id} is not final")
+                    for wfile in last_warm_data["output_files"]:
+                        shutil.copyfile(last_warm_path / wfile, job_path / wfile)
+                        exe_data["input_files"].append(wfile)
                 # @ todo FIRST put the runcard
                 exe_data["jobs"] = {}
                 exe_data["jobs"][db_job.id] = {
