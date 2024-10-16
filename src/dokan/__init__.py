@@ -9,10 +9,13 @@ from .warmup import Warmup
 from .production import Production
 from .entry import Entry
 from .preproduction import PreProduction
+from .runcard import Runcard, RuncardTemplate
 
 __all__ = [
     "main",
     "Config",
+    "Runcard",
+    "RuncardTemplate",
     "Task",
     "WorkerSchedulerFactory",
     "ExecutionPolicy",

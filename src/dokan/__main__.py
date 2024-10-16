@@ -3,9 +3,6 @@
 import luigi
 from luigi.execution_summary import LuigiRunResult
 import dokan
-from dokan.exe._exe_config import ExecutionMode, ExecutionPolicy
-from dokan.exe._exe_data import ExeData
-import dokan.runcard
 import dokan.nnlojet
 import argparse
 import os
@@ -60,37 +57,29 @@ def main() -> None:
 
     # >-----
     if args.action == "init":
+        config: dokan.Config = dokan.Config(default_ok=True)
+        runcard: dokan.Runcard = dokan.Runcard(runcard=args.runcard)
         if nnlojet_exe is None:
             sys.exit("please specify an NNLOJET executable")
-        if not os.path.exists(args.runcard):
-            sys.exit('runcard "{}" does not exist'.format(args.runcard))
-        runcard_data = dokan.runcard.parse_runcard(args.runcard)
-        if "job_name" not in runcard_data:
-            sys.exit(
-                'invalid runcard "{}": could not find RUN block'.format(args.runcard)
-            )
         # > save all to the run config file
         if args.job_path:
-            config: dokan.Config = dokan.Config(args.job_path)
+            config.set_path(args.job_path)
         else:
-            config: dokan.Config = dokan.Config(
-                os.path.relpath(runcard_data["job_name"])
-            )
+            config.set_path(os.path.relpath(runcard.data["job_name"]))
         config["exe"]["path"] = nnlojet_exe
-        config["run"]["name"] = runcard_data["job_name"]
-        config["process"]["name"] = runcard_data["process_name"]
+        config["run"]["name"] = runcard.data["job_name"]
+        config["run"]["template"] = "template.run"
+        config["process"]["name"] = runcard.data["process_name"]
         config["process"]["channels"] = dokan.nnlojet.get_lumi(
             config["exe"]["path"], config["process"]["name"]
         )
         config.write()
-        # dokan.runcard.make_template(args.runcard, config["run"]["template"])
-        dokan.runcard.make_template(
-            args.runcard, Path(config["run"]["path"]) / "template.run"
-        )
+        runcard.to_tempalte(Path(config["run"]["path"]) / config["run"]["template"])
 
     # >-----
     if args.action == "submit":
-        config: dokan.Config = dokan.Config(args.job_path, default_ok=False)
+        config: dokan.Config = dokan.Config(path=args.job_path, default_ok=False)
+
         if nnlojet_exe is not None:
             config["exe"]["path"] = nnlojet_exe
         config["run"]["batch_size"] = 123
@@ -103,12 +92,12 @@ def main() -> None:
         #     "niter": 5,
         #     "iseed": 1
         # }
-        # dokan.Executor.factory(config=dokan.CONFIG, local_path=["data"], **exe_args)
+        # dokan.Executor.factory(config=config, local_path=["data"], **exe_args)
 
         luigi_result = luigi.build(
             [
                 # dokan.Production(
-                #     config=dokan.CONFIG,
+                #     config=config,
                 #     local_path=["data", "LO_1"],
                 #     channel="LO_1",
                 #     iseed=123,
