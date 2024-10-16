@@ -26,7 +26,7 @@ _schema: dict = {
     "run": {
         "name": str,  # job name
         "path": str,  # absolute path to job directory
-        "template": str,  # absolute path to the template file
+        "template": str,  # template file name (not path)
         "order": int,  # what order to comput (LO, NLO, NNLO)
         "target_rel_acc": float,  # target relative accuracy
         "max_runtime": int,  # maximum runtime (in sec) for a single NNLOJET run
@@ -74,19 +74,20 @@ class Config(UserDict):
     # > class-local variables for file name conventions
     _file_cfg: str = "config.json"
 
-    def __init__(self, path: PathLike, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
+        path = kwargs.pop("path", None)
         default_ok: bool = kwargs.pop("default_ok", True)
         super().__init__(*args, **kwargs)
-        # > check `path` and define files
-        # @todo maybe allow files that match the file name conventions?
-        self.path: Path = Path(path)
-        if not self.path.exists():
-            self.path.mkdir(parents=True)
-        if not self.path.is_dir():
-            raise ValueError(f"{path} is not a folder")
-        self.file_cfg: Path = self.path / self._file_cfg
-        self.load(default_ok)
-        self["run"]["path"] = str(self.path.absolute())
+        self.path = None
+        self.file_cfg = None
+        if path:
+            if not default_ok:
+                self.set_path(path, load=True)
+            else:
+                self.load(default_ok)
+                self.set_path(path, load=False)
+        else:
+            self.load(default_ok)
 
     def is_valid(self, struct=None, schema=_schema):
         if struct is None:
@@ -119,6 +120,17 @@ class Config(UserDict):
         if not self.is_valid():
             raise ValueError(f"ExeData scheme forbids: {key} : {item}")
 
+    def set_path(self, path: PathLike, load: bool = False) -> None:
+        self.path: Path = Path(path)
+        if not self.path.exists():
+            self.path.mkdir(parents=True)
+        if not self.path.is_dir():
+            raise ValueError(f"{path} is not a folder")
+        self.file_cfg: Path = self.path / self._file_cfg
+        if load:
+            self.load(default_ok=False)
+        self["run"]["path"] = str(self.path.absolute())
+
     def load_defaults(self) -> None:
         with open(_default_config, "rt") as tmp:
             self.data = json.load(tmp)
@@ -126,7 +138,7 @@ class Config(UserDict):
             raise RuntimeError("ExeData load_defaults encountered conflict with schema")
 
     def load(self, default_ok: bool = True) -> None:
-        if self.file_cfg.exists():
+        if self.file_cfg and self.file_cfg.exists():
             with open(self.file_cfg, "rt") as fin:
                 print(f"Config: loading {self.file_cfg}")
                 self.data = json.load(fin)
@@ -139,5 +151,7 @@ class Config(UserDict):
             raise RuntimeError("ExeData load encountered conflict with schema")
 
     def write(self) -> None:
+        if not self.path:
+            raise RuntimeError("Config: no path set!")
         with open(self.file_cfg, "w") as cfg:
             json.dump(self.data, cfg, indent=2)
