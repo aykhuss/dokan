@@ -18,5 +18,16 @@ class JobStatus(IntEnum):
     def __repr__(self):
         return str(self)
 
+    @staticmethod
+    def terminated_list():
+        return [JobStatus.DONE, JobStatus.MERGED, JobStatus.FAILED]
+
+    @staticmethod
+    def active_list():
+        return [JobStatus.QUEUED, JobStatus.DISPATCHED, JobStatus.RUNNING]
+
     def terminated(self) -> bool:
-        return self in [JobStatus.DONE, JobStatus.MERGED, JobStatus.FAILED]
+        return self in JobStatus.terminated_list()
+
+    def active(self) -> bool:
+        return self in JobStatus.active_list()
