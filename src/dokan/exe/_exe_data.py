@@ -16,6 +16,8 @@ import shutil
 from pathlib import Path
 from os import PathLike
 
+from ._exe_config import ExecutionMode, ExecutionPolicy
+from ..util import validate_schema
 
 # > deifne our own schema:
 # list -> expect arbitrary number of entries with all the same type
@@ -23,8 +25,8 @@ from os import PathLike
 # both these cases map to tuples as JSON only has lists
 _schema: dict = {
     "exe": str,
-    "mode": int,  # ExecutionMode
-    "policy": int,  # ExecutionPolicy
+    "mode": ExecutionMode,
+    "policy": ExecutionPolicy,
     "policy_settings": {
         # --- LOCAL
         "local_ncores": int,
@@ -85,35 +87,8 @@ class ExeData(UserDict):
         # > load in order of precedence & set mutable state
         self.load(expect_tmp)
 
-    def is_valid(self, struct=None, schema=_schema):
-        if struct is None:
-            return self.is_valid(self.data, schema)
-        if isinstance(struct, dict) and isinstance(schema, dict):
-            # dict specified with type of key
-            if len(schema) == 1:
-                key, val = next(iter(schema.items()))
-                if isinstance(key, type):
-                    # > this happens when converting to JSON
-                    if all(isinstance(k, str) for k in struct.keys()):
-                        for k in struct.keys():
-                            struct[key(k)] = struct.pop(k)
-                    return all(
-                        isinstance(k, key) and self.is_valid(v, val)
-                        for k, v in struct.items()
-                    )
-            # struct is a dict of types or other dicts
-            return all(
-                k in schema and self.is_valid(struct[k], schema[k]) for k in struct
-            )
-        if isinstance(struct, list) and isinstance(schema, list):
-            # struct is list in the form [type or dict]
-            return all(self.is_valid(struct[0], c) for c in schema)
-        # @todo: case for a tuple -> list with fixed length & types
-        if isinstance(schema, type):
-            # struct is the type of schema
-            return isinstance(struct, schema)
-        # no match
-        return False
+    def is_valid(self, convert_to_type: bool = False) -> bool:
+        return validate_schema(self.data, _schema, convert_to_type)
 
     def __setitem__(self, key, item) -> None:
         if not self._mutable:
@@ -135,8 +110,9 @@ class ExeData(UserDict):
                 self.data = json.load(tmp)
         elif expect_tmp:
             raise RuntimeError(f"ExeData: tmp expected but not found {self.file_tmp}!")
-        if not self.is_valid():
+        if not self.is_valid(convert_to_type=True):
             raise RuntimeError("ExeData load encountered conflict with schema")
+        print(f"ExeData::load: {self.data}")
 
     def write(self) -> None:
         if self._mutable:

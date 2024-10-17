@@ -16,12 +16,15 @@ import json
 from pathlib import Path
 from os import PathLike
 
+from .util import validate_schema
+from .exe import ExecutionPolicy
+
 _default_config: Path = Path(__file__).parent.resolve() / "config.json"
 
 _schema: dict = {
     "exe": {
         "path": str,  # absolute path to NNLOJET
-        "policy": int,  # ExecutionPolicy (local, htcondor, slurm, ...)
+        "policy": ExecutionPolicy,  # (local, htcondor, slurm, ...)
     },
     "run": {
         "name": str,  # job name
@@ -89,31 +92,8 @@ class Config(UserDict):
         else:
             self.load(default_ok)
 
-    def is_valid(self, struct=None, schema=_schema):
-        if struct is None:
-            return self.is_valid(self.data, schema)
-        if isinstance(struct, dict) and isinstance(schema, dict):
-            # dict specified with type of key
-            if len(schema) == 1:
-                key, val = next(iter(schema.items()))
-                if isinstance(key, type):
-                    return all(
-                        isinstance(k, key) and self.is_valid(v, val)
-                        for k, v in struct.items()
-                    )
-            # struct is a dict of types or other dicts
-            return all(
-                k in schema and self.is_valid(struct[k], schema[k]) for k in struct
-            )
-        if isinstance(struct, list) and isinstance(schema, list):
-            # struct is list in the form [type or dict]
-            return all(self.is_valid(struct[0], c) for c in schema)
-        # @todo: case for a tuple -> list with fixed length & types
-        if isinstance(schema, type):
-            # struct is the type of schema
-            return isinstance(struct, schema)
-        # no match
-        return False
+    def is_valid(self, convert_to_type: bool = False):
+        return validate_schema(self.data, _schema, convert_to_type)
 
     def __setitem__(self, key, item) -> None:
         super().__setitem__(key, item)
@@ -134,7 +114,7 @@ class Config(UserDict):
     def load_defaults(self) -> None:
         with open(_default_config, "rt") as tmp:
             self.data = json.load(tmp)
-        if not self.is_valid():
+        if not self.is_valid(convert_to_type=True):
             raise RuntimeError("ExeData load_defaults encountered conflict with schema")
 
     def load(self, default_ok: bool = True) -> None:
@@ -147,7 +127,7 @@ class Config(UserDict):
                 raise FileNotFoundError(f"Config file not found: {self.file_cfg}")
             print(f"Config: loading default {_default_config}")
             self.load_defaults()
-        if not self.is_valid():
+        if not self.is_valid(convert_to_type=True):
             raise RuntimeError("ExeData load encountered conflict with schema")
 
     def write(self) -> None:
