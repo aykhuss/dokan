@@ -9,7 +9,7 @@ from pathlib import Path
 from ._executor import Executor
 
 
-#> just a master class to collect common properties for local execution
+# > just a master class to collect common properties for local execution
 class LocalExec(Executor):
     """Execution on the local machine"""
 
@@ -26,7 +26,9 @@ class BatchLocalExec(LocalExec):
     """Batch execution on the local machine"""
 
     def requires(self):
-        print(f"BatchLocalExec: requires {[job_id for job_id in self.exe_data["jobs"].keys()]}")
+        print(
+            f"BatchLocalExec: requires {[job_id for job_id in self.exe_data["jobs"].keys()]}"
+        )
         return [
             self.clone(cls=SingleLocalExec, job_id=job_id)
             for job_id in self.exe_data["jobs"].keys()
@@ -54,7 +56,7 @@ class SingleLocalExec(LocalExec):
 
     def exe(self):
         print(f"SingleLocalExec: exe {self.path}")
-        #> should never run since we overwrote run!
+        # > should never run since we overwrote run!
         raise RuntimeError("SingleLocalExec: exe should never be called")
 
     def run(self):
@@ -66,7 +68,13 @@ class SingleLocalExec(LocalExec):
 
         with open(self.file_out, "w") as of, open(self.file_err, "w") as ef:
             exec_out = subprocess.run(
-                [self.exe_data["exe"], "-run", self.exe_data["input_files"][0]],
+                [
+                    self.exe_data["exe"],
+                    "-run",
+                    self.exe_data["input_files"][0],
+                    "-iseed",
+                    str(self.seed),
+                ],
                 env=job_env,
                 cwd=self.path,
                 stdout=of,
@@ -76,6 +84,3 @@ class SingleLocalExec(LocalExec):
             if exec_out.returncode != 0:
                 # raise RuntimeError("NNLOJET exited with an error")
                 return  # safer way to exit -> Task will be flagged as "failed"
-
-        # > alternative way of computing runtime rather than parsong the log
-        # elapsed_time = time() - self.exe_data["timestamp"]
