@@ -18,6 +18,7 @@ from os import PathLike
 
 from .util import validate_schema
 from .exe import ExecutionPolicy
+from .order import Order
 
 _default_config: Path = Path(__file__).parent.resolve() / "config.json"
 
@@ -30,10 +31,10 @@ _schema: dict = {
         "name": str,  # job name
         "path": str,  # absolute path to job directory
         "template": str,  # template file name (not path)
-        "order": int,  # what order to comput (LO, NLO, NNLO)
+        "order": Order,  # what order to compute (LO, NLO, NNLO)
         "target_rel_acc": float,  # target relative accuracy
         "max_runtime": int,  # maximum runtime (in sec) for a single NNLOJET run
-        "max_total": int,  # mmaximum number of total (production?) jobs
+        "max_total": int,  # maximum number of total (production?) jobs
         "max_concurrent": int,  # maximum number of concurrent jobs
         "batch_size": int,  # @todo: size of runs to batch
         "seed_offset": int,  # seed number offset
@@ -55,9 +56,10 @@ _schema: dict = {
         "ncores": int,  # #of cores to allocate to a single warmup run
         "ncall_start": int,  # initial number of events (per iteration)
         "niter": int,  # number of iterations in a single job (>=2 for chi2dof)
-        "max_increment": int,  # up to how many rounds of warmups we want to run
+        "min_increment_steps": int,  # must be > 2 and < max value
+        "max_increment_steps": int,  # up to how many rounds of warmups we want to run
         "fac_increment": float,  # the factor by which we increment the statistics each round
-        "max_chi2": float,
+        "max_chi2dof": float,
         "scaling_window": float,
     },
     "production": {
@@ -92,8 +94,24 @@ class Config(UserDict):
         else:
             self.load(default_ok)
 
-    def is_valid(self, convert_to_type: bool = False):
-        return validate_schema(self.data, _schema, convert_to_type)
+    def is_valid(self, convert_to_type: bool = False) -> bool:
+        if not validate_schema(self.data, _schema, convert_to_type):
+            return False
+        # > implement boundary conditions on the configuration here
+        # > that goes beyond the schema (structure and types)
+        if "run" in self.data:
+            if (
+                "target_rel_acc" in self.data["run"]
+                and self.data["run"]["target_rel_acc"] <= 0.0
+            ):
+                return False
+            if (
+                "seed_offset" in self.data["run"]
+                and self.data["run"]["seed_offset"] <= 0
+            ):
+                return False
+
+        return True
 
     def __setitem__(self, key, item) -> None:
         super().__setitem__(key, item)

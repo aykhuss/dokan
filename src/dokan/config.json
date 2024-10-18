@@ -18,9 +18,10 @@
     "ncores" : 1,
     "ncall_start" : 500,
     "niter" : 2,
-    "max_increment" : 7,
+    "min_increment_steps" : 2,
+    "max_increment_steps" : 7,
     "fac_increment" : 4.0,
-    "max_chi2" : 1.5,
+    "max_chi2dof" : 1.5,
     "scaling_window" : 0.4
   },
   "production" : {
