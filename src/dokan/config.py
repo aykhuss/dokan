@@ -107,7 +107,7 @@ class Config(UserDict):
                 return False
             if (
                 "seed_offset" in self.data["run"]
-                and self.data["run"]["seed_offset"] <= 0
+                and self.data["run"]["seed_offset"] < 0
             ):
                 return False
 
