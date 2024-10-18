@@ -23,11 +23,18 @@ class JobStatus(IntEnum):
         return [JobStatus.DONE, JobStatus.MERGED, JobStatus.FAILED]
 
     @staticmethod
+    def success_list():
+        return [JobStatus.DONE, JobStatus.MERGED]
+
+    @staticmethod
     def active_list():
         return [JobStatus.QUEUED, JobStatus.DISPATCHED, JobStatus.RUNNING]
 
     def terminated(self) -> bool:
         return self in JobStatus.terminated_list()
+
+    def success(self) -> bool:
+        return self in JobStatus.success_list()
 
     def active(self) -> bool:
         return self in JobStatus.active_list()
