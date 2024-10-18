@@ -173,8 +173,8 @@ class DBRunner(DBTask):
         # for warmup maybe use only last?
         # of generally put in a bias towards newer runs?
         ncall = 100
-        nit = 2
-        return ncall, nit
+        niter = 2
+        return ncall, niter
 
     def run(self):
         print(f"DBRunner: run {self.id}")

@@ -1,4 +1,3 @@
-
 """NNLOJET interface
 
 helperfunctions to extract information from NNLOJET
@@ -9,6 +8,7 @@ import subprocess
 from os import PathLike
 
 from .order import Order
+
 
 def get_lumi(exe: PathLike, proc: str) -> dict:
     """get channels for an NNLOJET process
@@ -66,3 +66,13 @@ def get_lumi(exe: PathLike, proc: str) -> dict:
             raise RuntimeError("couldn't parse channel line")
         chan_list[label] = chan
     return chan_list
+
+
+#@todo
+def parse_log_file(log_file: PathLike) -> list[dict[str, float]]:
+    return [{"a": 1.0}]
+
+
+#@ todo
+def grid_score(grid_file: PathLike) -> float:
+    return 42.0

@@ -1,3 +1,9 @@
+"""utility module for the dokan workflow
+
+refactor common functions and patterns here
+"""
+
+
 def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:
     """[summary]
 
@@ -65,10 +71,15 @@ def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:
     # <-> actually already covered as the default case in the list.
 
     if isinstance(schema, type):
-        # > this can't work since we can't to an in-place conversion at this level
+        # > this can't work since we can't do an in-place conversion at this level
         # if convert_to_type and not isinstance(struct, schema):
         #     struct = schema(struct)
         return isinstance(struct, schema)
 
     # > no match
     return False
+
+
+#@todo
+def parse_time_interval(string: str) -> float:
+    return 0

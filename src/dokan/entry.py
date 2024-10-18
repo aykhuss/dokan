@@ -13,11 +13,11 @@ class Entry(DBTask):
     # njobs max
     # max concurrent
     order: int = luigi.IntParameter(default=Order.NNLO)
-    tag: float = luigi.FloatParameter(default=time.time())
+    run_tag: float = luigi.FloatParameter(default=time.time())
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        print(f"starter: {self.tag}: {time.ctime(self.tag)}")
+        print(f"starter: {self.run_tag}: {time.ctime(self.run_tag)}")
 
     def requires(self):
         # @todo variations to be added here?

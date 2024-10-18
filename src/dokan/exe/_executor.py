@@ -5,7 +5,7 @@ a factory design pattern to obtain tasks for the different policies
 """
 
 import luigi
-
+import logging
 
 from abc import ABCMeta, abstractmethod
 from pathlib import Path
@@ -15,6 +15,8 @@ import time
 from ._exe_config import ExecutionMode, ExecutionPolicy
 from ._exe_data import ExeData
 import dokan.runcard
+
+logger = logging.getLogger("luigi-interface")
 
 
 class Executor(luigi.Task, metaclass=ABCMeta):
@@ -56,8 +58,6 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         # @todo: loop over all generated files, parse log files to populate results and errors
         print(f"Executor: finalize {self.path}")
         self.exe_data.finalize()
-
-
 
         # # > parse the output file to extract some information
         # with open(self._local(Executor._file_out), "r") as of:

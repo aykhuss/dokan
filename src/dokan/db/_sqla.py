@@ -68,7 +68,7 @@ class Job(JobDB):
     policy: Mapped[int]  # how to run
     seed: Mapped[int | None] # set in DBDispatch
     ncall: Mapped[int | None] # set before DBDispatch or auto-determined in DBRunner
-    nit: Mapped[int | None] # set before DBDispatch or auto-determined in DBRunner
+    niter: Mapped[int | None] # set before DBDispatch or auto-determined in DBRunner
     elapsed_time: Mapped[float | None]
     result: Mapped[float | None]
     error: Mapped[float | None]
