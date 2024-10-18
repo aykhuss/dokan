@@ -13,8 +13,10 @@ _schema : dict
 from collections import UserDict
 import json
 import shutil
+import time
 from pathlib import Path
 from os import PathLike
+
 
 from ._exe_config import ExecutionMode, ExecutionPolicy
 from ..util import validate_schema
@@ -37,7 +39,7 @@ _schema: dict = {
     "ncall": int,
     "niter": int,
     # ---
-    "timestamp": float,
+    "timestamp": float,  # updated on each write
     "input_files": [str],  # first entry must be runcard?
     "output_files": [str],
     "jobs": {
@@ -45,13 +47,16 @@ _schema: dict = {
             # "job_id": int, # <-- now the key in a dict
             "seed": int,
             "elapsed_time": float,
-            "result": float,
+            "result": float,  # job failure indicated by missing "result"
             "error": float,
             "chi2dof": float,
             "iterations": [
                 {
+                    "iteration": int,
                     "result": float,
                     "error": float,
+                    "result_acc": float,
+                    "error_acc": float,
                     "chi2dof": float,
                 }
             ],
@@ -100,12 +105,14 @@ class ExeData(UserDict):
     def load(self, expect_tmp: bool = False) -> None:
         self._mutable = True
         if self.file_fin.exists():
+            print(f"loading final file {self.file_fin}")
             with open(self.file_fin, "rt") as fin:
                 self.data = json.load(fin)
                 self._mutable = False
             if self.file_tmp.exists():
                 raise RuntimeError(f"ExeData: tmp & fin exist {self.file_tmp}!")
         elif self.file_tmp.exists():
+            print(f"loading temporary file {self.file_tmp}")
             with open(self.file_tmp, "rt") as tmp:
                 self.data = json.load(tmp)
         elif expect_tmp:
@@ -116,6 +123,7 @@ class ExeData(UserDict):
 
     def write(self) -> None:
         if self._mutable:
+            self.data["timestamp"] = time.time()
             with open(self.file_tmp, "w") as tmp:
                 json.dump(self.data, tmp, indent=2)
         else:
@@ -124,6 +132,7 @@ class ExeData(UserDict):
     def finalize(self) -> None:
         if not self._mutable:
             raise RuntimeError("ExeData already finalized?!")
+        self.write()
         shutil.move(self.file_tmp, self.file_fin)
         self._mutable = False
 

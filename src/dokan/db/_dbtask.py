@@ -145,7 +145,7 @@ class DBDispatch(DBTask):
                 if last_job:
                     seed_start: int = last_job.seed + 1
                 else:
-                    seed_start: int = self.config["run"]["seed_offset"]
+                    seed_start: int = self.config["run"]["seed_offset"] + 1
                 job.seed = seed_start
                 job.status = JobStatus.DISPATCHED
                 session.commit()
@@ -180,7 +180,7 @@ class DBRunner(DBTask):
         print(f"DBRunner: run {self.id}")
         with self.session as session:
             db_job: Job = session.get_one(Job, self.id)
-            #@todo mode, policy, channel string, etc all should be extracted here for the
+            # @todo mode, policy, channel string, etc all should be extracted here for the
             # entire batch before (maybe a dict?)
             # alterantively check for a exe path that is set?
             if db_job.status == JobStatus.DISPATCHED:
@@ -203,15 +203,19 @@ class DBRunner(DBTask):
                     exe_data["policy_settings"]["local_ncores"] = 1
                 elif db_job.policy == ExecutionPolicy.HTCONDOR:
                     exe_data["policy_settings"]["htcondor_id"] = 42
-                exe_data["ncall"], exe_data["niter"] = self.get_ntot()
+                if db_job.ncall and db_job.niter:
+                    exe_data["ncall"] = db_job.ncall
+                    exe_data["niter"] = db_job.niter
+                else:
+                    exe_data["ncall"], exe_data["niter"] = self.get_ntot()
                 # > create the runcard
                 run_file: Path = job_path / "job.run"
                 template = RuncardTemplate(
                     Path(self.config["run"]["path"]) / self.config["run"]["template"]
                 )
-                channel_region:str = ""
+                channel_region: str = ""
                 if db_job.part.region:
-                    channel_region:str = f"region = {db_job.part.region}"
+                    channel_region: str = f"region = {db_job.part.region}"
                 template.fill(
                     run_file,
                     sweep=f"{exe_data["mode"]!s} = {exe_data["ncall"]}[{exe_data["niter"]}]",
@@ -248,8 +252,7 @@ class DBRunner(DBTask):
                 exe_data["jobs"][db_job.id] = {
                     "seed": db_job.seed,
                 }
-                # @todo: better to do this in the executor run to alighn when job was actually started?
-                exe_data["timestamp"] = time.time()
+                exe_data["output_files"] = []
                 # save to tmp file
                 exe_data.write()
                 # > commit update
@@ -263,6 +266,7 @@ class DBRunner(DBTask):
             exe_data = ExeData(db_job.path)
             if not exe_data.is_final:
                 raise RuntimeError(f"{db_job.id} is not final?!")
+            print(f"DBRunner PRINT {exe_data!r}")
 
         # logger.debug(f"{self.id}: collected heavy")
         # # > save result of heavy:
