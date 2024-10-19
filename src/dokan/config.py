@@ -110,6 +110,12 @@ class Config(UserDict):
                 and self.data["run"]["seed_offset"] < 0
             ):
                 return False
+        if "warmup" in self.data:
+            if (
+                "min_increment_steps" in self.data["warmup"]
+                and self.data["warmup"]["min_increment_steps"] < 2
+            ):
+                return False
 
         return True
 
