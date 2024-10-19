@@ -134,22 +134,24 @@ class DBDispatch(DBTask):
             # @todo add batches
             job = session.scalars(stmt).first()
             if job:
-                logger.debug(f"{self.id} -> dispatch job:\n>  {job!r}")
                 # @todo set seeds here! (batch size rounding and ordering)
                 # > get last job that has a seed assigned to it
                 last_job = session.scalars(
-                    self.select_job.where(Job.mode == job.mode)
+                    select(Job)
+                    .where(Job.part_id == job.part_id)
+                    .where(Job.mode == job.mode)
                     .where(Job.seed.is_not(None))
                     .order_by(Job.id.desc())
                 ).first()
                 if last_job:
+                    print(f"{self.id} last job:\n>  {last_job!r}")
                     seed_start: int = last_job.seed + 1
                 else:
                     seed_start: int = self.config["run"]["seed_offset"] + 1
                 job.seed = seed_start
                 job.status = JobStatus.DISPATCHED
                 session.commit()
-                # yield DBRunner(id=job.id)
+                print(f"{self.id} -> dispatch job:\n>  {job!r}")
                 yield self.clone(cls=DBRunner, id=job.id)
 
 
@@ -165,7 +167,7 @@ class DBRunner(DBTask):
         with self.session as session:
             job: Job = session.get_one(Job, self.id)
             # @todo add classmethod JobStatus to query properties
-            return job.status in [JobStatus.DONE, JobStatus.MERGED, JobStatus.FAILED]
+            return job.status in JobStatus.terminated_list()
 
     def get_ntot(self) -> tuple[int, int]:
         """determine statistics to fill `job_max_runtime` using past jobs"""
@@ -262,11 +264,19 @@ class DBRunner(DBTask):
             yield Executor.factory(
                 policy=ExecutionPolicy(db_job.policy), path=db_job.path
             )
-            # @todo parse the return
+            # > parse the retun data
             exe_data = ExeData(db_job.path)
             if not exe_data.is_final:
                 raise RuntimeError(f"{db_job.id} is not final?!")
-            print(f"DBRunner PRINT {exe_data!r}")
+            if "result" in exe_data["jobs"][db_job.id]:
+                db_job.result = exe_data["jobs"][db_job.id]["result"]
+                db_job.error = exe_data["jobs"][db_job.id]["error"]
+                db_job.chi2dof = exe_data["jobs"][db_job.id]["chi2dof"]
+                db_job.elapsed_time = exe_data["jobs"][db_job.id]["elapsed_time"]
+                db_job.status = JobStatus.DONE
+            else:
+                db_job.status = JobStatus.FAILED
+            session.commit()
 
         # logger.debug(f"{self.id}: collected heavy")
         # # > save result of heavy:
@@ -304,41 +314,3 @@ class DBRunner(DBTask):
 #                shutil.copyfile(input(in_file), self._local(in_file))
 #                self.data["input_files"].append(in_file)
 #
-
-#    def write_runcard(self):
-#        runcard = self._local(Executor._file_run)
-#        # > tempalte variables: {sweep, run, channels, channels_region, toplevel}
-#        channel_string = self.config["process"]["channels"][self.channel]["string"]
-#        if "region" in self.config["process"]["channels"][self.channel]:
-#            channel_region = self.config["process"]["channels"][self.channel]["region"]
-#        else:
-#            channel_region = ""
-#        dokan.runcard.fill_template(
-#            runcard,
-#            self.config["run"]["template"],
-#            sweep=f"{self.mode!s} = {self.ncall}[{self.niter}]",
-#            run="",
-#            channels=channel_string,
-#            channels_region=channel_region,
-#            toplevel="",
-#        )
-#        self.data["input_files"].append(Executor._file_run)
-
-#        runcard = self._local(Executor._file_run)
-#        # > tempalte variables: {sweep, run, channels, channels_region, toplevel}
-#        channel_string = self.config["process"]["channels"][self.channel]["string"]
-#        if "region" in self.config["process"]["channels"][self.channel]:
-#            channel_region = self.config["process"]["channels"][self.channel]["region"]
-#        else:
-#            channel_region = ""
-#        dokan.runcard.fill_template(
-#            runcard,
-#            self.config["run"]["template"],
-#            sweep="{} = {}[{}]".format(
-#                ExecutionMode(self.exe_mode), self.ncall, self.niter
-#            ),
-#            run="",
-#            channels=channel_string,
-#            channels_region=channel_region,
-#            toplevel="",
-#        )

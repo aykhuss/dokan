@@ -45,16 +45,17 @@ class PreProduction(DBTask):
         wflag: WarmupFlag = WarmupFlag(0)
 
         with self.session as session:
-            # > local helper function to extract data from a warmup job
-            def get_warmup_data(job: Job) -> ExeData:
-                if job.path:
-                    exe_data = ExeData(Path(job.path))
-                    if job.id not in exe_data["jobs"].keys():
-                        raise RuntimeError(
-                            f"missing job id {job.id} in data {exe_data!r}"
-                        )
-                    return exe_data
-                raise RuntimeError(f"no data found for {job!r}")
+            #> not needed can get all information from `Job`
+            # # > local helper function to extract data from a warmup job
+            # def get_warmup_data(job: Job) -> ExeData:
+            #     if job.path:
+            #         exe_data = ExeData(Path(job.path))
+            #         if job.id not in exe_data["jobs"].keys():
+            #             raise RuntimeError(
+            #                 f"missing job id {job.id} in data {exe_data!r}"
+            #             )
+            #         return exe_data
+            #     raise RuntimeError(f"no data found for {job!r}")
 
             # > queue up a new warmup job in the database and return job id
             def queue_warmup(ncall: int, niter: int) -> int:
@@ -82,6 +83,7 @@ class PreProduction(DBTask):
                 .order_by(Job.id.asc())
             ).first()
             if active_warmup:
+                print(f"active warmup: {active_warmup!r}")
                 return active_warmup.id
 
             # > get all previous warmup jobs as a list (all terminated)
@@ -109,23 +111,34 @@ class PreProduction(DBTask):
                 return -int(wflag)
 
             # > last warmup (LW)
-            LW = get_warmup_data(past_warmups[0])
-            LW_ntot: int = LW["ncall"] * LW["niter"]
-            if abs(LW["error"] / LW["result"]) <= self.config["run"]["target_rel_acc"]:
+            LW: Job = past_warmups[0]
+            print(f"LW = {LW!r}")
+            # if any(
+            #     x is None
+            #     for x in [
+            #         LW.ncall,
+            #         LW.niter,
+            #         LW.elapsed_time,
+            #         LW.result,
+            #         LW.error,
+            #         LW.chi2dof,
+            #     ]
+            # ):
+            #     raise RuntimeError(f"missing data in {LW!r}")
+            LW_ntot: int = LW.ncall * LW.niter
+            if abs(LW.error / LW.result) <= self.config["run"]["target_rel_acc"]:
                 wflag |= WarmupFlag.RELACC
-            if LW["chi2dof"] < self.config["warmup"]["max_chi2dof"]:
+            if LW.chi2dof < self.config["warmup"]["max_chi2dof"]:
                 wflag |= WarmupFlag.CHI2DOF
             # @todo check iterations.txt <-> WarmupFlag.GRID
             if True:
                 wflag |= WarmupFlag.GRID
 
             # > settings for the next warmup (NW) step
-            NW_ncall: int = LW["ncall"] * self.config["warmup"]["fac_increment"]
-            NW_niter: int = LW["niter"]
+            NW_ncall: int = LW.ncall * self.config["warmup"]["fac_increment"]
+            NW_niter: int = LW.niter
             NW_ntot: int = NW_ncall * NW_niter
-            NW_time_estimate: float = (
-                LW["elapsed_time"] * float(NW_ntot) / float(LW_ntot)
-            )
+            NW_time_estimate: float = LW.elapsed_time * float(NW_ntot) / float(LW_ntot)
             # > try accommodate runtime limt by reducing iterations
             if NW_time_estimate > self.config["run"]["max_runtime"]:
                 NW_niter = int(  # this is a floor
@@ -142,10 +155,10 @@ class PreProduction(DBTask):
                 return queue_warmup(NW_ncall, NW_niter)
 
             # > next-to-last warmup (NLW)
-            NLW = get_warmup_data(past_warmups[1])
-            NLW_ntot: int = NLW["ncall"] * NLW["niter"]
-            scaling: float = (LW["error"] ** 2 / float(LW_ntot)) / (
-                NLW["error"] ** 2 / float(NLW_ntot)
+            NLW :Job = past_warmups[1]
+            NLW_ntot: int = NLW.ncall * NLW.niter
+            scaling: float = (LW.error ** 2 / float(LW_ntot)) / (
+                NLW.error ** 2 / float(NLW_ntot)
             )
             if abs(scaling - 1.0) <= self.config["warmup"]["scaling_window"]:
                 wflag |= WarmupFlag.SCALING
@@ -168,5 +181,5 @@ class PreProduction(DBTask):
     def run(self):
         print(f"PreProduction: run {self.part_id}")
         if (job_id := self.append_warmup()) > 0:
+            print(f"PreProduction: yield {job_id}")
             yield self.clone(cls=DBDispatch, id=job_id)
-
