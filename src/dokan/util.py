@@ -5,23 +5,26 @@ refactor common functions and patterns here
 
 
 def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:
-    """[summary]
+    """validate a structure against a predifined schema
 
-    [description]
+    used to define & validate the structure & types in configuration files and
+    data structures in the workflow.
 
     Parameters
     ----------
-    struct : [type]
-        [description]
-    schema : [type]
-        [description]
+    struct :
+        the datastructure to validate (mutable for conversion)
+    schema :
+        a datastructure that defines the expected structure and types
     convert_to_type : bool, optional
-        [description] (the default is True, which [default_description])
+        flag to convert types in case they don't match (the default is True)
+        e.g. used when reading from a JSON file where keys are converted to
+        str and IntEnums are stored as int.
 
     Returns
     -------
     bool
-        [description]
+        if the validation (including the conversion if chosem) was successful
     """
 
     # > dealing with a dictionary
@@ -56,8 +59,9 @@ def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:
 
     if isinstance(struct, list) and isinstance(schema, list):
         # > single entry of type requires all elements to be of that type
-        if len(schema) == 1 and isinstance((elt := schema[0]), type):
-            if convert_to_type:
+        if len(schema) == 1:
+            elt = schema[0]
+            if convert_to_type and isinstance(elt, type):
                 for i, e in enumerate(struct):
                     if not isinstance(e, elt):
                         struct[i] = elt(e)
@@ -80,6 +84,6 @@ def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:
     return False
 
 
-#@todo
+# @todo
 def parse_time_interval(string: str) -> float:
     return 0
