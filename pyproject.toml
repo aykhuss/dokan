@@ -3,7 +3,7 @@ name = "dokan"
 description = "Automating the NNLOJET workflow"
 readme = "README.md"
 requires-python = ">=3.8"
-license = "MIT"
+license = {file = "LICENSE"}
 dynamic = ["version"]
 keywords = []
 authors = [
