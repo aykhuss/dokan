@@ -2,6 +2,7 @@ import luigi
 import logging
 import time
 import json
+import re
 
 from abc import ABCMeta, abstractmethod
 from pathlib import Path
@@ -239,6 +240,7 @@ class DBRunner(DBTask):
                     raise RuntimeError(
                         f"no warmup found for production job {db_job.part.name}"
                     )
+
                 if last_warm:
                     if not last_warm.path:
                         raise RuntimeError(f"last warmup {last_warm.id} has no path")
@@ -247,6 +249,9 @@ class DBRunner(DBTask):
                     if not last_warm_data.is_final:
                         raise RuntimeError(f"last warmup {last_warm.id} is not final")
                     for wfile in last_warm_data["output_files"]:
+                        #> skip "*.s<seed>.*" files
+                        if re.match(r"^.*\.s[0-9]+\.[^0-9.]+$", wfile):
+                            continue
                         shutil.copyfile(last_warm_path / wfile, job_path / wfile)
                         exe_data["input_files"].append(wfile)
                 # @ todo FIRST put the runcard
