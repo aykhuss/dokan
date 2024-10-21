@@ -46,18 +46,9 @@ class PreProduction(DBTask):
         # > check all warmup QC criteria
         if self.append_warmup() > 0:
             return False
-        # # > pre-production needs at least one successful production
-        # # > that ran with the same policy setting
-        # with self.session as session:
-        #     success_production = session.scalars(
-        #         select(Job)
-        #         .where(Job.part_id == self.part_id)
-        #         .where(Job.mode == ExecutionMode.PRODUCTION)
-        #         .where(Job.policy == self.config["exe"]["policy"])
-        #         .where(Job.status.in_(JobStatus.success_list()))
-        #     ).first()
-        #     if success_production:
-        #         return True
+        # > make sure, there's one pre-production ready
+        if self.append_production() > 0:
+            return False
         return True
 
     def append_warmup(self) -> int:
@@ -202,11 +193,77 @@ class PreProduction(DBTask):
             )
             return queue_warmup(NW_ncall, NW_niter)
 
+    def append_production(self) -> int:
+        with self.session as session:
+            # > active production: return them in order
+            # > since `complete` calls this routine, we need to anticipate
+            # > calls before completion of active warmup jobs
+            active_production = session.scalars(
+                select(Job)
+                .where(Job.part_id == self.part_id)
+                .where(Job.mode == ExecutionMode.PRODUCTION)
+                .where(Job.policy == self.config["exe"]["policy"])
+                .where(Job.status.in_(JobStatus.active_list()))
+                .order_by(Job.id.asc())
+            ).first()
+            if active_production:
+                print(f"active production: {active_production!r}")
+                return active_production.id
+
+            # > already have a successful production: done.
+            success_production = session.scalars(
+                select(Job)
+                .where(Job.part_id == self.part_id)
+                .where(Job.mode == ExecutionMode.PRODUCTION)
+                .where(Job.policy == self.config["exe"]["policy"])
+                .where(Job.status.in_(JobStatus.success_list()))
+            ).first()
+            if success_production:
+                return -1
+
+            # > queue up a pre-production (PP) with time estimates from the
+            # > highest-statistics warumup job we got.
+            # > runtime penalty warmup -> prodcution: 1:10
+            penalty: float = 0.1  # @todo make config option?
+
+            LW = session.scalars(
+                select(Job)
+                .where(Job.part_id == self.part_id)
+                .where(Job.mode == ExecutionMode.WARMUP)
+                .where(Job.status.in_(JobStatus.success_list()))
+                .order_by(Job.id.desc())
+            ).first()
+            if not LW:
+                raise RuntimeError(
+                    f"pre-production: no warmup found for {self.part_id}"
+                )
+            LW_ntot: int = LW.ncall * LW.niter
+
+            PP_ntot: int = int(
+                penalty * LW_ntot * self.config["run"]["max_runtime"] / LW.elapsed_time
+            )
+
+            pre_production = Job(
+                part_id=self.part_id,
+                mode=ExecutionMode.PRODUCTION,
+                policy=self.config["exe"]["policy"],
+                status=JobStatus.QUEUED,
+                timestamp=0.0,
+                ncall=int(PP_ntot / self.config["production"]["niter"]),
+                niter=self.config["production"]["niter"],
+            )
+            session.add(pre_production)
+            session.commit()
+            return pre_production.id
+
     def run(self):
         print(f"PreProduction: run {self.part_id}")
         if (job_id := self.append_warmup()) > 0:
             print(f"PreProduction: yield {job_id}")
             yield self.clone(cls=DBDispatch, id=job_id)
         print(
-            f"PreProduction: warmrup done {self.part_id}: {WarmupFlag.print_flags(WarmupFlag(-job_id))}"
+            f"PreProduction: warmup done {self.part_id}: {WarmupFlag.print_flags(WarmupFlag(-job_id))}"
         )
+        if (job_id := self.append_production()) > 0:
+            print(f"PreProduction: yield {job_id}")
+            yield self.clone(cls=DBDispatch, id=job_id)
