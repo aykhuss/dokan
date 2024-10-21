@@ -66,6 +66,7 @@ _schema: dict = {
         "ncores": int,  # #of cores to allocate to a single production run
         "ncall_start": int,  # initial number of events (per iteration)
         "niter": int,  # number of iterations in a single job (>=2 for chi2dof)
+        "penalty_wrt_warmup": float,  # factor that takes into account the slowdown from warmup -> production
     },
 }
 
