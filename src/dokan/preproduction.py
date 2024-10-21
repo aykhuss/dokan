@@ -1,4 +1,5 @@
 import luigi
+import math
 from enum import IntFlag, auto
 from sqlalchemy import select
 from pathlib import Path
@@ -17,6 +18,25 @@ class WarmupFlag(IntFlag):
     MIN_INCREMENT = auto()  ##
     MAX_INCREMENT = auto()  ##
     RUNTIME = auto()  ##
+
+    @staticmethod
+    def print_flags(flags) -> str:
+        ret: str = ""
+        if WarmupFlag.RELACC in flags:
+            ret += " [RELACC] "
+        if WarmupFlag.CHI2DOF in flags:
+            ret += " [CHI2DOF] "
+        if WarmupFlag.GRID in flags:
+            ret += " [GRID] "
+        if WarmupFlag.SCALING in flags:
+            ret += " [SCALING] "
+        if WarmupFlag.MIN_INCREMENT in flags:
+            ret += " [MIN_INCREMENT] "
+        if WarmupFlag.MAX_INCREMENT in flags:
+            ret += " [MAX_INCREMENT] "
+        if WarmupFlag.RUNTIME in flags:
+            ret += " [RUNTIME] "
+        return ret
 
 
 class PreProduction(DBTask):
@@ -45,7 +65,7 @@ class PreProduction(DBTask):
         wflag: WarmupFlag = WarmupFlag(0)
 
         with self.session as session:
-            #> not needed can get all information from `Job`
+            # > not needed can get all information from `Job`
             # # > local helper function to extract data from a warmup job
             # def get_warmup_data(job: Job) -> ExeData:
             #     if job.path:
@@ -155,11 +175,12 @@ class PreProduction(DBTask):
                 return queue_warmup(NW_ncall, NW_niter)
 
             # > next-to-last warmup (NLW)
-            NLW :Job = past_warmups[1]
+            NLW: Job = past_warmups[1]
             NLW_ntot: int = NLW.ncall * NLW.niter
-            scaling: float = (LW.error ** 2 / float(LW_ntot)) / (
-                NLW.error ** 2 / float(NLW_ntot)
+            scaling: float = (LW.error / NLW.error) * math.sqrt(
+                float(LW_ntot) / float(NLW_ntot)
             )
+
             if abs(scaling - 1.0) <= self.config["warmup"]["scaling_window"]:
                 wflag |= WarmupFlag.SCALING
 
@@ -176,6 +197,9 @@ class PreProduction(DBTask):
                 return -int(wflag)
 
             # > need more warmup iterations
+            print(
+                f"PreProduction: append {self.part_id}: {WarmupFlag.print_flags(WarmupFlag(wflag))}"
+            )
             return queue_warmup(NW_ncall, NW_niter)
 
     def run(self):
@@ -183,3 +207,6 @@ class PreProduction(DBTask):
         if (job_id := self.append_warmup()) > 0:
             print(f"PreProduction: yield {job_id}")
             yield self.clone(cls=DBDispatch, id=job_id)
+        print(
+            f"PreProduction: warmrup done {self.part_id}: {WarmupFlag.print_flags(WarmupFlag(-job_id))}"
+        )
