@@ -82,18 +82,14 @@ def main() -> None:
 
         if nnlojet_exe is not None:
             config["exe"]["path"] = nnlojet_exe
+
+        # @todo: parse CLI args for local config overrides
         config["run"]["batch_size"] = 123
         # sys.exit("we're debugging here...")
+        # @todo determine # cores on this machine
+        local_ncores: int = 1
 
-        # exe_args = {
-        #     "exe_type": dokan.ExecutionMode.WARMUP,
-        #     "channel": "LO_1",
-        #     "ncall": 100,
-        #     "niter": 5,
-        #     "iseed": 1
-        # }
-        # dokan.Executor.factory(config=config, local_path=["data"], **exe_args)
-
+        channels: dict = config["process"].pop("channels")
         luigi_result = luigi.build(
             [
                 # dokan.Production(
@@ -105,14 +101,15 @@ def main() -> None:
                 dokan.Entry(
                     config=config,
                     local_path=[],
-                    order=0,
+                    channels=channels,
+                    order=1,
                 )
             ],
             worker_scheduler_factory=dokan.WorkerSchedulerFactory(
-                resources={"local_ncores": 8, "DBTask": 1}, check_complete_on_run=False
+                resources={"local_ncores": 8, "DBTask": 10}, check_complete_on_run=False
             ),
             detailed_summary=True,
-            workers=10,
+            workers=12,
             local_scheduler=True,
             log_level="WARNING",
         )  # 'WARNING', 'INFO', 'DEBUG''

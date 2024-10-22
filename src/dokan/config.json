@@ -5,7 +5,7 @@
   "run" : {
     "order" : 2,
     "target_rel_acc" : 0.01,
-    "max_runtime" : 600,
+    "max_runtime" : 300,
     "max_total" : 10000,
     "max_concurrent" : 50,
     "batch_size" : 10,
@@ -28,7 +28,7 @@
     "ncores" : 1,
     "ncall_start" : 100,
     "niter" : 2,
-    "penalty_wrt_warmup": 10
+    "penalty_wrt_warmup": 0.1
   }
 }
 

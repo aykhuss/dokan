@@ -13,6 +13,7 @@ class Entry(DBTask):
     # njobs max
     # max concurrent
     order: int = luigi.IntParameter(default=Order.NNLO)
+    channels: dict = luigi.DictParameter()
     run_tag: float = luigi.FloatParameter(default=time.time())
 
     def __init__(self, *args, **kwargs):
@@ -22,14 +23,10 @@ class Entry(DBTask):
     def requires(self):
         # @todo variations to be added here?
         return [
-            self.clone(cls=DBInit,
-                channels=self.config["process"]["channels"],
+            self.clone(
+                cls=DBInit,
+                channels=self.channels,
             )
-            # DBInit(
-            #     config=self.config,
-            #     local_path=self.local_path,
-            #     channels=self.config["process"]["channels"],
-            # )
         ]
 
     def output(self):
@@ -51,11 +48,6 @@ class Entry(DBTask):
                     cls=PreProduction,
                     part_id=pt.id,
                 )
-                # preprod = PreProduction(
-                #     config=self.config,
-                #     local_path=self.local_path,
-                #     part_id=pt.id,
-                # )
                 preprods.append(preprod)
         print("Entry: yield preprods")
         yield preprods

@@ -223,8 +223,8 @@ class PreProduction(DBTask):
 
             # > queue up a pre-production (PP) with time estimates from the
             # > highest-statistics warumup job we got.
-            # > runtime penalty warmup -> prodcution: 1:10
-            penalty: float = self.config["prodcution"]["penalty_wrt_warmup"]
+            # > runtime penalty warmup -> production: 1:10
+            penalty: float = self.config["production"]["penalty_wrt_warmup"]
 
             LW = session.scalars(
                 select(Job)
@@ -243,7 +243,7 @@ class PreProduction(DBTask):
                 penalty * self.config["run"]["max_runtime"] / LW.elapsed_time
             )
             PP_ntot_acc: int = LW_ntot * int(
-                (LW.error / LW.result / self.config["run"]["target_rel_acc"])** 2
+                (LW.error / LW.result / self.config["run"]["target_rel_acc"]) ** 2
             )
             PP_ntot: int = min(PP_ntot_run, PP_ntot_acc)
             PP_ncall: int = int(PP_ntot / self.config["production"]["niter"])
