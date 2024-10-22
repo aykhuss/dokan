@@ -75,6 +75,7 @@ class Runcard:
         Extract settings for a calculation and return as a dictionary
         * process_name
         * job_name
+        * histograms
 
         Parameters
         ----------
@@ -122,20 +123,19 @@ class Runcard:
                     skip_flag: RuncardBlockFlag = (
                         RuncardBlockFlag.HISTOGRAM_SELECTORS | RuncardBlockFlag.COMPOSITE
                     )
-                    if (skip_flag & blk_flag) or re.match(
+                    if not (skip_flag & blk_flag) and not re.match(
                         r"^\s*HISTOGRAM_SELECTORS\b", ln, re.IGNORECASE
                     ):
-                        continue
-                    if rnm := re.match(r"^\s*(?:[^\s!]+)\s*>\s*([^\s!]+)\b", ln, re.IGNORECASE):
-                        runcard_data["histograms"].append(rnm.group(1))
-                    elif obs := re.match(r"^\s*([^\s!]+)\b", ln, re.IGNORECASE):
-                        runcard_data["histograms"].append(obs.group(1))
-                    else:
-                        raise RuntimeError(f"could not parse observable in histogram entry: {ln}")
+                        if rnm := re.match(r"^\s*(?:[^\s!]+)\s*>\s*([^\s!]+)\b", ln, re.IGNORECASE):
+                            runcard_data["histograms"].append(rnm.group(1))
+                        elif obs := re.match(r"^\s*([^\s!]+)\b", ln, re.IGNORECASE):
+                            runcard_data["histograms"].append(obs.group(1))
+                        else:
+                            raise RuntimeError(f"could not parse observable in histogram entry: {ln}")
 
                 # > accumulate flag
                 blk_flag |= ln_flag
-                # blk_flag ^= ln_flag
+                # blk_flag ^= ln_flag  # <- this would also work for END if we were to delay that accumulation
 
         if "run_name" not in runcard_data:
             raise RuntimeError("{runcard}: could not find RUN block")

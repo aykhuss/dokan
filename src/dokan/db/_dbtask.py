@@ -48,9 +48,9 @@ class DBTask(Task, metaclass=ABCMeta):
             for job in session.scalars(select(Job)):
                 print(job)
 
-    # > database queries should jump the scheduler queue
     # > threadsafety using resource = 1, where read/write needed
     resources = {"DBTask": 1}
+    # > database queries should jump the scheduler queue?
     # priority = 100
 
     def output(self):

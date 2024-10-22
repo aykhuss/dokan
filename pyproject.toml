@@ -30,3 +30,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.version]
 path = "src/dokan/__about__.py"
+
+[tool.ruff]
+line-length = 100
