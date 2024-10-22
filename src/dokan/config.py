@@ -31,6 +31,8 @@ _schema: dict = {
         "name": str,  # job name
         "path": str,  # absolute path to job directory
         "template": str,  # template file name (not path)
+        "histograms": [str],  # list of all histograms
+        "histograms_single_file": str,  # name in case we concatenate all histograms to a single file
         "order": Order,  # what order to compute (LO, NLO, NNLO)
         "target_rel_acc": float,  # target relative accuracy
         "max_runtime": int,  # maximum runtime (in sec) for a single NNLOJET run
@@ -101,15 +103,9 @@ class Config(UserDict):
         # > implement boundary conditions on the configuration here
         # > that goes beyond the schema (structure and types)
         if "run" in self.data:
-            if (
-                "target_rel_acc" in self.data["run"]
-                and self.data["run"]["target_rel_acc"] <= 0.0
-            ):
+            if "target_rel_acc" in self.data["run"] and self.data["run"]["target_rel_acc"] <= 0.0:
                 return False
-            if (
-                "seed_offset" in self.data["run"]
-                and self.data["run"]["seed_offset"] < 0
-            ):
+            if "seed_offset" in self.data["run"] and self.data["run"]["seed_offset"] < 0:
                 return False
         if "warmup" in self.data:
             if (

@@ -59,15 +59,19 @@ def main() -> None:
     if args.action == "init":
         config: dokan.Config = dokan.Config(default_ok=True)
         runcard: dokan.Runcard = dokan.Runcard(runcard=args.runcard)
+        console.print(runcard.data)
         if nnlojet_exe is None:
             sys.exit("please specify an NNLOJET executable")
         # > save all to the run config file
         if args.job_path:
             config.set_path(args.job_path)
         else:
-            config.set_path(os.path.relpath(runcard.data["job_name"]))
+            config.set_path(os.path.relpath(runcard.data["run_name"]))
         config["exe"]["path"] = nnlojet_exe
-        config["run"]["name"] = runcard.data["job_name"]
+        config["run"]["name"] = runcard.data["run_name"]
+        config["run"]["histograms"] = runcard.data["histograms"]
+        if "histograms_single_file" in runcard.data:
+            config["run"]["histograms_single_file"] = runcard.data["histograms_single_file"]
         config["run"]["template"] = "template.run"
         config["process"]["name"] = runcard.data["process_name"]
         config["process"]["channels"] = dokan.nnlojet.get_lumi(

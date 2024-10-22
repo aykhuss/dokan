@@ -36,9 +36,21 @@ END_SELECTORS
 HISTOGRAMS
 
   yz  min=-2.5  max=+2.5  nbins=10  !grid=pine
+
+  yz > yz_90_92  min=-2.5  max=+2.5  nbins=10  !grid=pine
+  HISTOGRAM_SELECTORS
+    select  mll  min = 90  max = 92
+  END_HISTOGRAM_SELECTORS
+
   ptz  min=0    max=30  nbins=30  !grid=pine
   etz  min=80  max=150  nbins=70  !grid=pine
   mll  min=80  max=100  nbins=20  !grid=pine
+
+  COMPOSITE > ptj [0,10,20,40,60,100]
+    ptj1
+    ptj1
+    ptj3
+  END_COMPOSITE
 
 END_HISTOGRAMS
 

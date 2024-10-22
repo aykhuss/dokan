@@ -5,6 +5,7 @@ collection of helper functions to parse and manipulate NNLOJET runcards
 
 import re
 import string
+from enum import IntFlag, auto
 from os import PathLike
 from pathlib import Path
 
@@ -42,6 +43,20 @@ class RuncardTemplate:
             f.write(string.Template(t.read()).substitute(kwargs))
 
 
+class RuncardBlockFlag(IntFlag):
+    # > auto -> integers of: 2^n starting with 1
+    PROCESS = auto()
+    RUN = auto()
+    PARAMETERS = auto()
+    SELECTORS = auto()
+    HISTOGRAMS = auto()
+    HISTOGRAM_SELECTORS = auto()
+    COMPOSITE = auto()
+    SCALES = auto()
+    MULTI_RUN = auto()
+    CHANNELS = auto()
+
+
 class Runcard:
     def __init__(self, runcard: PathLike) -> None:
         self.runcard = Path(runcard)
@@ -72,18 +87,57 @@ class Runcard:
             extracted settings
         """
         runcard_data = {}
+        runcard_data["histograms"] = ["cross"]
         with open(runcard, "r") as f:
-            for line in f:
-                # > process_name
-                match_proc = re.match(r"^\s*PROCESS\s+([^\s!]+)", line, re.IGNORECASE)
-                if match_proc:
-                    runcard_data["process_name"] = match_proc.group(1)
-                # > job_name
-                match_job = re.match(r"^\s*RUN\s+([^\s!]+)", line, re.IGNORECASE)
-                if match_job:
-                    runcard_data["job_name"] = match_job.group(1)
+            blk_flag: RuncardBlockFlag = RuncardBlockFlag(0)
+            for ln in f:
+                # > keep track of the runcard hierarchy & what level/block we're in
+                ln_flag: RuncardBlockFlag = RuncardBlockFlag(0)  # accumulate @ end
+                for blk in RuncardBlockFlag:
+                    if re.match(r"^\s*{}\b".format(blk.name), ln, re.IGNORECASE):
+                        ln_flag |= blk
+                    if re.match(r"^\s*END_{}\b".format(blk.name), ln, re.IGNORECASE):
+                        blk_flag &= ~blk
+                        ln = ""  # END_<...> never has options: consume
+                        continue
 
-        if "job_name" not in runcard_data:
+                # > skip "empty" lines (or pure comments)
+                ln = re.sub(r"!.*$", "", ln)  # remove comments
+                ln = ln.strip()
+                if not ln:
+                    continue
+
+                # > process_name
+                if prc := re.match(r"^\s*PROCESS\s+([^\s!]+)\b", ln, re.IGNORECASE):
+                    runcard_data["process_name"] = prc.group(1)
+
+                # > run_name
+                if run := re.match(r"^\s*RUN\s+([^\s!]+)\b", ln, re.IGNORECASE):
+                    runcard_data["run_name"] = run.group(1)
+
+                # > parse histogram entries
+                if sgl := re.match(r"^\s*HISTOGRAMS\s*>\s*([^\s!]+)\b", ln, re.IGNORECASE):
+                    runcard_data["histograms_single_file"] = sgl.group(1)
+                if RuncardBlockFlag.HISTOGRAMS in blk_flag:
+                    skip_flag: RuncardBlockFlag = (
+                        RuncardBlockFlag.HISTOGRAM_SELECTORS | RuncardBlockFlag.COMPOSITE
+                    )
+                    if (skip_flag & blk_flag) or re.match(
+                        r"^\s*HISTOGRAM_SELECTORS\b", ln, re.IGNORECASE
+                    ):
+                        continue
+                    if rnm := re.match(r"^\s*(?:[^\s!]+)\s*>\s*([^\s!]+)\b", ln, re.IGNORECASE):
+                        runcard_data["histograms"].append(rnm.group(1))
+                    elif obs := re.match(r"^\s*([^\s!]+)\b", ln, re.IGNORECASE):
+                        runcard_data["histograms"].append(obs.group(1))
+                    else:
+                        raise RuntimeError(f"could not parse observable in histogram entry: {ln}")
+
+                # > accumulate flag
+                blk_flag |= ln_flag
+                # blk_flag ^= ln_flag
+
+        if "run_name" not in runcard_data:
             raise RuntimeError("{runcard}: could not find RUN block")
         if "process_name" not in runcard_data:
             raise RuntimeError("{runcard}: could not find PROCESS block")
@@ -130,14 +184,10 @@ class Runcard:
                 while re.search(r"&", line):
                     line = re.sub(r"\s*&\s*(!.*)?$", "", line.rstrip())
                     if re.search(r"&", line):
-                        raise RuntimeError(
-                            "invalid line continuation in {}".format(runcard)
-                        )
+                        raise RuntimeError("invalid line continuation in {}".format(runcard))
                     next_line = next(f)
                     if not re.match(r"^\s*&", next_line):
-                        raise RuntimeError(
-                            "invalid line continuation in {}".format(runcard)
-                        )
+                        raise RuntimeError("invalid line continuation in {}".format(runcard))
                     line = line + re.sub(r"^\s*&\s*", " ", next_line)
                 # > patch lines to generate a template
                 if any(regex.search(line) for regex in kill_matches):
@@ -151,9 +201,7 @@ class Runcard:
                     t.write("  ${channels}\n")
                 if re.match(r"^\s*CHANNELS", line, re.IGNORECASE):
                     if re.search(r"\bregion\b", line):
-                        line = re.sub(
-                            r"\s*region\s*=\s*\w+\b", "${channels_region}", line
-                        )
+                        line = re.sub(r"\s*region\s*=\s*\w+\b", "${channels_region}", line)
                     else:
                         line = re.sub(
                             r"(?<=CHANNELS)\b",
