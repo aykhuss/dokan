@@ -2,7 +2,7 @@
 name = "dokan"
 description = "Automating the NNLOJET workflow"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = {file = "LICENSE"}
 dynamic = ["version"]
 keywords = []
@@ -10,8 +10,8 @@ authors = [
   { name = "Alexander Huss", email = "alexander.huss@cern.ch" },
 ]
 dependencies = [
-  "beaupy>=3.9.2",
   "luigi",
+  "numpy>=2.0.2",
   "rich>=13.9.2",
   "sqlalchemy>=2.0.35",
 ]
