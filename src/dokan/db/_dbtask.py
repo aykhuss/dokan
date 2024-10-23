@@ -188,8 +188,7 @@ class DBRunner(DBTask):
             # alterantively check for a exe path that is set?
             if db_job.status == JobStatus.DISPATCHED:
                 # > assemble job path
-                root_path: Path = Path(self.config["run"]["path"])
-                job_path: Path = root_path.joinpath(
+                job_path: Path = self._path.joinpath(
                     "raw",
                     str(ExecutionMode(db_job.mode)),
                     db_job.part.name,
@@ -240,9 +239,9 @@ class DBRunner(DBTask):
                     raise RuntimeError(f"no warmup found for production job {db_job.part.name}")
 
                 if last_warm:
-                    if not last_warm.path:
+                    if not last_warm.rel_path:
                         raise RuntimeError(f"last warmup {last_warm.id} has no path")
-                    last_warm_path: Path = Path(last_warm.path)
+                    last_warm_path: Path = self._path / last_warm.rel_path
                     last_warm_data: ExeData = ExeData(last_warm_path)
                     if not last_warm_data.is_final:
                         raise RuntimeError(f"last warmup {last_warm.id} is not final")
@@ -264,14 +263,16 @@ class DBRunner(DBTask):
                 # save to tmp file
                 exe_data.write()
                 # > commit update
-                db_job.path = str(job_path)
+                db_job.rel_path = str(job_path.relative_to(self._path))
                 db_job.status = JobStatus.RUNNING
                 session.commit()
-            yield Executor.factory(policy=ExecutionPolicy(db_job.policy), path=db_job.path)
+            yield Executor.factory(
+                policy=ExecutionPolicy(db_job.policy), path=str(self._path / db_job.rel_path)
+            )
             # > parse the retun data
-            exe_data = ExeData(db_job.path)
+            exe_data = ExeData(self._path / db_job.rel_path)
             if not exe_data.is_final:
-                raise RuntimeError(f"{db_job.id} is not final?!")
+                raise RuntimeError(f"{db_job.id} is not final?!\n{exe_data.path}\n{exe_data.data}")
             if "result" in exe_data["jobs"][db_job.id]:
                 db_job.result = exe_data["jobs"][db_job.id]["result"]
                 db_job.error = exe_data["jobs"][db_job.id]["error"]
@@ -281,68 +282,3 @@ class DBRunner(DBTask):
             else:
                 db_job.status = JobStatus.FAILED
             session.commit()
-
-
-#class DBMerge(DBTask):
-#    # > merge all active: 0
-#    # > merge only a specific `Part` by id: > 0
-#    id: int = luigi.IntParameter(default=0)
-#
-#    resources = {"DBMerge": 1}
-#
-#    def __init__(self, *args, **kwargs):
-#        super().__init__(*args, **kwargs)
-#        with self.session as session:
-#            timestamp: float = time.time()
-#            for pt in session.scalars(self.select_part):
-#                pt.timestamp = timestamp
-#            session.commit()
-#
-#    @property
-#    def select_part(self):
-#        # > define the selector for the part based on the id that was passed
-#        if self.id == 0:
-#            return select(Part).where(Part.active.is_(True))
-#        elif self.id > 0:
-#            return select(Part).where(Part.active.is_(True)).where(Part.id == self.id)
-#        else:
-#            raise ValueError(f"select_part: invalid id for DBMerge: {self.id}")
-#
-#    @property
-#    def select_job(self):
-#        # > define the selector for the jobs based on the id that was passed
-#        if self.id == 0:
-#            return (
-#                select(Job)
-#                .where(Job.mode == ExecutionMode.PRODUCTION)
-#                .where(Job.status.in_(JobStatus.success_list()))
-#            )
-#        elif self.id > 0:
-#            return (
-#                select(Job)
-#                .where(Job.part_id == self.id)
-#                .where(Job.mode == ExecutionMode.PRODUCTION)
-#                .where(Job.status.in_(JobStatus.success_list()))
-#            )
-#        else:
-#            raise ValueError(f"select_job: invalid id for DBMerge: {self.id}")
-#
-#    def requires(self):
-#        #!!! does not play so nice with how we handle the complete state
-#        if self.id == 0:
-#            with self.session as session:
-#                parts: list = []
-#                for pt in session.scalars(self.select_part):
-#                    parts.append(self.clone(cls=DBMerge, id=pt.id))
-#                return parts
-#        return []
-#
-#    def complete(self) -> bool:
-#        with self.session as session:
-#            for job in session.scalars(self.select_job):
-#                if job.status != JobStatus.MERGED:
-#                    return False
-#            return True
-#
-#    def run(self):
-#        print(f"DBMerge: run {self.id}")

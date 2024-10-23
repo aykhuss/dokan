@@ -62,7 +62,7 @@ class Job(JobDB):
     status: Mapped[int]
     # > zero: not started, > 0 : current job, < 0: past merged job
     timestamp: Mapped[float]
-    path: Mapped[str | None]  # relative path to the job directory (set by DBRunner)
+    rel_path: Mapped[str | None]  # relative path to the job directory (set by DBRunner)
 
     # >
     mode: Mapped[int]  # [warmup|production]

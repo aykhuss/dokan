@@ -61,12 +61,14 @@ class Executor(luigi.Task, metaclass=ABCMeta):
 
         # > keep track of files that were generated
         for entry in os.scandir(self.path):
-            #> input files can also become output files (warmup grids)
+            # > input files can also become output files (warmup grids)
             # if entry.name in self.exe_data["input_files"]:
             #     continue
             if entry.name in [ExeData._file_tmp, ExeData._file_fin]:
                 continue
-            print(f"> [{entry.stat().st_mtime} < {self.exe_data["timestamp"]} {entry.stat().st_mtime < self.exe_data["timestamp"]}] {self.path}: {entry.name}")
+            print(
+                f"> [{entry.stat().st_mtime} < {self.exe_data["timestamp"]} {entry.stat().st_mtime < self.exe_data["timestamp"]}] {self.path}: {entry.name}"
+            )
             if entry.stat().st_mtime < self.exe_data["timestamp"]:
                 continue
             # > genuine output file that was generated/modified
