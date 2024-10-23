@@ -40,9 +40,7 @@ class Entry(DBTask):
         # > all pre-productions must complete before we can dispatch production jobs
         preprods = []
         with self.session as session:
-            for pt in session.scalars(select(Part)):
-                if not pt.active:
-                    continue
+            for pt in session.scalars(select(Part).where(Part.active.is_(True))):
                 print(pt)
                 preprod = self.clone(
                     cls=PreProduction,

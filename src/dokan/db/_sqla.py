@@ -36,6 +36,7 @@ class Part(JobDB):
     # @todo: future features
     # variation: Mapped[int]  # <- to identify different setups (rewgt, etc)
     active: Mapped[bool]
+    timestamp: Mapped[float]
 
     # > result of the last merge
     result: Mapped[float | None]

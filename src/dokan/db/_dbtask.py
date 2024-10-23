@@ -94,7 +94,9 @@ class DBInit(DBTask):
                 stmt = select(Part).where(Part.name == pt)
                 # @ todo catch case where it's already there and check it has same entries?
                 if not session.scalars(stmt).first():
-                    session.add(Part(name=pt, active=False, **self.channels[pt]))
+                    session.add(
+                        Part(name=pt, active=False, timestamp=time.time(), **self.channels[pt])
+                    )
                 for db_pt in session.scalars(stmt):
                     db_pt.active = Order(db_pt.order).is_in(Order(self.order))
             session.commit()
@@ -129,9 +131,7 @@ class DBDispatch(DBTask):
         print(f"DBDispatch: run {self.id}")
         with self.session as session:
             # > get the front of the queue
-            stmt = self.select_job.where(Job.status == JobStatus.QUEUED).order_by(
-                Job.id.asc()
-            )
+            stmt = self.select_job.where(Job.status == JobStatus.QUEUED).order_by(Job.id.asc())
             # @todo add batches
             job = session.scalars(stmt).first()
             if job:
@@ -237,9 +237,7 @@ class DBRunner(DBTask):
                     .order_by(Job.id.desc())
                 ).first()
                 if not last_warm and db_job.mode == ExecutionMode.PRODUCTION:
-                    raise RuntimeError(
-                        f"no warmup found for production job {db_job.part.name}"
-                    )
+                    raise RuntimeError(f"no warmup found for production job {db_job.part.name}")
 
                 if last_warm:
                     if not last_warm.path:
@@ -249,7 +247,10 @@ class DBRunner(DBTask):
                     if not last_warm_data.is_final:
                         raise RuntimeError(f"last warmup {last_warm.id} is not final")
                     for wfile in last_warm_data["output_files"]:
-                        #> skip "*.s<seed>.*" files
+                        # @todo always skip log (& dat) files
+                        # @todo if warmup copy over also txt files
+                        # @todo for production, only take the weights (skip txt)
+                        # > skip "*.s<seed>.*" files
                         if re.match(r"^.*\.s[0-9]+\.[^0-9.]+$", wfile):
                             continue
                         shutil.copyfile(last_warm_path / wfile, job_path / wfile)
@@ -266,9 +267,7 @@ class DBRunner(DBTask):
                 db_job.path = str(job_path)
                 db_job.status = JobStatus.RUNNING
                 session.commit()
-            yield Executor.factory(
-                policy=ExecutionPolicy(db_job.policy), path=db_job.path
-            )
+            yield Executor.factory(policy=ExecutionPolicy(db_job.policy), path=db_job.path)
             # > parse the retun data
             exe_data = ExeData(db_job.path)
             if not exe_data.is_final:
@@ -283,39 +282,67 @@ class DBRunner(DBTask):
                 db_job.status = JobStatus.FAILED
             session.commit()
 
-        # logger.debug(f"{self.id}: collected heavy")
-        # # > save result of heavy:
-        # with heavy.open("r") as heavy_fh:
-        #     res = json.load(heavy_fh)
-        #     if "val" in res:
-        #         with self.session as session:
-        #             job: Job = session.get_one(Job, self.id)
-        #             logger.debug(
-        #                 f"{self.id}: job: {job!r} gave back val = {res["val"]}"
-        #             )
-        #             job.result = res["val"]
-        #             job.status = JobStatus.DONE
-        #             session.commit()
 
+class DBMerge(DBTask):
+    # > merge all active: 0
+    # > merge only a specific `Part` by id: > 0
+    id: int = luigi.IntParameter(default=0)
 
-#    def copy_input(self):
-#        if not self.input_local_path:
-#            return
-#
-#        def input(*path: PathLike) -> Path:
-#            return Path(self.config["run"]["path"]).joinpath(
-#                *self.input_local_path, *path
-#            )
-#
-#        with open(input(Executor._file_res), "r") as in_res:
-#            in_data = json.load(in_res)
-#            # > check here if it's a warmup?
-#            for in_file in in_data["output_files"]:
-#                # > always skip log (& dat) files
-#                # > if warmup copy over also txt files
-#                # > for production, only take the weights (skip txt)
-#                if in_file in self.data["input_files"]:
-#                    continue  # already copied in the past
-#                shutil.copyfile(input(in_file), self._local(in_file))
-#                self.data["input_files"].append(in_file)
-#
+    resources = {"DBMerge": 1}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        with self.session as session:
+            timestamp: float = time.time()
+            for pt in session.scalars(self.select_part):
+                pt.timestamp = timestamp
+            session.commit()
+
+    @property
+    def select_part(self):
+        # > define the selector for the part based on the id that was passed
+        if self.id == 0:
+            return select(Part).where(Part.active.is_(True))
+        elif self.id > 0:
+            return select(Part).where(Part.active.is_(True)).where(Part.id == self.id)
+        else:
+            raise ValueError(f"select_part: invalid id for DBMerge: {self.id}")
+
+    @property
+    def select_job(self):
+        # > define the selector for the jobs based on the id that was passed
+        if self.id == 0:
+            return (
+                select(Job)
+                .where(Job.mode == ExecutionMode.PRODUCTION)
+                .where(Job.status.in_(JobStatus.success_list()))
+            )
+        elif self.id > 0:
+            return (
+                select(Job)
+                .where(Job.part_id == self.id)
+                .where(Job.mode == ExecutionMode.PRODUCTION)
+                .where(Job.status.in_(JobStatus.success_list()))
+            )
+        else:
+            raise ValueError(f"select_job: invalid id for DBMerge: {self.id}")
+
+    def requires(self):
+        #!!! does not play so nice with how we handle the complete state
+        if self.id == 0:
+            with self.session as session:
+                parts: list = []
+                for pt in session.scalars(self.select_part):
+                    parts.append(self.clone(cls=DBMerge, id=pt.id))
+                return parts
+        return []
+
+    def complete(self) -> bool:
+        with self.session as session:
+            for job in session.scalars(self.select_job):
+                if job.status != JobStatus.MERGED:
+                    return False
+            return True
+
+    def run(self):
+        print(f"DBMerge: run {self.id}")
