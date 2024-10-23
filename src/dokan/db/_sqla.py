@@ -3,7 +3,7 @@
 module defining the job database
 """
 
-from dokan.exe._exe_config import ExecutionMode, ExecutionPolicy
+from ..exe._exe_config import ExecutionMode, ExecutionPolicy
 from ._jobstatus import JobStatus
 
 from sqlalchemy import ForeignKey

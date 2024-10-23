@@ -283,66 +283,66 @@ class DBRunner(DBTask):
             session.commit()
 
 
-class DBMerge(DBTask):
-    # > merge all active: 0
-    # > merge only a specific `Part` by id: > 0
-    id: int = luigi.IntParameter(default=0)
-
-    resources = {"DBMerge": 1}
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        with self.session as session:
-            timestamp: float = time.time()
-            for pt in session.scalars(self.select_part):
-                pt.timestamp = timestamp
-            session.commit()
-
-    @property
-    def select_part(self):
-        # > define the selector for the part based on the id that was passed
-        if self.id == 0:
-            return select(Part).where(Part.active.is_(True))
-        elif self.id > 0:
-            return select(Part).where(Part.active.is_(True)).where(Part.id == self.id)
-        else:
-            raise ValueError(f"select_part: invalid id for DBMerge: {self.id}")
-
-    @property
-    def select_job(self):
-        # > define the selector for the jobs based on the id that was passed
-        if self.id == 0:
-            return (
-                select(Job)
-                .where(Job.mode == ExecutionMode.PRODUCTION)
-                .where(Job.status.in_(JobStatus.success_list()))
-            )
-        elif self.id > 0:
-            return (
-                select(Job)
-                .where(Job.part_id == self.id)
-                .where(Job.mode == ExecutionMode.PRODUCTION)
-                .where(Job.status.in_(JobStatus.success_list()))
-            )
-        else:
-            raise ValueError(f"select_job: invalid id for DBMerge: {self.id}")
-
-    def requires(self):
-        #!!! does not play so nice with how we handle the complete state
-        if self.id == 0:
-            with self.session as session:
-                parts: list = []
-                for pt in session.scalars(self.select_part):
-                    parts.append(self.clone(cls=DBMerge, id=pt.id))
-                return parts
-        return []
-
-    def complete(self) -> bool:
-        with self.session as session:
-            for job in session.scalars(self.select_job):
-                if job.status != JobStatus.MERGED:
-                    return False
-            return True
-
-    def run(self):
-        print(f"DBMerge: run {self.id}")
+#class DBMerge(DBTask):
+#    # > merge all active: 0
+#    # > merge only a specific `Part` by id: > 0
+#    id: int = luigi.IntParameter(default=0)
+#
+#    resources = {"DBMerge": 1}
+#
+#    def __init__(self, *args, **kwargs):
+#        super().__init__(*args, **kwargs)
+#        with self.session as session:
+#            timestamp: float = time.time()
+#            for pt in session.scalars(self.select_part):
+#                pt.timestamp = timestamp
+#            session.commit()
+#
+#    @property
+#    def select_part(self):
+#        # > define the selector for the part based on the id that was passed
+#        if self.id == 0:
+#            return select(Part).where(Part.active.is_(True))
+#        elif self.id > 0:
+#            return select(Part).where(Part.active.is_(True)).where(Part.id == self.id)
+#        else:
+#            raise ValueError(f"select_part: invalid id for DBMerge: {self.id}")
+#
+#    @property
+#    def select_job(self):
+#        # > define the selector for the jobs based on the id that was passed
+#        if self.id == 0:
+#            return (
+#                select(Job)
+#                .where(Job.mode == ExecutionMode.PRODUCTION)
+#                .where(Job.status.in_(JobStatus.success_list()))
+#            )
+#        elif self.id > 0:
+#            return (
+#                select(Job)
+#                .where(Job.part_id == self.id)
+#                .where(Job.mode == ExecutionMode.PRODUCTION)
+#                .where(Job.status.in_(JobStatus.success_list()))
+#            )
+#        else:
+#            raise ValueError(f"select_job: invalid id for DBMerge: {self.id}")
+#
+#    def requires(self):
+#        #!!! does not play so nice with how we handle the complete state
+#        if self.id == 0:
+#            with self.session as session:
+#                parts: list = []
+#                for pt in session.scalars(self.select_part):
+#                    parts.append(self.clone(cls=DBMerge, id=pt.id))
+#                return parts
+#        return []
+#
+#    def complete(self) -> bool:
+#        with self.session as session:
+#            for job in session.scalars(self.select_job):
+#                if job.status != JobStatus.MERGED:
+#                    return False
+#            return True
+#
+#    def run(self):
+#        print(f"DBMerge: run {self.id}")
