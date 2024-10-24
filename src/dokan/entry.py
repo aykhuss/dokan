@@ -3,7 +3,7 @@ import time
 from sqlalchemy import select
 
 from .order import Order
-from .db import Part, Job, DBTask, DBInit
+from .db import Part, Job, DBTask, DBInit, MergeAll
 from .preproduction import PreProduction
 
 
@@ -50,4 +50,5 @@ class Entry(DBTask):
         print("Entry: yield preprods")
         yield preprods
         print("Entry: complete preprods")
+        yield self.clone(MergeAll)
         self.print_job()

@@ -141,6 +141,8 @@ class Runcard:
             raise RuntimeError("{runcard}: could not find RUN block")
         if "process_name" not in runcard_data:
             raise RuntimeError("{runcard}: could not find PROCESS block")
+        #@todo: if any of the names in runcard_data["histograms"] have a dor (".") ERROR OUT!
+        #would conflict with our naming conventions and parsing files later
 
         return runcard_data
 
