@@ -10,6 +10,7 @@ from ..exe._exe_config import ExecutionMode
 from ..exe._exe_data import ExeData
 from ._sqla import Part, Job, JobStatus
 from ._dbtask import DBTask
+from ..combine import NNLOJETHistogram, NNLOJETContainer
 
 
 class DBMerge(DBTask, metaclass=ABCMeta):
@@ -40,6 +41,8 @@ class DBMerge(DBTask, metaclass=ABCMeta):
 class MergePart(DBMerge):
     # > merge only a specific `Part`
     part_id: int = luigi.IntParameter()
+
+    # @ todo add flag to force re-merge (as long as at least one done job)
 
     # @property
     # def select_part(self):
@@ -82,7 +85,7 @@ class MergePart(DBMerge):
                 f"MergePart::complete[{self.part_id}]: done {dc_done}/{c_done}, merged {dc_merged}/{c_merged}"
             )
 
-            if float(c_done) / float(c_merged+1) < 1.0:  # @todo make config parameter?
+            if float(c_done) / float(c_merged + 1) < 1.0:  # @todo make config parameter?
                 return True
         return False
 
@@ -94,7 +97,7 @@ class MergePart(DBMerge):
             pt.timestamp = time.time()
             session.commit()
 
-            #> output directory
+            # > output directory
             mrg_path: Path = self._path.joinpath("result", "part", pt.name)
             if not mrg_path.exists():
                 mrg_path.mkdir(parents=True)
@@ -117,9 +120,23 @@ class MergePart(DBMerge):
                     ):
                         in_files.append(job_path / out)
                 # > merge @todo: properly call merge
-                with open(out_file, "w") as out:
-                    for in_file in in_files:
-                        out.write(str(in_file))
+                nx: int = 0 if obs == "obs" else 3
+                container = NNLOJETContainer(size=len(in_files))
+                for in_file in in_files:
+                    try:
+                        container.append(NNLOJETHistogram(nx=nx, filename=in_file))
+                    except ValueError as e:
+                        print(e)
+                        print("error reading file:", in_file)
+                container.mask_outliers(3.5, 0.01)
+                container.optimise_k(maxdev_unwgt=None, nsteps=3, maxdev_steps=0.5)
+                hist = container.merge(weighted=True)
+                hist.write_to_file(out_file)
+
+                #@todo keep track of a "settings.json" for merge settings used?
+                # with open(out_file, "w") as out:
+                #     for in_file in in_files:
+                #         out.write(str(in_file))
 
             # > mark done
             for job in session.scalars(self.select_job):
@@ -131,6 +148,8 @@ class MergePart(DBMerge):
 
 class MergeAll(DBMerge):
     # > merge all `Part` objects
+
+    # @ todo add flag to skip requirements and just merge all parts
 
     @property
     def select_part(self):
