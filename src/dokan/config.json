@@ -4,7 +4,7 @@
   },
   "run": {
     "order": 2,
-    "histograms": [],
+    "histograms": {},
     "target_rel_acc": 0.01,
     "max_runtime": 300,
     "max_total": 10000,

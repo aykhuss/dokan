@@ -88,7 +88,8 @@ class Runcard:
             extracted settings
         """
         runcard_data = {}
-        runcard_data["histograms"] = ["cross"]
+        runcard_data["histograms"] = {}
+        runcard_data["histograms"]["cross"] = {"nx": 0}
         with open(runcard, "r") as f:
             blk_flag: RuncardBlockFlag = RuncardBlockFlag(0)
             for ln in f:
@@ -126,23 +127,37 @@ class Runcard:
                     if not (skip_flag & blk_flag) and not re.match(
                         r"^\s*HISTOGRAM_SELECTORS\b", ln, re.IGNORECASE
                     ):
+                        # > extract relevant options of the histogram
+                        options: dict = {"nx": 3}  # default
+                        if opt := re.match(r".*\bcumulant\s*=\s*([^\s!]+)\b", ln, re.IGNORECASE):
+                            options["cumulant"] = int(opt.group(1))
+                            if abs(options["cumulant"]) == 1:
+                                options["nx"] = 1
+                            elif options["cumulant"] != 0:
+                                raise RuntimeError(f"unrecognized cumulant option: {ln}")
+                        if opt := re.match(r".*\bgrid\s*=\s*([^\s!]+)\b", ln, re.IGNORECASE):
+                            options["grid"] = opt.group(1)
+                        # > save histogram & option
                         if rnm := re.match(r"^\s*(?:[^\s!]+)\s*>\s*([^\s!]+)\b", ln, re.IGNORECASE):
-                            runcard_data["histograms"].append(rnm.group(1))
+                            runcard_data["histograms"][rnm.group(1)] = options
                         elif obs := re.match(r"^\s*([^\s!]+)\b", ln, re.IGNORECASE):
-                            runcard_data["histograms"].append(obs.group(1))
+                            runcard_data["histograms"][obs.group(1)] = options
                         else:
-                            raise RuntimeError(f"could not parse observable in histogram entry: {ln}")
+                            raise RuntimeError(
+                                f"could not parse observable in histogram entry: {ln}"
+                            )
 
                 # > accumulate flag
                 blk_flag |= ln_flag
                 # blk_flag ^= ln_flag  # <- this would also work for END if we were to delay that accumulation
 
         if "run_name" not in runcard_data:
-            raise RuntimeError("{runcard}: could not find RUN block")
+            raise RuntimeError(f"{runcard}: could not find RUN block")
         if "process_name" not in runcard_data:
-            raise RuntimeError("{runcard}: could not find PROCESS block")
-        #@todo: if any of the names in runcard_data["histograms"] have a dor (".") ERROR OUT!
-        #would conflict with our naming conventions and parsing files later
+            raise RuntimeError(f"{runcard}: could not find PROCESS block")
+        # > observable names with a dot can conflict with how we parse files later
+        if any(obs.find(".") != -1 for obs in runcard_data["histograms"].keys()):
+            raise RuntimeError(f"{runcard}: observable names with '.' are not supported")
 
         return runcard_data
 

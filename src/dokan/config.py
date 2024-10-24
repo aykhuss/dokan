@@ -31,7 +31,7 @@ _schema: dict = {
         "name": str,  # job name
         "path": str,  # absolute path to job directory
         "template": str,  # template file name (not path)
-        "histograms": [str],  # list of all histograms
+        "histograms": {str: {"nx": int, "cumulant": int, "grid": str}},  # list of all histograms
         "histograms_single_file": str,  # name in case we concatenate all histograms to a single file
         "order": Order,  # what order to compute (LO, NLO, NNLO)
         "target_rel_acc": float,  # target relative accuracy
