@@ -43,6 +43,9 @@ HISTOGRAMS
   END_HISTOGRAM_SELECTORS
 
   ptz  min=0    max=30  nbins=30  !grid=pine
+
+  ptz > ptz_cumulant  min=0    max=30  nbins=30  cumulant=+1
+
   etz  min=80  max=150  nbins=70  !grid=pine
   mll  min=80  max=100  nbins=20  !grid=pine
 

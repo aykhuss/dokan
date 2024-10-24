@@ -112,29 +112,31 @@ class MergePart(DBMerge):
             if not mrg_path.exists():
                 mrg_path.mkdir(parents=True)
 
-            # > loop over all observables
+            # > populate a dictionary with all histogram files (reduces IO)
             if "histograms_single_file" in self.config["run"]:  # @todo
                 raise NotImplementedError("MergePart: histograms_single_file")
+            in_files = dict((obs, []) for obs in self.config["run"]["histograms"].keys())
+            # > collect histograms from all jobs
+            for job in session.scalars(self.select_job):
+                if not job.rel_path:
+                    continue  # @todo raise warning in logger?
+                job_path: Path = self._path / job.rel_path
+                exe_data = ExeData(job_path)
+                for out in exe_data["output_files"]:
+                    if dat := re.match(r"^.*\.([^.]+)\.s[0-9]+\.dat", out):
+                        if dat.group(1) in in_files:
+                            in_files[dat.group(1)].append(
+                                str((job_path / out).relative_to(self._path))
+                            )
+
+            # > merge all histograms
             for obs in self.config["run"]["histograms"]:
                 out_file: Path = mrg_path / f"{obs}.dat"
-                in_files: list[Path] = []
-                # > collect histograms from all jobs
-                for job in session.scalars(self.select_job):
-                    if not job.rel_path:
-                        continue  # @todo raise warning in logger?
-                    job_path: Path = self._path / job.rel_path
-                    exe_data = ExeData(job_path)
-                    for out in filter(
-                        lambda x: re.match(r"^.*\.{}\.s[0-9]+\.dat".format(obs), x),
-                        exe_data["output_files"],
-                    ):
-                        in_files.append(job_path / out)
-                # > merge @todo: properly call merge
-                nx: int = 0 if obs == "obs" else 3
-                container = NNLOJETContainer(size=len(in_files))
-                for in_file in in_files:
+                nx: int = self.config["run"]["histograms"][obs]["nx"]
+                container = NNLOJETContainer(size=len(in_files[obs]))
+                for in_file in in_files[obs]:
                     try:
-                        container.append(NNLOJETHistogram(nx=nx, filename=in_file))
+                        container.append(NNLOJETHistogram(nx=nx, filename=self._path / in_file))
                     except ValueError as e:
                         print(e)
                         print("error reading file:", in_file)
@@ -143,10 +145,40 @@ class MergePart(DBMerge):
                 hist = container.merge(weighted=True)
                 hist.write_to_file(out_file)
 
-                # @todo keep track of a "settings.json" for merge settings used?
-                # with open(out_file, "w") as out:
-                #     for in_file in in_files:
-                #         out.write(str(in_file))
+            # > old inefficient implementation
+            # # > loop over all observables
+            # for obs in self.config["run"]["histograms"]:
+            #     out_file: Path = mrg_path / f"{obs}.dat"
+            #     in_files: list[Path] = []
+            #     # > collect histograms from all jobs
+            #     for job in session.scalars(self.select_job):
+            #         if not job.rel_path:
+            #             continue  # @todo raise warning in logger?
+            #         job_path: Path = self._path / job.rel_path
+            #         exe_data = ExeData(job_path)
+            #         for out in filter(
+            #             lambda x: re.match(r"^.*\.{}\.s[0-9]+\.dat".format(obs), x),
+            #             exe_data["output_files"],
+            #         ):
+            #             in_files.append(job_path / out)
+            #     # > merge @todo: properly call merge
+            #     nx: int = 0 if obs == "obs" else 3
+            #     container = NNLOJETContainer(size=len(in_files))
+            #     for in_file in in_files:
+            #         try:
+            #             container.append(NNLOJETHistogram(nx=nx, filename=in_file))
+            #         except ValueError as e:
+            #             print(e)
+            #             print("error reading file:", in_file)
+            #     container.mask_outliers(3.5, 0.01)
+            #     container.optimise_k(maxdev_unwgt=None, nsteps=3, maxdev_steps=0.5)
+            #     hist = container.merge(weighted=True)
+            #     hist.write_to_file(out_file)
+
+            # @todo keep track of a "settings.json" for merge settings used?
+            # with open(out_file, "w") as out:
+            #     for in_file in in_files:
+            #         out.write(str(in_file))
 
             # > mark done
             for job in session.scalars(self.select_job):
