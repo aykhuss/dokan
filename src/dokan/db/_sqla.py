@@ -39,8 +39,8 @@ class Part(JobDB):
     timestamp: Mapped[float]
 
     # > result of the last merge
-    result: Mapped[float | None]
-    error: Mapped[float | None]
+    result: Mapped[float] = mapped_column(default=0.0)
+    error: Mapped[float] = mapped_column(default=0.0)
     # number of jobs?
 
     # > all jobs associated with this part
@@ -67,13 +67,14 @@ class Job(JobDB):
     # >
     mode: Mapped[int]  # [warmup|production]
     policy: Mapped[int]  # how to run
-    seed: Mapped[int | None] # set in DBDispatch
-    ncall: Mapped[int | None] # set before DBDispatch or auto-determined in DBRunner
-    niter: Mapped[int | None] # set before DBDispatch or auto-determined in DBRunner
-    elapsed_time: Mapped[float | None]
-    result: Mapped[float | None]
-    error: Mapped[float | None]
-    chi2dof: Mapped[float | None]
+    seed: Mapped[int | None]  # set in DBDispatch
+    # (ncall,niter) set before DBDispatch or auto-determined in DBRunner
+    ncall: Mapped[int] = mapped_column(default=0)
+    niter: Mapped[int] = mapped_column(default=0)
+    elapsed_time: Mapped[float] = mapped_column(default=0.0)
+    result: Mapped[float] = mapped_column(default=0.0)
+    error: Mapped[float] = mapped_column(default=0.0)
+    chi2dof: Mapped[float] = mapped_column(default=0.0)
 
     def __repr__(self) -> str:
         return f"Job(id={self.id!r}, part_id={self.part_id!r}, status={(self.status)!r}, timestamp={self.timestamp!r}, mode={ExecutionMode(self.mode)!r}, policy={ExecutionPolicy(self.policy)!r})"

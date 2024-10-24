@@ -76,7 +76,17 @@ class MergePart(DBMerge):
                 if job.status == JobStatus.MERGED:
                     dc_merged += 1
 
-            c_done = len(session.scalars(self.select_job.where(Job.status == JobStatus.DONE)).all())
+            c_done = (
+                session.query(Job)
+                .join(Part)
+                .filter(Part.id == self.part_id)
+                .filter(Part.active.is_(True))
+                .filter(Job.mode == ExecutionMode.PRODUCTION)
+                .filter(Job.status.in_(JobStatus.success_list()))
+                .filter(Job.timestamp < Part.timestamp)
+                .filter(Job.status == JobStatus.DONE)
+                .count()
+            )
             c_merged = len(
                 session.scalars(self.select_job.where(Job.status == JobStatus.MERGED)).all()
             )
@@ -85,7 +95,7 @@ class MergePart(DBMerge):
                 f"MergePart::complete[{self.part_id}]: done {dc_done}/{c_done}, merged {dc_merged}/{c_merged}"
             )
 
-            if float(c_done) / float(c_merged + 1) < 1.0:  # @todo make config parameter?
+            if float(dc_done) / float(dc_merged + 1) < 1.0:  # @todo make config parameter?
                 return True
         return False
 
@@ -133,7 +143,7 @@ class MergePart(DBMerge):
                 hist = container.merge(weighted=True)
                 hist.write_to_file(out_file)
 
-                #@todo keep track of a "settings.json" for merge settings used?
+                # @todo keep track of a "settings.json" for merge settings used?
                 # with open(out_file, "w") as out:
                 #     for in_file in in_files:
                 #         out.write(str(in_file))

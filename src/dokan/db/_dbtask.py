@@ -25,6 +25,11 @@ logger = logging.getLogger("luigi-interface")
 class DBTask(Task, metaclass=ABCMeta):
     """the task class to interact with the database"""
 
+    # > threadsafety using resource = 1, where read/write needed
+    resources = {"DBTask": 1}
+    # > database queries should jump the scheduler queue?
+    # priority = 100
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # @todo all DBTasks need to be started in the job root path: check?
@@ -47,11 +52,6 @@ class DBTask(Task, metaclass=ABCMeta):
         with self.session as session:
             for job in session.scalars(select(Job)):
                 print(job)
-
-    # > threadsafety using resource = 1, where read/write needed
-    resources = {"DBTask": 1}
-    # > database queries should jump the scheduler queue?
-    # priority = 100
 
     def output(self):
         # DBHandlers do not have output files but use the DB
@@ -205,7 +205,7 @@ class DBRunner(DBTask):
                     exe_data["policy_settings"]["local_ncores"] = 1
                 elif db_job.policy == ExecutionPolicy.HTCONDOR:
                     exe_data["policy_settings"]["htcondor_id"] = 42
-                if db_job.ncall and db_job.niter:
+                if (db_job.ncall * db_job.niter) > 0:
                     exe_data["ncall"] = db_job.ncall
                     exe_data["niter"] = db_job.niter
                 else:
