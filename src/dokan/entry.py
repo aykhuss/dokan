@@ -14,7 +14,6 @@ class Entry(DBTask):
     # max concurrent
     order: int = luigi.IntParameter(default=Order.NNLO)
     channels: dict = luigi.DictParameter()
-    run_tag: float = luigi.FloatParameter(default=time.time())
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

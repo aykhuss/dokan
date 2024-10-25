@@ -8,6 +8,7 @@ from luigi.parameter import ParameterVisibility
 from pathlib import Path
 from os import PathLike
 
+
 class Task(luigi.Task):
     """A dokan Task
 
@@ -31,7 +32,6 @@ class Task(luigi.Task):
         super().__init__(*args, **kwargs)
         self._path: Path = Path(self.config["run"]["path"]).joinpath(*self.local_path)
         self._path.mkdir(parents=True, exist_ok=True)
-
 
     # @todo: maybe add a _post_init_ routine that can be overwritten on a task basis?
 

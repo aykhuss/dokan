@@ -25,6 +25,8 @@ logger = logging.getLogger("luigi-interface")
 class DBTask(Task, metaclass=ABCMeta):
     """the task class to interact with the database"""
 
+    run_tag: float = luigi.FloatParameter()
+
     # > threadsafety using resource = 1, where read/write needed
     resources = {"DBTask": 1}
     # > database queries should jump the scheduler queue?
@@ -43,6 +45,14 @@ class DBTask(Task, metaclass=ABCMeta):
     def session(self) -> Session:
         return Session(self.engine)
 
+    def output(self):
+        # DBHandlers do not have output files but use the DB
+        return []
+
+    @abstractmethod
+    def complete(self) -> bool:
+        return False
+
     def print_part(self) -> None:
         with self.session as session:
             for pt in session.scalars(select(Part)):
@@ -52,14 +62,6 @@ class DBTask(Task, metaclass=ABCMeta):
         with self.session as session:
             for job in session.scalars(select(Job)):
                 print(job)
-
-    def output(self):
-        # DBHandlers do not have output files but use the DB
-        return []
-
-    @abstractmethod
-    def complete(self) -> bool:
-        return False
 
 
 class DBInit(DBTask):

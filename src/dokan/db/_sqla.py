@@ -6,7 +6,7 @@ module defining the job database
 from ..exe._exe_config import ExecutionMode, ExecutionPolicy
 from ._jobstatus import JobStatus
 
-from sqlalchemy import ForeignKey
+from sqlalchemy import BigInteger, ForeignKey
 from sqlalchemy import String
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -39,8 +39,9 @@ class Part(JobDB):
     timestamp: Mapped[float] = mapped_column(default=0.0)
 
     # > result of the last merge
-    invested_time: Mapped[float] = mapped_column(default=0.0)
-    result: Mapped[float] = mapped_column(default=float("nan"))
+    Ttot: Mapped[float] = mapped_column(default=0.0)
+    ntot: Mapped[float] = mapped_column(BigInteger(), default=0)
+    result: Mapped[float] = mapped_column(default=0.0)
     error: Mapped[float] = mapped_column(default=float("inf"))
     # number of jobs?
 
@@ -60,8 +61,8 @@ class Job(JobDB):
     part_id: Mapped[int] = mapped_column(ForeignKey("part.id"))
     part: Mapped["Part"] = relationship(back_populates="jobs")
 
+    run_tag: Mapped[float] = mapped_column(default=0.0)
     status: Mapped[int]
-    # > zero: not started, > 0 : current job, < 0: past merged job
     timestamp: Mapped[float] = mapped_column(default=0.0)
     rel_path: Mapped[str | None]  # relative path to the job directory (set by DBRunner)
 
@@ -73,7 +74,7 @@ class Job(JobDB):
     ncall: Mapped[int] = mapped_column(default=0)
     niter: Mapped[int] = mapped_column(default=0)
     elapsed_time: Mapped[float] = mapped_column(default=0.0)
-    result: Mapped[float] = mapped_column(default=float("nan"))
+    result: Mapped[float] = mapped_column(default=0.0)
     error: Mapped[float] = mapped_column(default=float("inf"))
     chi2dof: Mapped[float] = mapped_column(default=float("inf"))
 

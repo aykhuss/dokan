@@ -71,6 +71,7 @@ class PreProduction(DBTask):
             # > queue up a new warmup job in the database and return job id
             def queue_warmup(ncall: int, niter: int) -> int:
                 new_warmup = Job(
+                    run_tag=self.run_tag,
                     part_id=self.part_id,
                     mode=ExecutionMode.WARMUP,
                     policy=self.config["exe"]["policy"],
@@ -251,6 +252,7 @@ class PreProduction(DBTask):
                 PP_ncall = self.config["production"]["ncall_start"]
 
             pre_production = Job(
+                run_tag=self.run_tag,
                 part_id=self.part_id,
                 mode=ExecutionMode.PRODUCTION,
                 policy=self.config["exe"]["policy"],
