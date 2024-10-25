@@ -120,9 +120,11 @@ class MergePart(DBMerge):
                 raise NotImplementedError("MergePart: histograms_single_file")
             in_files = dict((obs, []) for obs in self.config["run"]["histograms"].keys())
             # > collect histograms from all jobs
+            pt.invested_time = 0.0
             for job in session.scalars(self.select_job):
                 if not job.rel_path:
                     continue  # @todo raise warning in logger?
+                pt.invested_time += job.elapsed_time
                 job_path: Path = self._path / job.rel_path
                 exe_data = ExeData(job_path)
                 for out in exe_data["output_files"]:

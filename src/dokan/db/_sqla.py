@@ -39,8 +39,9 @@ class Part(JobDB):
     timestamp: Mapped[float] = mapped_column(default=0.0)
 
     # > result of the last merge
-    result: Mapped[float] = mapped_column(default=0.0)
-    error: Mapped[float] = mapped_column(default=0.0)
+    invested_time: Mapped[float] = mapped_column(default=0.0)
+    result: Mapped[float] = mapped_column(default=float("nan"))
+    error: Mapped[float] = mapped_column(default=float("inf"))
     # number of jobs?
 
     # > all jobs associated with this part
@@ -72,9 +73,9 @@ class Job(JobDB):
     ncall: Mapped[int] = mapped_column(default=0)
     niter: Mapped[int] = mapped_column(default=0)
     elapsed_time: Mapped[float] = mapped_column(default=0.0)
-    result: Mapped[float] = mapped_column(default=0.0)
-    error: Mapped[float] = mapped_column(default=0.0)
-    chi2dof: Mapped[float] = mapped_column(default=0.0)
+    result: Mapped[float] = mapped_column(default=float("nan"))
+    error: Mapped[float] = mapped_column(default=float("inf"))
+    chi2dof: Mapped[float] = mapped_column(default=float("inf"))
 
     def __repr__(self) -> str:
         return f"Job(id={self.id!r}, part_id={self.part_id!r}, status={(self.status)!r}, timestamp={self.timestamp!r}, mode={ExecutionMode(self.mode)!r}, policy={ExecutionPolicy(self.policy)!r})"
