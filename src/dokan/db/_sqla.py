@@ -35,8 +35,8 @@ class Part(JobDB):
 
     # @todo: future features
     # variation: Mapped[int]  # <- to identify different setups (rewgt, etc)
-    active: Mapped[bool]
-    timestamp: Mapped[float]
+    active: Mapped[bool] = mapped_column(default=False)
+    timestamp: Mapped[float] = mapped_column(default=0.0)
 
     # > result of the last merge
     result: Mapped[float] = mapped_column(default=0.0)
@@ -61,7 +61,7 @@ class Job(JobDB):
 
     status: Mapped[int]
     # > zero: not started, > 0 : current job, < 0: past merged job
-    timestamp: Mapped[float]
+    timestamp: Mapped[float] = mapped_column(default=0.0)
     rel_path: Mapped[str | None]  # relative path to the job directory (set by DBRunner)
 
     # >

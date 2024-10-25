@@ -100,7 +100,7 @@ class DBInit(DBTask):
                 for db_pt in session.scalars(stmt):
                     db_pt.active = Order(db_pt.order).is_in(Order(self.order))
             session.commit()
-        self.print_part()
+        # self.print_part()
 
 
 class DBDispatch(DBTask):

@@ -105,21 +105,21 @@ class ExeData(UserDict):
     def load(self, expect_tmp: bool = False) -> None:
         self._mutable = True
         if self.file_fin.exists():
-            print(f"loading final file {self.file_fin}")
+            # print(f"loading final file {self.file_fin}")
             with open(self.file_fin, "rt") as fin:
                 self.data = json.load(fin)
                 self._mutable = False
             if self.file_tmp.exists():
                 raise RuntimeError(f"ExeData: tmp & fin exist {self.file_tmp}!")
         elif self.file_tmp.exists():
-            print(f"loading temporary file {self.file_tmp}")
+            # print(f"loading temporary file {self.file_tmp}")
             with open(self.file_tmp, "rt") as tmp:
                 self.data = json.load(tmp)
         elif expect_tmp:
             raise RuntimeError(f"ExeData: tmp expected but not found {self.file_tmp}!")
         if not self.is_valid(convert_to_type=True):
             raise RuntimeError("ExeData load encountered conflict with schema")
-        print(f"ExeData::load: {self.data}")
+        # print(f"ExeData::load: {self.data}")
 
     def write(self) -> None:
         if self._mutable:

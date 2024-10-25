@@ -50,5 +50,5 @@ class Entry(DBTask):
         print("Entry: yield preprods")
         yield preprods
         print("Entry: complete preprods")
-        yield self.clone(MergeAll)
-        self.print_job()
+        yield self.clone(MergeAll, force=True)
+        #self.print_job()
