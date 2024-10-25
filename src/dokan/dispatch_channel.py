@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2024-present NNLOJET
+#
+# SPDX-License-Identifier: MIT
 
 import string
 import os
@@ -8,7 +11,7 @@ import json
 import math
 
 import luigi
-from . import *
+from . import Task, Executor, ExecutionMode
 
 
 class DispatchChannel(Task):
