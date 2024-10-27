@@ -124,7 +124,7 @@ class PreProduction(DBTask):
 
             # > last warmup (LW)
             LW: Job = past_warmups[0]
-            print(f"LW = {LW!r}")
+            # print(f"LW = {LW!r}")
             # if any(
             #     x is None
             #     for x in [
@@ -208,7 +208,7 @@ class PreProduction(DBTask):
                 .order_by(Job.id.asc())
             ).first()
             if active_production:
-                print(f"active production: {active_production!r}")
+                # print(f"active production: {active_production!r}")
                 return active_production.id
 
             # > already have a successful production: done.
@@ -268,11 +268,11 @@ class PreProduction(DBTask):
     def run(self):
         print(f"PreProduction: run {self.part_id}")
         if (job_id := self.append_warmup()) > 0:
-            print(f"PreProduction: yield {job_id}")
+            # print(f"PreProduction: yield {job_id}")
             yield self.clone(cls=DBDispatch, id=job_id)
         print(
             f"PreProduction: warmup done {self.part_id}: {WarmupFlag.print_flags(WarmupFlag(-job_id))}"
         )
         if (job_id := self.append_production()) > 0:
-            print(f"PreProduction: yield {job_id}")
+            # print(f"PreProduction: yield {job_id}")
             yield self.clone(cls=DBDispatch, id=job_id)

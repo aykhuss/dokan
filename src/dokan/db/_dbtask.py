@@ -3,10 +3,11 @@ import logging
 import time
 import json
 import re
+import shutil
+import math
 
 from abc import ABCMeta, abstractmethod
 from pathlib import Path
-import shutil
 
 from sqlalchemy import create_engine, Engine, select
 from sqlalchemy.orm import Session
@@ -62,6 +63,69 @@ class DBTask(Task, metaclass=ABCMeta):
         with self.session as session:
             for job in session.scalars(select(Job)):
                 print(job)
+
+    def distribute_time(self, T: float) -> dict:
+        with self.session as session:
+            # > cache information for the E-L formula and populate
+            # > accumulators for an estimate for time per event
+            cache = {}
+            select_job = (
+                select(Job)
+                .join(Part)
+                .where(Part.active.is_(True))
+                .where(Job.status.in_(JobStatus.success_list()))
+                .where(Job.mode == ExecutionMode.PRODUCTION)
+                .where(Job.policy == self.config["exe"]["policy"])
+            )
+            # @todo not guaranteed that there are (pre-)production jobs for a new policy
+            #   probably want to trigger a new pre-production in that case?
+            for job in session.scalars(select_job):
+                if job.part_id not in cache:
+                    cache[job.part_id] = {
+                        "Ttot": job.part.Ttot,
+                        "ntot": job.part.ntot,
+                        "result": job.part.result,
+                        "error": job.part.error,
+                        "sum": 0.0,
+                        "sum2": 0.0,
+                        "norm": 0,
+                        "count": 0,
+                    }
+                ntot: int = job.niter * job.ncall
+                cache[job.part_id]["sum"] += job.elapsed_time
+                cache[job.part_id]["sum2"] += (job.elapsed_time) ** 2 / float(ntot)
+                cache[job.part_id]["norm"] += ntot
+                cache[job.part_id]["count"] += 1
+
+            # > actually compute estimate for time per event
+            # > populate accumulators to evaluate the E-L optimization formula
+            result = {}
+            accum_T: float = T
+            accum_err_sqrtT: float = 0.0
+            for part_id, ic in cache.items():
+                if part_id not in result:
+                    i_tau: float = ic["sum"] / ic["norm"]
+                    i_tau_err: float = ic["sum2"] / ic["norm"] - i_tau**2
+                    i_T: float = i_tau * ic["ntot"]
+                    result[part_id] = {
+                        "tau": i_tau,
+                        "tau_err": i_tau_err,
+                        "T": i_T,
+                        "err_sqrtT": ic["error"] * math.sqrt(i_T),
+                    }
+                else:
+                    raise RuntimeError(f"part {part_id} already in result?!")
+                accum_T += result[part_id]["T"]
+                accum_err_sqrtT += result[part_id]["err_sqrtT"]
+
+            # > use E-L formula to compute the optimal distribution of T to the active parts
+            for _, ires in result.items():
+                i_err_sqrtT: float = ires.pop("err_sqrtT")
+                i_T: float = ires.pop("T")
+                T_opt: float = (i_err_sqrtT / accum_err_sqrtT) * accum_T - i_T
+                ires["T"] = T_opt
+
+            return result
 
 
 class DBInit(DBTask):
@@ -262,7 +326,7 @@ class DBRunner(DBTask):
                     "seed": db_job.seed,
                 }
                 exe_data["output_files"] = []
-                # save to tmp file
+                # save to tmp file (this also updates the timestamp!)
                 exe_data.write()
                 # > commit update
                 db_job.rel_path = str(job_path.relative_to(self._path))

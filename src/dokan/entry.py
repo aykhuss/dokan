@@ -50,4 +50,7 @@ class Entry(DBTask):
         yield preprods
         print("Entry: complete preprods")
         yield self.clone(MergeAll, force=True)
-        #self.print_job()
+        print("Entry: complete MergeAll")
+        opt_dist_T: dict = self.distribute_time(1.0)
+        print(f"Entry: distribute_time {opt_dist_T}")
+        # self.print_job()

@@ -55,7 +55,7 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         # @todo check if job files are already there? (recovery mode?)
 
         self.exe()
-        print(f"[{time.time()}] Executor: done with exe {self.path}")
+        # print(f"[{time.time()}] Executor: done with exe {self.path}")
 
         # > exe done populate job data and write target file
 
@@ -66,28 +66,26 @@ class Executor(luigi.Task, metaclass=ABCMeta):
             #     continue
             if entry.name in [ExeData._file_tmp, ExeData._file_fin]:
                 continue
-            print(
-                f"> [{entry.stat().st_mtime} < {self.exe_data["timestamp"]} {entry.stat().st_mtime < self.exe_data["timestamp"]}] {self.path}: {entry.name}"
-            )
+            # print(f"> [{entry.stat().st_mtime} < {self.exe_data["timestamp"]} {entry.stat().st_mtime < self.exe_data["timestamp"]}] {self.path}: {entry.name}")
             if entry.stat().st_mtime < self.exe_data["timestamp"]:
                 continue
             # > genuine output file that was generated/modified
             self.exe_data["output_files"].append(entry.name)
 
-        print(f"  >>  {self.exe_data["output_files"]}:")
+        # print(f"  >>  {self.exe_data["output_files"]}:")
 
         for job_id, job_data in self.exe_data["jobs"].items():
-            print(f".s{job_data["seed"]}.log")
+            # print(f".s{job_data["seed"]}.log")
             log_matches = [
                 of
                 for of in self.exe_data["output_files"]
                 if of.endswith(f".s{job_data["seed"]}.log")
             ]
-            print(f" > log_matches: {log_matches}")
+            # print(f" > log_matches: {log_matches}")
             if len(log_matches) != 1:
                 continue
             parsed_data = parse_log_file(Path(self.path) / log_matches[0])
-            print(f" > parsed data: {parsed_data}")
+            # print(f" > parsed data: {parsed_data}")
             for key in parsed_data:
                 job_data[key] = parsed_data[key]
 
