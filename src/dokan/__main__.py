@@ -8,6 +8,7 @@ import argparse
 import os
 import shutil
 import sys
+import time
 
 from rich.console import Console
 
@@ -96,15 +97,10 @@ def main() -> None:
         channels: dict = config["process"].pop("channels")
         luigi_result = luigi.build(
             [
-                # dokan.Production(
-                #     config=config,
-                #     local_path=["data", "LO_1"],
-                #     channel="LO_1",
-                #     iseed=123,
-                # )
                 dokan.Entry(
                     config=config,
                     local_path=[],
+                    run_tag=time.time(),
                     channels=channels,
                     order=1,
                 )

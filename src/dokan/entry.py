@@ -1,5 +1,6 @@
 import luigi
 import time
+import json
 from sqlalchemy import select
 
 from .order import Order
@@ -52,5 +53,5 @@ class Entry(DBTask):
         yield self.clone(MergeAll, force=True)
         print("Entry: complete MergeAll")
         opt_dist_T: dict = self.distribute_time(1.0)
-        print(f"Entry: distribute_time {opt_dist_T}")
+        print(f"Entry: distribute_time {json.dumps(opt_dist_T, indent=2)}")
         # self.print_job()
