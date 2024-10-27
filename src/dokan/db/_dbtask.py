@@ -105,7 +105,13 @@ class DBTask(Task, metaclass=ABCMeta):
             for part_id, ic in cache.items():
                 if part_id not in result:
                     i_tau: float = ic["sum"] / ic["norm"]
-                    i_tau_err: float = ic["sum2"] / ic["norm"] - i_tau**2
+                    i_tau_err: float = 0.0
+                    if ic["count"] > 0:
+                        i_tau_err = ic["sum2"] / ic["norm"] - i_tau**2
+                        if i_tau_err <= 0.0:
+                            i_tau_err = 0.0
+                        else:
+                            i_tau_err = math.sqrt(i_tau_err)
                     i_T: float = i_tau * ic["ntot"]
                     result[part_id] = {
                         "tau": i_tau,
@@ -119,11 +125,18 @@ class DBTask(Task, metaclass=ABCMeta):
                 accum_err_sqrtT += result[part_id]["err_sqrtT"]
 
             # > use E-L formula to compute the optimal distribution of T to the active parts
+            acc_T_opt: float = 0.0
             for _, ires in result.items():
                 i_err_sqrtT: float = ires.pop("err_sqrtT")
                 i_T: float = ires.pop("T")
                 T_opt: float = (i_err_sqrtT / accum_err_sqrtT) * accum_T - i_T
+                if T_opt < 0.0:
+                    T_opt = 0.0  # too lazy to do proper unequality E-L optimization
                 ires["T"] = T_opt
+                acc_T_opt += T_opt
+            # > normalize at the end to account for the dropped negative weights
+            for _, ires in result.items():
+                ires["T"] *= T / acc_T_opt
 
             return result
 
