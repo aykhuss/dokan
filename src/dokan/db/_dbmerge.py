@@ -1,5 +1,6 @@
 import luigi
 import time
+import datetime
 import re
 import os
 
@@ -158,8 +159,8 @@ class MergePart(DBMerge):
                         for line in cross:
                             if line.startswith("#"):
                                 continue
-                            pt.result = float(line.split()[1])
-                            pt.error = float(line.split()[2])
+                            pt.result = float(line.split()[0])
+                            pt.error = float(line.split()[1])
                             break
 
             session.commit()
@@ -198,8 +199,12 @@ class MergeAll(DBMerge):
         timestamp: float = -1.0
         for hist in os.scandir(self.fin_path):
             timestamp = max(timestamp, hist.stat().st_mtime)
+        if self.run_tag > timestamp:
+            return False
+        print(f"MergeAll: files {datetime.datetime.fromtimestamp(timestamp)}")
         with self.session as session:
             for pt in session.scalars(self.select_part):
+                print(f"MergeAll: {pt.name} {datetime.datetime.fromtimestamp(pt.timestamp)}")
                 if pt.timestamp > timestamp:
                     return False
             return True

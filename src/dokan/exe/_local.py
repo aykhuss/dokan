@@ -26,16 +26,15 @@ class BatchLocalExec(LocalExec):
     """Batch execution on the local machine"""
 
     def requires(self):
-        print(
-            f"BatchLocalExec: requires {[job_id for job_id in self.exe_data["jobs"].keys()]}"
-        )
+        # print(f"BatchLocalExec: requires {[job_id for job_id in self.exe_data["jobs"].keys()]}")
         return [
             self.clone(cls=SingleLocalExec, job_id=job_id)
             for job_id in self.exe_data["jobs"].keys()
         ]
 
     def exe(self):
-        print(f"BatchLocalExec: exe {self.path}")
+        # print(f"BatchLocalExec: exe {self.path}")
+        pass
 
 
 class SingleLocalExec(LocalExec):

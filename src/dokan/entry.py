@@ -52,6 +52,6 @@ class Entry(DBTask):
         print("Entry: complete preprods")
         yield self.clone(MergeAll, force=True)
         print("Entry: complete MergeAll")
-        opt_dist_T: dict = self.distribute_time(1.0)
-        print(f"Entry: distribute_time {json.dumps(opt_dist_T, indent=2)}")
+        opt_dist_T, val, err_est = self.distribute_time(1.0)
+        print(f"Entry: distribute_time {json.dumps(opt_dist_T, indent=2)}\nestimate = {val} +/- {err_est} [{100.*err_est/val}%]")
         # self.print_job()

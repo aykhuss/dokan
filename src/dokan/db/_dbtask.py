@@ -64,7 +64,7 @@ class DBTask(Task, metaclass=ABCMeta):
             for job in session.scalars(select(Job)):
                 print(job)
 
-    def distribute_time(self, T: float) -> dict:
+    def distribute_time(self, T: float) -> tuple[dict, float, float]:
         with self.session as session:
             # > cache information for the E-L formula and populate
             # > accumulators for an estimate for time per event
@@ -106,7 +106,7 @@ class DBTask(Task, metaclass=ABCMeta):
                 if part_id not in result:
                     i_tau: float = ic["sum"] / ic["norm"]
                     i_tau_err: float = 0.0
-                    if ic["count"] > 0:
+                    if ic["count"] > 1:
                         i_tau_err = ic["sum2"] / ic["norm"] - i_tau**2
                         if i_tau_err <= 0.0:
                             i_tau_err = 0.0
@@ -116,29 +116,35 @@ class DBTask(Task, metaclass=ABCMeta):
                     result[part_id] = {
                         "tau": i_tau,
                         "tau_err": i_tau_err,
-                        "T": i_T,
-                        "err_sqrtT": ic["error"] * math.sqrt(i_T),
+                        "i_T": i_T,
+                        "i_err_sqrtT": ic["error"] * math.sqrt(i_T),
                     }
                 else:
                     raise RuntimeError(f"part {part_id} already in result?!")
-                accum_T += result[part_id]["T"]
-                accum_err_sqrtT += result[part_id]["err_sqrtT"]
+                accum_T += result[part_id]["i_T"]
+                accum_err_sqrtT += result[part_id]["i_err_sqrtT"]
 
             # > use E-L formula to compute the optimal distribution of T to the active parts
             acc_T_opt: float = 0.0
             for _, ires in result.items():
-                i_err_sqrtT: float = ires.pop("err_sqrtT")
-                i_T: float = ires.pop("T")
+                i_err_sqrtT: float = ires.pop("i_err_sqrtT")
+                i_T: float = ires.get("i_T")  # need it for error calc below
                 T_opt: float = (i_err_sqrtT / accum_err_sqrtT) * accum_T - i_T
                 if T_opt < 0.0:
-                    T_opt = 0.0  # too lazy to do proper unequality E-L optimization
+                    T_opt = 0.0  # too lazy to do proper inequality E-L optimization
                 ires["T"] = T_opt
                 acc_T_opt += T_opt
             # > normalize at the end to account for the dropped negative weights
-            for _, ires in result.items():
+            # and compute an estimate for the error to be achieved
+            tot_result: float = 0.0
+            tot_error_estimate: float = 0.0
+            for part_id, ires in result.items():
                 ires["T"] *= T / acc_T_opt
+                i_T: float = ires.pop("i_T")  # pop it here
+                tot_result += cache[part_id]["result"]
+                tot_error_estimate += cache[part_id]["error"] ** 2 * i_T / (i_T + ires["T"])
 
-            return result
+            return result, tot_result, math.sqrt(tot_error_estimate)
 
 
 class DBInit(DBTask):
@@ -207,7 +213,7 @@ class DBDispatch(DBTask):
             return True
 
     def run(self):
-        print(f"DBDispatch: run {self.id}")
+        # print(f"DBDispatch: run {self.id}")
         with self.session as session:
             # > get the front of the queue
             stmt = self.select_job.where(Job.status == JobStatus.QUEUED).order_by(Job.id.asc())
@@ -224,14 +230,14 @@ class DBDispatch(DBTask):
                     .order_by(Job.id.desc())
                 ).first()
                 if last_job:
-                    print(f"{self.id} last job:\n>  {last_job!r}")
+                    # print(f"{self.id} last job:\n>  {last_job!r}")
                     seed_start: int = last_job.seed + 1
                 else:
                     seed_start: int = self.config["run"]["seed_offset"] + 1
                 job.seed = seed_start
                 job.status = JobStatus.DISPATCHED
                 session.commit()
-                print(f"{self.id} -> dispatch job:\n>  {job!r}")
+                print(f"DBDispatch: {self.id} -> dispatch job:\n>  {job!r}")
                 yield self.clone(cls=DBRunner, id=job.id)
 
 

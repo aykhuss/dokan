@@ -32,7 +32,7 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         from ._local import BatchLocalExec
 
         if policy == ExecutionPolicy.LOCAL:
-            print(f"factory: BatchLocalExec ...")
+            # print(f"factory: BatchLocalExec ...")
             return BatchLocalExec(*args, **kwargs)
 
         # if policy == ExecutionPolicy.HTCONDOR:
@@ -48,7 +48,7 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         pass
 
     def run(self):
-        print(f"[{time.time()}] Executor: run {self.path}")
+        # print(f"[{time.time()}] Executor: run {self.path}")
 
         # > more preparation for execution?
 
@@ -89,6 +89,6 @@ class Executor(luigi.Task, metaclass=ABCMeta):
             for key in parsed_data:
                 job_data[key] = parsed_data[key]
 
-        print(f"[{time.time()}] Executor: finalize {self.path}")
+        # print(f"[{time.time()}] Executor: finalize {self.path}")
         # > add last modification time?
         self.exe_data.finalize()
