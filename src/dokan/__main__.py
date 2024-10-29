@@ -80,6 +80,29 @@ def main() -> None:
         )
         config.write()
         runcard.to_tempalte(Path(config["run"]["path"]) / config["run"]["template"])
+        #> create the DB skeleton
+        channels: dict = config["process"].pop("channels")
+        luigi_result = luigi.build(
+            [
+                dokan.DBInit(
+                    config=config,
+                    local_path=[],
+                    run_tag=time.time(),
+                    channels=channels,
+                    order=1,
+                )
+            ],
+            worker_scheduler_factory=dokan.WorkerSchedulerFactory(
+                resources={"local_ncores": 8, "DBTask": 10, "DBDispatch": 1},
+                check_complete_on_run=False,
+            ),
+            detailed_summary=True,
+            workers=12,
+            local_scheduler=True,
+            log_level="WARNING",
+        )  # 'WARNING', 'INFO', 'DEBUG''
+
+        print(luigi_result.status)
 
     # >-----
     if args.action == "submit":
@@ -106,7 +129,8 @@ def main() -> None:
                 )
             ],
             worker_scheduler_factory=dokan.WorkerSchedulerFactory(
-                resources={"local_ncores": 8, "DBTask": 10}, check_complete_on_run=False
+                resources={"local_ncores": 8, "DBTask": 10, "DBDispatch": 1},
+                check_complete_on_run=False,
             ),
             detailed_summary=True,
             workers=12,

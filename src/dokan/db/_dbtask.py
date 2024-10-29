@@ -196,14 +196,23 @@ class DBDispatch(DBTask):
     # > mode and policy must be set already before dispatch!
 
     @property
-    def select_job(self):
-        # > define the selector for the jobs based on the id that was passed
-        if self.id > 0:
-            return select(Job).where(Job.id == self.id)
-        elif self.id < 0:
-            return select(Job).where(Job.part_id == abs(self.id))
+    def resources(self):
+        if self.id == 0:
+            return {"DBDispatch": 1}
         else:
-            return select(Job)
+            return None
+
+
+    @property
+    def select_job(self):
+        # > define the selector for the jobs based on the id that was passed & filter by the run_tag
+        slct = select(Job).where(Job.run_tag == self.run_tag)
+        if self.id > 0:
+            return slct.where(Job.id == self.id)
+        elif self.id < 0:
+            return slct.where(Job.part_id == abs(self.id))
+        else:
+            return slct
 
     def complete(self) -> bool:
         with self.session as session:
@@ -227,7 +236,10 @@ class DBDispatch(DBTask):
                     .where(Job.part_id == job.part_id)
                     .where(Job.mode == job.mode)
                     .where(Job.seed.is_not(None))
-                    .order_by(Job.id.desc())
+                    .where(Job.seed > self.config["run"]["seed_offset"])
+                    #@todo not good enough, need a max to shield from anothe batch-jobstarting at larger value of seed?
+                    #determine upper bound by the max number of jobs? -> seems like a good idea
+                    .order_by(Job.seed.desc())
                 ).first()
                 if last_job:
                     # print(f"{self.id} last job:\n>  {last_job!r}")
@@ -237,7 +249,7 @@ class DBDispatch(DBTask):
                 job.seed = seed_start
                 job.status = JobStatus.DISPATCHED
                 session.commit()
-                print(f"DBDispatch: {self.id} -> dispatch job:\n>  {job!r}")
+                print(f"DBDispatch: {job!r}")
                 yield self.clone(cls=DBRunner, id=job.id)
 
 
@@ -248,6 +260,8 @@ class DBRunner(DBTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # @todo find the part id & check they are the same for all in the batch
+        # @todo check that the seeds are sequential
 
     def complete(self) -> bool:
         with self.session as session:
@@ -265,7 +279,7 @@ class DBRunner(DBTask):
         return ncall, niter
 
     def run(self):
-        print(f"DBRunner: run {self.id}")
+        # print(f"DBRunner: run {self.id}")
         with self.session as session:
             db_job: Job = session.get_one(Job, self.id)
             # @todo mode, policy, channel string, etc all should be extracted here for the

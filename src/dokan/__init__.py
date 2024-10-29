@@ -21,8 +21,6 @@ __all__ = [
     "Executor",
     "LocalExec",
     "ExeData",
-    "Warmup",
-    "Production",
     "PreProduction",
     "Entry",
     "JobStatus",

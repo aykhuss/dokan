@@ -41,7 +41,7 @@ class Entry(DBTask):
         preprods = []
         with self.session as session:
             for pt in session.scalars(select(Part).where(Part.active.is_(True))):
-                print(pt)
+                # print(pt)
                 preprod = self.clone(
                     cls=PreProduction,
                     part_id=pt.id,
