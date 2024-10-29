@@ -35,12 +35,13 @@ _schema: dict = {
         "histograms_single_file": str,  # name in case we concatenate all histograms to a single file
         "order": Order,  # what order to compute (LO, NLO, NNLO)
         "target_rel_acc": float,  # target relative accuracy
-        "max_runtime": int,  # maximum runtime (in sec) for a single NNLOJET run
-        "max_total": int,  # maximum number of total (production?) jobs
-        "max_concurrent": int,  # maximum number of concurrent jobs
-        "batch_size": int,  # @todo: size of runs to batch
+        "job_max_runtime": int,  # maximum runtime (in sec) for a single NNLOJET run
+        "job_fill_max_runtime": bool,  # if we want to exhause the maximum runtime
+        "jobs_max_total": int,  # maximum number of total (production?) jobs
+        "jobs_max_concurrent": int,  # maximum number of concurrent jobs
+        "jobs_batch_size": int,  # @todo: size of runs to batch
         "seed_offset": int,  # seed number offset
-        "timestamps": float,  # list of timestamps when `run` was called
+        "timestamps": float,  # @todo list of timestamps when `run` was called
     },
     "process": {
         "name": str,  # name of the process in NNLOJET

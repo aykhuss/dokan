@@ -112,7 +112,6 @@ def main() -> None:
             config["exe"]["path"] = nnlojet_exe
 
         # @todo: parse CLI args for local config overrides
-        config["run"]["batch_size"] = 123
         # sys.exit("we're debugging here...")
         # @todo determine # cores on this machine
         local_ncores: int = 1

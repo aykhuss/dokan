@@ -152,8 +152,8 @@ class PreProduction(DBTask):
             NW_ntot: int = NW_ncall * NW_niter
             NW_time_estimate: float = LW.elapsed_time * float(NW_ntot) / float(LW_ntot)
             # > try accommodate runtime limt by reducing iterations
-            if NW_time_estimate > self.config["run"]["max_runtime"]:
-                NW_niter = float(NW_niter) * self.config["run"]["max_runtime"] // NW_time_estimate
+            if NW_time_estimate > self.config["run"]["job_max_runtime"]:
+                NW_niter = float(NW_niter) * self.config["run"]["job_max_runtime"] // NW_time_estimate
                 if NW_niter <= 0:
                     wflag |= WarmupFlag.RUNTIME
                     return -int(wflag)
@@ -264,7 +264,7 @@ class PreProduction(DBTask):
             LW_ntot: int = LW.ncall * LW.niter
 
             PP_ntot_run: int = LW_ntot * int(
-                penalty * self.config["run"]["max_runtime"] / LW.elapsed_time
+                penalty * self.config["run"]["job_max_runtime"] / LW.elapsed_time
             )
             PP_ntot_acc: int = LW_ntot * int(
                 (LW.error / LW.result / self.config["run"]["target_rel_acc"]) ** 2
