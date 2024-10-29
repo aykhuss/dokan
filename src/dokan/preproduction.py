@@ -153,11 +153,7 @@ class PreProduction(DBTask):
             NW_time_estimate: float = LW.elapsed_time * float(NW_ntot) / float(LW_ntot)
             # > try accommodate runtime limt by reducing iterations
             if NW_time_estimate > self.config["run"]["max_runtime"]:
-                NW_niter = int(  # this is a floor
-                    float(NW_niter)
-                    * self.config["run"]["max_runtime"]
-                    / NW_time_estimate
-                )
+                NW_niter = float(NW_niter) * self.config["run"]["max_runtime"] // NW_time_estimate
                 if NW_niter <= 0:
                     wflag |= WarmupFlag.RUNTIME
                     return -int(wflag)
@@ -169,9 +165,7 @@ class PreProduction(DBTask):
             # > next-to-last warmup (NLW)
             NLW: Job = past_warmups[1]
             NLW_ntot: int = NLW.ncall * NLW.niter
-            scaling: float = (LW.error / NLW.error) * math.sqrt(
-                float(LW_ntot) / float(NLW_ntot)
-            )
+            scaling: float = (LW.error / NLW.error) * math.sqrt(float(LW_ntot) / float(NLW_ntot))
 
             if abs(scaling - 1.0) <= self.config["warmup"]["scaling_window"]:
                 wflag |= WarmupFlag.SCALING
@@ -194,6 +188,22 @@ class PreProduction(DBTask):
 
     def append_production(self) -> int:
         with self.session as session:
+            # > queue up a new production job in the database and return job id
+            def queue_production(ncall: int, niter: int) -> int:
+                new_production = Job(
+                    run_tag=self.run_tag,
+                    part_id=self.part_id,
+                    mode=ExecutionMode.PRODUCTION,
+                    policy=self.config["exe"]["policy"],
+                    status=JobStatus.QUEUED,
+                    timestamp=0.0,
+                    ncall=ncall,
+                    niter=niter,
+                )
+                session.add(new_production)
+                session.commit()
+                return new_production.id
+
             # > active production: return them in order
             # > since `complete` calls this routine, we need to anticipate
             # > calls before completion of active warmup jobs
@@ -220,6 +230,23 @@ class PreProduction(DBTask):
             if success_production:
                 return -1
 
+            # > not successful termination => failure
+            FPP = session.scalars(
+                select(Job)
+                .where(Job.part_id == self.part_id)
+                .where(Job.mode == ExecutionMode.PRODUCTION)
+                .where(Job.policy == self.config["exe"]["policy"])
+                .where(Job.status.in_(JobStatus.terminated_list()))
+                .order_by(Job.id.desc())
+            ).first()
+            if FPP:
+                # > half the statistics from the last failed pre-production
+                PP_ntot: int = (FPP.ncall * FPP.niter) // 2
+                PP_ncall: int = PP_ntot // self.config["production"]["niter"]
+                if PP_ncall < self.config["production"]["ncall_start"]:
+                    raise RuntimeError("pre-production failed after reaching minimum ncall")
+                return queue_production(PP_ncall, self.config["production"]["niter"])
+
             # > queue up a pre-production (PP) with time estimates from the
             # > highest-statistics warumup job we got.
             # > runtime penalty warmup -> production: 1:10
@@ -233,9 +260,7 @@ class PreProduction(DBTask):
                 .order_by(Job.id.desc())
             ).first()
             if not LW:
-                raise RuntimeError(
-                    f"pre-production: no warmup found for {self.part_id}"
-                )
+                raise RuntimeError(f"pre-production: no warmup found for {self.part_id}")
             LW_ntot: int = LW.ncall * LW.niter
 
             PP_ntot_run: int = LW_ntot * int(
@@ -245,23 +270,11 @@ class PreProduction(DBTask):
                 (LW.error / LW.result / self.config["run"]["target_rel_acc"]) ** 2
             )
             PP_ntot: int = min(PP_ntot_run, PP_ntot_acc)
-            PP_ncall: int = int(PP_ntot / self.config["production"]["niter"])
+            PP_ncall: int = PP_ntot // self.config["production"]["niter"]
             if PP_ncall < self.config["production"]["ncall_start"]:
                 PP_ncall = self.config["production"]["ncall_start"]
 
-            pre_production = Job(
-                run_tag=self.run_tag,
-                part_id=self.part_id,
-                mode=ExecutionMode.PRODUCTION,
-                policy=self.config["exe"]["policy"],
-                status=JobStatus.QUEUED,
-                timestamp=0.0,
-                ncall=PP_ncall,
-                niter=self.config["production"]["niter"],
-            )
-            session.add(pre_production)
-            session.commit()
-            return pre_production.id
+            return queue_production(PP_ncall, self.config["production"]["niter"])
 
     def run(self):
         # print(f"PreProduction: run {self.part_id}")
