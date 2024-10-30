@@ -64,7 +64,9 @@ class DBTask(Task, metaclass=ABCMeta):
             for job in session.scalars(select(Job)):
                 print(job)
 
-    def distribute_time(self, T: float) -> tuple[dict, float, float]:
+    def distribute_time(
+        self, T: float
+    ) -> dict:  # @todo make return a UserDict class with a schema?
         with self.session as session:
             # > cache information for the E-L formula and populate
             # > accumulators for an estimate for time per event
@@ -73,12 +75,11 @@ class DBTask(Task, metaclass=ABCMeta):
                 select(Job)
                 .join(Part)
                 .where(Part.active.is_(True))
-                .where(Job.status.in_(JobStatus.success_list()))
+                .where(Job.status.in_(JobStatus.success_list() + JobStatus.active_list()))
                 .where(Job.mode == ExecutionMode.PRODUCTION)
                 .where(Job.policy == self.config["exe"]["policy"])
             )
-            # @todo not guaranteed that there are (pre-)production jobs for a new policy
-            #   probably want to trigger a new pre-production in that case?
+            # > PreProduction assures there's a pre-production job for any new policy
             for job in session.scalars(select_job):
                 if job.part_id not in cache:
                     cache[job.part_id] = {
@@ -86,24 +87,42 @@ class DBTask(Task, metaclass=ABCMeta):
                         "ntot": job.part.ntot,
                         "result": job.part.result,
                         "error": job.part.error,
+                        "Textra": 0.0,
+                        "nextra": 0,
                         "sum": 0.0,
                         "sum2": 0.0,
                         "norm": 0,
                         "count": 0,
                     }
                 ntot: int = job.niter * job.ncall
-                cache[job.part_id]["sum"] += job.elapsed_time
-                cache[job.part_id]["sum2"] += (job.elapsed_time) ** 2 / float(ntot)
-                cache[job.part_id]["norm"] += ntot
-                cache[job.part_id]["count"] += 1
+                if job.status in JobStatus.success_list():
+                    cache[job.part_id]["sum"] += job.elapsed_time
+                    cache[job.part_id]["sum2"] += (job.elapsed_time) ** 2 / float(ntot)
+                    cache[job.part_id]["norm"] += ntot
+                    cache[job.part_id]["count"] += 1
+                if job.status != JobStatus.MERGED:
+                    # > everything that was not yet merged needs to be accounted for
+                    # > in the error estimation & the distribution of *new* jobs
+                    cache[job.part_id]["Textra"] += job.elapsed_time
+                    cache[job.part_id]["nextra"] += ntot
+
+            # > check every active part has an entry
+            for pt in session.scalars(select(Part).where(Part.active.is_(True))):
+                if pt.id not in cache:
+                    raise RuntimeError(f"part {pt.id} not in cache?!")
 
             # > actually compute estimate for time per event
             # > populate accumulators to evaluate the E-L optimization formula
-            result = {}
+            result = {
+                "part": {},
+                "tot_result": 0.0,
+                "tot_error_estimate_opt": 0.0,
+                "tot_error_estimate_jobs": 0.0,
+            }
             accum_T: float = T
             accum_err_sqrtT: float = 0.0
             for part_id, ic in cache.items():
-                if part_id not in result:
+                if part_id not in result["part"]:
                     i_tau: float = ic["sum"] / ic["norm"]
                     i_tau_err: float = 0.0
                     if ic["count"] > 1:
@@ -112,8 +131,13 @@ class DBTask(Task, metaclass=ABCMeta):
                             i_tau_err = 0.0
                         else:
                             i_tau_err = math.sqrt(i_tau_err)
-                    i_T: float = i_tau * ic["ntot"]
-                    result[part_id] = {
+                    # > convert to time
+                    # include estimate from the extra jobs already allocated
+                    i_T: float = i_tau * (ic["ntot"] + ic["nextra"])
+                    ic["error"] = math.sqrt(
+                        ic["error"] ** 2 * ic["ntot"] / (ic["ntot"] + ic["nextra"])
+                    )
+                    result["part"][part_id] = {
                         "tau": i_tau,
                         "tau_err": i_tau_err,
                         "i_T": i_T,
@@ -121,30 +145,62 @@ class DBTask(Task, metaclass=ABCMeta):
                     }
                 else:
                     raise RuntimeError(f"part {part_id} already in result?!")
-                accum_T += result[part_id]["i_T"]
-                accum_err_sqrtT += result[part_id]["i_err_sqrtT"]
+                accum_T += result["part"][part_id]["i_T"]
+                accum_err_sqrtT += result["part"][part_id]["i_err_sqrtT"]
 
             # > use E-L formula to compute the optimal distribution of T to the active parts
             acc_T_opt: float = 0.0
-            for _, ires in result.items():
+            for _, ires in result["part"].items():
                 i_err_sqrtT: float = ires.pop("i_err_sqrtT")
                 i_T: float = ires.get("i_T")  # need it for error calc below
                 T_opt: float = (i_err_sqrtT / accum_err_sqrtT) * accum_T - i_T
                 if T_opt < 0.0:
                     T_opt = 0.0  # too lazy to do proper inequality E-L optimization
-                ires["T"] = T_opt
+                ires["T_opt"] = T_opt
                 acc_T_opt += T_opt
             # > normalize at the end to account for the dropped negative weights
             # and compute an estimate for the error to be achieved
-            tot_result: float = 0.0
-            tot_error_estimate: float = 0.0
-            for part_id, ires in result.items():
-                ires["T"] *= T / acc_T_opt
-                i_T: float = ires.pop("i_T")  # pop it here
-                tot_result += cache[part_id]["result"]
-                tot_error_estimate += cache[part_id]["error"] ** 2 * i_T / (i_T + ires["T"])
+            result["tot_result"] = 0.0
+            result["tot_error_estimate_opt"] = 0.0
+            for part_id, ires in result["part"].items():
+                ires["T_opt"] *= T / acc_T_opt
+                i_T: float = ires.get("i_T")
+                result["tot_result"] += cache[part_id]["result"]
+                result["tot_error_estimate_opt"] += (
+                    cache[part_id]["error"] ** 2 * i_T / (i_T + ires["T_opt"])
+                )
+            result["tot_error_estimate_opt"] = math.sqrt(result["tot_error_estimate_opt"])
 
-            return result, tot_result, math.sqrt(tot_error_estimate)
+            # > split up into jobs
+            # (njobs, ntot, T_job)
+            result["tot_error_estimate_jobs"] = 0.0
+            for part_id, ires in result["part"].items():
+                # > 5 sigma buffer but never larger than 50% runtime
+                tau_buf: float = min(5.0 * ires["tau_err"], 0.5 * ires["tau"])
+                if tau_buf == 0.0:  # in case we have no clue: target 50%
+                    tau_buf = 0.5 * ires["tau"]
+                # > target runtime for one job corrected for buffer
+                T_max_job: float = self.config["run"]["job_max_runtime"] * (
+                    1.0 - tau_buf / ires["tau"]
+                )
+                if self.config["run"]["job_fill_max_runtime"]:
+                    njobs: int = round(ires["T_opt"] / T_max_job)
+                    ntot: int = int(T_max_job / ires["tau"])
+                else:
+                    njobs: int = int(ires["T_opt"] / T_max_job) + 1
+                    ntot: int = int(ires["T_opt"] / float(njobs) / ires["tau"])
+                T_jobs: float = njobs * ntot * ires["tau"]
+                ires["T_max_job"] = T_max_job
+                ires["T_jobs"] = T_jobs
+                ires["njobs"] = njobs
+                ires["ntot"] = ntot
+                i_T: float = ires.pop("i_T")  # pop it here
+                result["tot_error_estimate_jobs"] += (
+                    cache[part_id]["error"] ** 2 * i_T / (i_T + T_jobs)
+                )
+            result["tot_error_estimate_jobs"] = math.sqrt(result["tot_error_estimate_jobs"])
+
+            return result
 
 
 class DBInit(DBTask):
