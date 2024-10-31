@@ -124,15 +124,18 @@ def main() -> None:
                     config=config,
                     run_tag=time.time(),
                     channels=channels,
-                    order=0,
+                    order=1,
                 )  # @todo: , dokan.Monitor(poll_rate=xsec,) control with --monitor CLI arg
             ],
             worker_scheduler_factory=dokan.WorkerSchedulerFactory(
                 resources={"local_ncores": 8, "DBTask": 10, "DBDispatch": 1},
+                cache_task_completion=False,
                 check_complete_on_run=False,
+                check_unfulfilled_deps=True,
+                wait_interval=0.1,
             ),
             detailed_summary=True,
-            workers=12,
+            workers=12,  #@todo set to number of cores of the machine
             local_scheduler=True,
             log_level="WARNING",
         )  # 'WARNING', 'INFO', 'DEBUG''
