@@ -6,6 +6,7 @@ import re
 import shutil
 import math
 
+
 from abc import ABCMeta, abstractmethod
 from pathlib import Path
 
@@ -258,6 +259,11 @@ class DBDispatch(DBTask):
     # > pick a specific `Job` by id: > 0
     # > restrict to specific `Part` by id: < 0 [take abs]
     id: int = luigi.IntParameter(default=0)
+
+    # > in order to be able to create multiple id==0 dispatchers,
+    # need an additional parameter to distinguish them
+    _n: int = luigi.IntParameter(default=0)
+
     # > mode and policy must be set already before dispatch!
 
     @property
@@ -267,7 +273,7 @@ class DBDispatch(DBTask):
         else:
             return None
 
-    # priority = 100
+    priority = 10
 
     @property
     def select_job(self):
@@ -346,7 +352,7 @@ class DBDispatch(DBTask):
                 session.commit()
                 return [job.id for job in jobs]
 
-            print(f"DBDispatch: repopulate {self.id} | {self.run_tag}")
+            print(f"DBDispatch[{self._n}]: repopulate {self.id} | {self.run_tag}")
             print(f"njobs  - allocated: {njobs_alloc}, remaining: {njobs_rem}")
             print(f"T      - allocated: {T_alloc}, remaining: {T_rem}")
 
@@ -375,8 +381,22 @@ class DBDispatch(DBTask):
                     .all()
                 )
 
+                # > termination condition based on #queued of individul jobs
+                qbreak: bool = False
                 for pt, nque, nact, nsuc in sorted_parts:
                     print(f"  >> {pt!r} | {nque} | {nact} | {nsuc}")
+                    if not nque:
+                        continue
+                    # > implement termination conditions
+                    if nque >= self.config["run"]["jobs_batch_size"]:
+                        qbreak = True
+                    nsuc = nsuc if nsuc else 0
+                    nact = nact if nact else 0
+                    if nque >= 2 * (nsuc + (nact - nque)):
+                        qbreak = True
+                    # @todo: more?
+                if qbreak:
+                    break
 
                 # for pt in session.scalars(select(Part).where(Part.active.is_(True))):
                 #     print(pt)
@@ -385,6 +405,7 @@ class DBDispatch(DBTask):
                 # > register new jobs
                 T_next: float = min(
                     self.config["run"]["jobs_batch_size"] * self.config["run"]["job_max_runtime"],
+                    njobs_rem * self.config["run"]["job_max_runtime"],
                     T_rem,
                 )
                 opt_dist: dict = self.distribute_time(T_next)
@@ -410,6 +431,12 @@ class DBDispatch(DBTask):
                 session.commit()
                 njobs_rem -= tot_njobs
                 T_rem -= tot_T
+
+                estimate_rel_acc: float = (
+                    opt_dist["tot_error_estimate_jobs"] / opt_dist["tot_result"]
+                )
+                if estimate_rel_acc <= self.config["run"]["target_rel_acc"]:
+                    break
 
     def run(self):
         # print(f"DBDispatch: run {self.id}")
@@ -442,7 +469,9 @@ class DBDispatch(DBTask):
                 job.seed = seed_start
                 job.status = JobStatus.DISPATCHED
                 session.commit()
-                print(f"DBDispatch: {job!r}")
+                if self.id == 0:
+                    self.decrease_running_resources({"DBDispatch": 1})
+                print(f"DBDispatch[{self._n}]: {job!r}")
                 yield self.clone(cls=DBRunner, id=job.id)
 
 
