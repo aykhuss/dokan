@@ -9,8 +9,8 @@ import math
 from abc import ABCMeta, abstractmethod
 from pathlib import Path
 
-from sqlalchemy import create_engine, Engine, select
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, Engine, select, func
+from sqlalchemy.orm import Session, aliased
 
 from ._jobstatus import JobStatus
 from ._sqla import JobDB, Part, Job
@@ -64,9 +64,17 @@ class DBTask(Task, metaclass=ABCMeta):
             for job in session.scalars(select(Job)):
                 print(job)
 
-    def distribute_time(
-        self, T: float
-    ) -> dict:  # @todo make return a UserDict class with a schema?
+    # @staticmethod
+    # def job_count_subquery(session, js_list: list[JobStatus]):
+    #     return (
+    #         session.query(Job.part_id, func.count(Job.id).label("job_count"))
+    #         .filter(Job.status.in_(js_list))
+    #         .group_by(Job.part_id)
+    #         .subquery()
+    #     )
+
+    # @todo make return a UserDict class with a schema?
+    def distribute_time(self, T: float) -> dict:
         with self.session as session:
             # > cache information for the E-L formula and populate
             # > accumulators for an estimate for time per event
@@ -114,7 +122,7 @@ class DBTask(Task, metaclass=ABCMeta):
             # > actually compute estimate for time per event
             # > populate accumulators to evaluate the E-L optimization formula
             result = {
-                "part": {},
+                "part": {},  # part_id -> {tau, tau_err, T_opt, T_max_job, T_job, njobs, ntot_job}
                 "tot_result": 0.0,
                 "tot_error_estimate_opt": 0.0,
                 "tot_error_estimate_jobs": 0.0,
@@ -172,7 +180,7 @@ class DBTask(Task, metaclass=ABCMeta):
             result["tot_error_estimate_opt"] = math.sqrt(result["tot_error_estimate_opt"])
 
             # > split up into jobs
-            # (njobs, ntot, T_job)
+            # (T_max_job, T_job, njobs, ntot_job)
             result["tot_error_estimate_jobs"] = 0.0
             for part_id, ires in result["part"].items():
                 # > 5 sigma buffer but never larger than 50% runtime
@@ -185,15 +193,16 @@ class DBTask(Task, metaclass=ABCMeta):
                 )
                 if self.config["run"]["job_fill_max_runtime"]:
                     njobs: int = round(ires["T_opt"] / T_max_job)
-                    ntot: int = int(T_max_job / ires["tau"])
+                    ntot_job: int = int(T_max_job / ires["tau"])
                 else:
                     njobs: int = int(ires["T_opt"] / T_max_job) + 1
-                    ntot: int = int(ires["T_opt"] / float(njobs) / ires["tau"])
-                T_jobs: float = njobs * ntot * ires["tau"]
+                    ntot_job: int = int(ires["T_opt"] / float(njobs) / ires["tau"])
+                T_job: float = ntot_job * ires["tau"]
+                T_jobs: float = njobs * T_job
                 ires["T_max_job"] = T_max_job
-                ires["T_jobs"] = T_jobs
+                ires["T_job"] = T_job
                 ires["njobs"] = njobs
-                ires["ntot"] = ntot
+                ires["ntot_job"] = ntot_job
                 i_T: float = ires.pop("i_T")  # pop it here
                 result["tot_error_estimate_jobs"] += (
                     cache[part_id]["error"] ** 2 * i_T / (i_T + T_jobs)
@@ -258,6 +267,7 @@ class DBDispatch(DBTask):
         else:
             return None
 
+    # priority = 100
 
     @property
     def select_job(self):
@@ -272,13 +282,140 @@ class DBDispatch(DBTask):
 
     def complete(self) -> bool:
         with self.session as session:
-            for job in session.scalars(self.select_job):
-                if job.status == JobStatus.QUEUED:
-                    return False
+            if (
+                session.scalars(self.select_job.where(Job.status == JobStatus.QUEUED)).first()
+                is not None
+            ):
+                return False
             return True
+
+    def repopulate(self):
+        if self.id != 0:
+            return
+
+        with self.session as session:
+            # > remaining resources available
+            query_alloc = (  # active contains time estimates
+                session.query(Job)
+                .join(Part)
+                .filter(Part.active.is_(True))
+                .filter(Job.run_tag == self.run_tag)
+                .filter(Job.mode == ExecutionMode.PRODUCTION)
+                .filter(Job.status.in_(JobStatus.success_list() + JobStatus.active_list()))
+            )
+            njobs_alloc: int = query_alloc.count()
+            njobs_rem: int = self.config["run"]["jobs_max_total"] - njobs_alloc
+            T_alloc: float = sum(job.elapsed_time for job in query_alloc)
+            T_rem: float = (
+                self.config["run"]["jobs_max_total"] * self.config["run"]["job_max_runtime"]
+                - T_alloc
+            )
+
+            # > build up subquery to get Parts with job counts
+            def job_count_subquery(js_list: list[JobStatus]):
+                return (
+                    session.query(Job.part_id, func.count(Job.id).label("job_count"))
+                    .filter(Job.run_tag == self.run_tag)
+                    .filter(Job.mode == ExecutionMode.PRODUCTION)
+                    .filter(Job.status.in_(js_list))
+                    .group_by(Job.part_id)
+                    .subquery()
+                )
+
+            # > queue up a new production job in the database and return job id's
+            def queue_production(part_id: int, opt: dict) -> list[int]:
+                if opt["njobs"] <= 0:
+                    return []
+                niter: int = self.config["production"]["niter"]
+                ncall: int = opt["ntot_job"] // niter
+                jobs: list[Job] = [
+                    Job(
+                        run_tag=self.run_tag,
+                        part_id=part_id,
+                        mode=ExecutionMode.PRODUCTION,
+                        policy=self.config["exe"]["policy"],
+                        status=JobStatus.QUEUED,
+                        timestamp=0.0,
+                        ncall=ncall,
+                        niter=niter,
+                        elapsed_time=opt["T_job"],  # a time estimate
+                    )
+                    for _ in range(opt["njobs"])
+                ]
+                session.add_all(jobs)
+                session.commit()
+                return [job.id for job in jobs]
+
+            print(f"DBDispatch: repopulate {self.id} | {self.run_tag}")
+            print(f"njobs  - allocated: {njobs_alloc}, remaining: {njobs_rem}")
+            print(f"T      - allocated: {T_alloc}, remaining: {T_rem}")
+
+            # > populate until some termination condition is reached
+            while True:
+                if njobs_rem <= 0 or T_rem <= 0.0:
+                    return
+
+                # > get counters for temrination conditions on #queued
+                job_count_queued = job_count_subquery([JobStatus.QUEUED])
+                job_count_active = job_count_subquery(JobStatus.active_list())
+                job_count_success = job_count_subquery(JobStatus.success_list())
+                # > get tuples (Part, #queued, #active, #success) ordered by #queued
+                sorted_parts = (
+                    session.query(
+                        Part,  # Part.id only?
+                        job_count_queued.c.job_count,
+                        job_count_active.c.job_count,
+                        job_count_success.c.job_count,
+                    )
+                    .outerjoin(job_count_queued, Part.id == job_count_queued.c.part_id)
+                    .outerjoin(job_count_active, Part.id == job_count_active.c.part_id)
+                    .outerjoin(job_count_success, Part.id == job_count_success.c.part_id)
+                    .filter(Part.active.is_(True))
+                    .order_by(job_count_queued.c.job_count.desc())
+                    .all()
+                )
+
+                for pt, nque, nact, nsuc in sorted_parts:
+                    print(f"  >> {pt!r} | {nque} | {nact} | {nsuc}")
+
+                # for pt in session.scalars(select(Part).where(Part.active.is_(True))):
+                #     print(pt)
+                #     print(sum(1 for j in pt.jobs if j.status == JobStatus.DONE))
+
+                # > register new jobs
+                T_next: float = min(
+                    self.config["run"]["jobs_batch_size"] * self.config["run"]["job_max_runtime"],
+                    T_rem,
+                )
+                opt_dist: dict = self.distribute_time(T_next)
+                tot_njobs: int = sum(opt["njobs"] for opt in opt_dist["part"].values())
+                tot_T: float = 0.0
+                for part_id, opt in sorted(
+                    opt_dist["part"].items(), key=lambda x: x[1]["T_opt"], reverse=True
+                ):
+                    if tot_njobs == 0:
+                        # > at least one job: pick largest T_opt one
+                        opt["njobs"] = 1
+                        opt["T_job"] = opt["ntot_job"] * opt["tau"]
+                        tot_njobs = 1
+                    print(f"{part_id}: {opt}")
+                    if opt["njobs"] <= 0:
+                        continue
+                    # > regiser njobs new jobs with ncall,niter and time estime to DB
+                    ids = queue_production(part_id, opt)
+                    print(f"queued[{part_id}]: {len(ids)} = {ids}")
+                    tot_T += opt["njobs"] * opt["T_job"]
+
+                # > commit & update remaining resources for next iteration
+                session.commit()
+                njobs_rem -= tot_njobs
+                T_rem -= tot_T
 
     def run(self):
         # print(f"DBDispatch: run {self.id}")
+
+        self.repopulate()
+
         with self.session as session:
             # > get the front of the queue
             stmt = self.select_job.where(Job.status == JobStatus.QUEUED).order_by(Job.id.asc())
@@ -293,8 +430,8 @@ class DBDispatch(DBTask):
                     .where(Job.mode == job.mode)
                     .where(Job.seed.is_not(None))
                     .where(Job.seed > self.config["run"]["seed_offset"])
-                    #@todo not good enough, need a max to shield from anothe batch-jobstarting at larger value of seed?
-                    #determine upper bound by the max number of jobs? -> seems like a good idea
+                    # @todo not good enough, need a max to shield from anothe batch-jobstarting at larger value of seed?
+                    # determine upper bound by the max number of jobs? -> seems like a good idea
                     .order_by(Job.seed.desc())
                 ).first()
                 if last_job:
@@ -325,15 +462,6 @@ class DBRunner(DBTask):
             # @todo add classmethod JobStatus to query properties
             return job.status in JobStatus.terminated_list()
 
-    def get_ntot(self) -> tuple[int, int]:
-        """determine statistics to fill `job_max_runtime` using past jobs"""
-        # should filder warmup & production separately.
-        # for warmup maybe use only last?
-        # of generally put in a bias towards newer runs?
-        ncall = 100
-        niter = 2
-        return ncall, niter
-
     def run(self):
         # print(f"DBRunner: run {self.id}")
         with self.session as session:
@@ -360,11 +488,10 @@ class DBRunner(DBTask):
                     exe_data["policy_settings"]["local_ncores"] = 1
                 elif db_job.policy == ExecutionPolicy.HTCONDOR:
                     exe_data["policy_settings"]["htcondor_id"] = 42
-                if (db_job.ncall * db_job.niter) > 0:
-                    exe_data["ncall"] = db_job.ncall
-                    exe_data["niter"] = db_job.niter
-                else:
-                    exe_data["ncall"], exe_data["niter"] = self.get_ntot()
+                if (db_job.ncall * db_job.niter) == 0:
+                    raise RuntimeError(f"job {db_job.id} has ntot={db_job.ncall}×{db_job.niter}=0")
+                exe_data["ncall"] = db_job.ncall
+                exe_data["niter"] = db_job.niter
                 # > create the runcard
                 run_file: Path = job_path / "job.run"
                 template = RuncardTemplate(

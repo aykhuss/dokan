@@ -3,6 +3,8 @@ import time
 import json
 from sqlalchemy import select
 
+from dokan.db._dbtask import DBDispatch
+
 from .order import Order
 from .db import Part, Job, DBTask, DBInit, MergeAll
 from .preproduction import PreProduction
@@ -49,9 +51,18 @@ class Entry(DBTask):
                 preprods.append(preprod)
         print("Entry: yield preprods")
         yield preprods
-        print("Entry: complete preprods")
+        print("Entry: complete preprods -> run MergeAll")
         yield self.clone(MergeAll, force=True)
-        print("Entry: complete MergeAll")
-        opt_dist_T, val, err_est = self.distribute_time(1.0)
-        print(f"Entry: distribute_time {json.dumps(opt_dist_T, indent=2)}\nestimate = {val} +/- {err_est} [{100.*err_est/val}%]")
+        print("Entry: complete MergeAll -> distribute time")
+        opt_dist = self.distribute_time(100.0)
+        for pt in sorted(opt_dist["part"].items(), key=lambda x: x[1]["T_opt"], reverse=True):
+            print(f"{pt[0]}: {pt[1]}")
+        print(
+            f"estimate = {opt_dist["tot_result"]} +/- {opt_dist["tot_error_estimate_opt"]} [{100.*opt_dist["tot_error_estimate_opt"]/opt_dist["tot_result"]}%]"
+        )
         # self.print_job()
+        dispatch: list[DBDispatch] = [self.clone(DBDispatch, id=0) for _ in enumerate(preprods)]
+        dispatch[0].repopulate()
+        yield dispatch
+        print("Entry: complete dispatch -> run MergeAll")
+        yield self.clone(MergeAll, force=True)
