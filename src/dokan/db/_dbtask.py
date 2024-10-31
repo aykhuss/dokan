@@ -328,7 +328,6 @@ class DBDispatch(DBTask):
             return
 
         with self.session as session:
-
             # > queue up a new production job in the database and return job id's
             def queue_production(part_id: int, opt: dict) -> list[int]:
                 if opt["njobs"] <= 0:
@@ -424,7 +423,15 @@ class DBDispatch(DBTask):
                     T_rem,
                 )
                 opt_dist: dict = self.distribute_time(T_next)
-                tot_njobs: int = sum(opt["njobs"] for opt in opt_dist["part"].values())
+                while (
+                    tot_njobs := sum(opt["njobs"] for opt in opt_dist["part"].values())
+                ) > njobs_rem:
+                    min_njobs: int = min(
+                        opt["njobs"] for opt in opt_dist["part"].values() if opt["njobs"] > 0
+                    )
+                    for opt in opt_dist["part"].values():
+                        if opt["njobs"] > 0:
+                            opt["njobs"] -= min_njobs
                 tot_T: float = 0.0
                 for part_id, opt in sorted(
                     opt_dist["part"].items(), key=lambda x: x[1]["T_opt"], reverse=True
@@ -432,14 +439,14 @@ class DBDispatch(DBTask):
                     if tot_njobs == 0:
                         # > at least one job: pick largest T_opt one
                         opt["njobs"] = 1
-                        opt["T_job"] = opt["ntot_job"] * opt["tau"]
-                        tot_njobs = 1
+                        tot_njobs = 1  # trigger only 1st iteration
                     print(f"{part_id}: {opt}")
                     if opt["njobs"] <= 0:
                         continue
                     # > regiser njobs new jobs with ncall,niter and time estime to DB
                     ids = queue_production(part_id, opt)
                     print(f"queued[{part_id}]: {len(ids)} = {ids}")
+                    tot_njobs += opt["njobs"]
                     tot_T += opt["njobs"] * opt["T_job"]
 
                 # > commit & update remaining resources for next iteration
