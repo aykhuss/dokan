@@ -64,21 +64,7 @@ class MergePart(DBMerge):
         )
 
     def complete(self) -> bool:
-        # with self.session as session:
-        #     for job in session.scalars(self.select_job):
-        #         if job.status != JobStatus.MERGED:
-        #             return False
-        #     return True
-
         with self.session as session:
-            dc_done: int = 0
-            dc_merged: int = 0
-            for job in session.scalars(self.select_job):
-                if job.status == JobStatus.DONE:
-                    dc_done += 1
-                if job.status == JobStatus.MERGED:
-                    dc_merged += 1
-
             query_job = (
                 session.query(Job)
                 .join(Part)
@@ -86,20 +72,17 @@ class MergePart(DBMerge):
                 .filter(Part.active.is_(True))
                 .filter(Job.mode == ExecutionMode.PRODUCTION)
                 .filter(Job.status.in_(JobStatus.success_list()))
-                .filter(Job.timestamp < Part.timestamp)
             )
 
             c_done = query_job.filter(Job.status == JobStatus.DONE).count()
             c_merged = query_job.filter(Job.status == JobStatus.MERGED).count()
 
-            print(
-                f"MergePart::complete[{self.part_id}]: done {dc_done}/{c_done}, merged {dc_merged}/{c_merged}"
-            )
+            print(f"MergePart::complete[{self.part_id}]: done {c_done}, merged {c_merged}")
 
-            if self.force and dc_done > 0:
+            if self.force and c_done > 0:
                 return False
 
-            if float(dc_done) / float(dc_merged + 1) < 1.0:  # @todo make config parameter?
+            if float(c_done) / float(c_merged + 1) < 1.0:  # @todo make config parameter?
                 return True
         return False
 
@@ -187,6 +170,7 @@ class MergeAll(DBMerge):
 
     def requires(self):
         if self.force:
+            print("MergeAll: requires parts...")
             with self.session as session:
                 return [
                     self.clone(cls=MergePart, part_id=pt.id)
