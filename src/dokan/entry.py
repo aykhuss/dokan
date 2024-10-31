@@ -40,7 +40,7 @@ class Entry(DBTask):
     def run(self):
         print("Entry: run")
         # > all pre-productions must complete before we can dispatch production jobs
-        preprods = []
+        preprods: list[PreProduction] = []
         with self.session as session:
             for pt in session.scalars(select(Part).where(Part.active.is_(True))):
                 # print(pt)
@@ -61,7 +61,7 @@ class Entry(DBTask):
             f"estimate = {opt_dist["tot_result"]} +/- {opt_dist["tot_error_estimate_opt"]} [{100.*opt_dist["tot_error_estimate_opt"]/opt_dist["tot_result"]}%]"
         )
         # self.print_job()
-        dispatch: list[DBDispatch] = [self.clone(DBDispatch, id=0) for _ in enumerate(preprods)]
+        dispatch: list[DBDispatch] = [self.clone(DBDispatch, id=0, _n=n) for n,_ in enumerate(preprods)]
         dispatch[0].repopulate()
         yield dispatch
         print("Entry: complete dispatch -> run MergeAll")
