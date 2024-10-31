@@ -26,7 +26,7 @@ class Task(luigi.Task):
     """
 
     config: dict = luigi.DictParameter(visibility=ParameterVisibility.HIDDEN)
-    local_path: list[str] = luigi.ListParameter()
+    local_path: list[str] = luigi.ListParameter(default=[])
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

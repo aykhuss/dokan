@@ -9,6 +9,7 @@ import os
 import shutil
 import sys
 import time
+import multiprocessing
 
 from rich.console import Console
 
@@ -80,24 +81,13 @@ def main() -> None:
         )
         config.write()
         runcard.to_tempalte(Path(config["run"]["path"]) / config["run"]["template"])
-        #> create the DB skeleton
+        # > create the DB skeleton
         channels: dict = config["process"].pop("channels")
         luigi_result = luigi.build(
-            [
-                dokan.DBInit(
-                    config=config,
-                    local_path=[],
-                    run_tag=time.time(),
-                    channels=channels,
-                    order=1,
-                )
-            ],
-            worker_scheduler_factory=dokan.WorkerSchedulerFactory(
-                resources={"local_ncores": 8, "DBTask": 10, "DBDispatch": 1},
-                check_complete_on_run=False,
-            ),
+            [dokan.DBInit(config=config, channels=channels, run_tag=0.)],
+            worker_scheduler_factory=dokan.WorkerSchedulerFactory(),
             detailed_summary=True,
-            workers=12,
+            workers=1,
             local_scheduler=True,
             log_level="WARNING",
         )  # 'WARNING', 'INFO', 'DEBUG''
@@ -117,15 +107,25 @@ def main() -> None:
         local_ncores: int = 1
 
         channels: dict = config["process"].pop("channels")
+
+        # > spawn a background process to launch the monitor
+        # can there be a never-ending process running the monitor?
+        # spawn it in the build stage?
+        # proc_monitor = multiprocessing.Process(
+        #     target=dokan.monitor, args=(config["run"]["path"],)
+        # )
+        # proc_monitor.start()
+        # time.sleep(5)
+        # proc_monitor.join()
+
         luigi_result = luigi.build(
             [
                 dokan.Entry(
                     config=config,
-                    local_path=[],
                     run_tag=time.time(),
                     channels=channels,
-                    order=1,
-                )
+                    order=0,
+                )  # @todo: , dokan.Monitor(poll_rate=xsec,) control with --monitor CLI arg
             ],
             worker_scheduler_factory=dokan.WorkerSchedulerFactory(
                 resources={"local_ncores": 8, "DBTask": 10, "DBDispatch": 1},
