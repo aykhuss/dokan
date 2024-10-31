@@ -49,10 +49,9 @@ HISTOGRAMS
   etz  min=80  max=150  nbins=70  !grid=pine
   mll  min=80  max=100  nbins=20  !grid=pine
 
-  COMPOSITE > ptj [0,10,20,40,60,100]
-    ptj1
-    ptj1
-    ptj3
+  COMPOSITE > ptlpm [0,10,20,40,60,100,150,200]
+    ptlp
+    ptlm
   END_COMPOSITE
 
 END_HISTOGRAMS
