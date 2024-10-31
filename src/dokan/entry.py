@@ -35,6 +35,10 @@ class Entry(DBTask):
         return []
 
     def complete(self) -> bool:
+        njobs_rem, T_rem = self.remainders()
+        if njobs_rem <= 0 or T_rem <= 0.0:
+            return True
+        #@todo still need to check target_acc somehow.
         return False
 
     def run(self):
@@ -61,8 +65,10 @@ class Entry(DBTask):
             f"estimate = {opt_dist["tot_result"]} +/- {opt_dist["tot_error_estimate_opt"]} [{100.*opt_dist["tot_error_estimate_opt"]/opt_dist["tot_result"]}%]"
         )
         # self.print_job()
-        dispatch: list[DBDispatch] = [self.clone(DBDispatch, id=0, _n=n) for n,_ in enumerate(preprods)]
+        dispatch: list[DBDispatch] = [
+            self.clone(DBDispatch, id=0, _n=n) for n, _ in enumerate(preprods)
+        ]
         dispatch[0].repopulate()
         yield dispatch
         print("Entry: complete dispatch -> run MergeAll")
-        yield self.clone(MergeAll, force=True)
+        yield self.clone(MergeAll, force=True, run_tag=0.0)

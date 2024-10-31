@@ -74,6 +74,26 @@ class DBTask(Task, metaclass=ABCMeta):
     #         .subquery()
     #     )
 
+    def remainders(self) -> tuple[int, float]:
+        with self.session as session:
+            # > remaining resources available
+            query_alloc = (  # active contains time estimates
+                session.query(Job)
+                .join(Part)
+                .filter(Part.active.is_(True))
+                .filter(Job.run_tag == self.run_tag)
+                .filter(Job.mode == ExecutionMode.PRODUCTION)
+                .filter(Job.status.in_(JobStatus.success_list() + JobStatus.active_list()))
+            )
+            njobs_alloc: int = query_alloc.count()
+            njobs_rem: int = self.config["run"]["jobs_max_total"] - njobs_alloc
+            T_alloc: float = sum(job.elapsed_time for job in query_alloc)
+            T_rem: float = (
+                self.config["run"]["jobs_max_total"] * self.config["run"]["job_max_runtime"]
+                - T_alloc
+            )
+            return njobs_rem, T_rem
+
     # @todo make return a UserDict class with a schema?
     def distribute_time(self, T: float) -> dict:
         with self.session as session:
@@ -303,34 +323,11 @@ class DBDispatch(DBTask):
         if self.id != 0:
             return
 
-        with self.session as session:
-            # > remaining resources available
-            query_alloc = (  # active contains time estimates
-                session.query(Job)
-                .join(Part)
-                .filter(Part.active.is_(True))
-                .filter(Job.run_tag == self.run_tag)
-                .filter(Job.mode == ExecutionMode.PRODUCTION)
-                .filter(Job.status.in_(JobStatus.success_list() + JobStatus.active_list()))
-            )
-            njobs_alloc: int = query_alloc.count()
-            njobs_rem: int = self.config["run"]["jobs_max_total"] - njobs_alloc
-            T_alloc: float = sum(job.elapsed_time for job in query_alloc)
-            T_rem: float = (
-                self.config["run"]["jobs_max_total"] * self.config["run"]["job_max_runtime"]
-                - T_alloc
-            )
+        njobs_rem, T_rem = self.remainders()
+        if njobs_rem <= 0 or T_rem <= 0.0:
+            return
 
-            # > build up subquery to get Parts with job counts
-            def job_count_subquery(js_list: list[JobStatus]):
-                return (
-                    session.query(Job.part_id, func.count(Job.id).label("job_count"))
-                    .filter(Job.run_tag == self.run_tag)
-                    .filter(Job.mode == ExecutionMode.PRODUCTION)
-                    .filter(Job.status.in_(js_list))
-                    .group_by(Job.part_id)
-                    .subquery()
-                )
+        with self.session as session:
 
             # > queue up a new production job in the database and return job id's
             def queue_production(part_id: int, opt: dict) -> list[int]:
@@ -360,8 +357,19 @@ class DBDispatch(DBTask):
                 return [job.id for job in jobs]
 
             print(f"DBDispatch[{self._n}]: repopulate {self.id} | {self.run_tag}")
-            print(f"njobs  - allocated: {njobs_alloc}, remaining: {njobs_rem}")
-            print(f"T      - allocated: {T_alloc}, remaining: {T_rem}")
+            print(f"njobs  - remaining: {njobs_rem}")
+            print(f"T      - remaining: {T_rem}")
+
+            # > build up subquery to get Parts with job counts
+            def job_count_subquery(js_list: list[JobStatus]):
+                return (
+                    session.query(Job.part_id, func.count(Job.id).label("job_count"))
+                    .filter(Job.run_tag == self.run_tag)
+                    .filter(Job.mode == ExecutionMode.PRODUCTION)
+                    .filter(Job.status.in_(js_list))
+                    .group_by(Job.part_id)
+                    .subquery()
+                )
 
             # > populate until some termination condition is reached
             while True:
