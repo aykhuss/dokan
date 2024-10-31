@@ -196,8 +196,12 @@ class DBTask(Task, metaclass=ABCMeta):
                     njobs: int = round(ires["T_opt"] / T_max_job)
                     ntot_job: int = int(T_max_job / ires["tau"])
                 else:
-                    njobs: int = int(ires["T_opt"] / T_max_job) + 1
-                    ntot_job: int = int(ires["T_opt"] / float(njobs) / ires["tau"])
+                    if ires["T_opt"] > 0.0:
+                        njobs: int = int(ires["T_opt"] / T_max_job) + 1
+                        ntot_job: int = int(ires["T_opt"] / float(njobs) / ires["tau"])
+                    else:
+                        njobs: int = 0
+                        ntot_job: int = 0
                 T_job: float = ntot_job * ires["tau"]
                 T_jobs: float = njobs * T_job
                 ires["T_max_job"] = T_max_job
@@ -273,7 +277,7 @@ class DBDispatch(DBTask):
         else:
             return None
 
-    priority = 10
+    # priority = 10
 
     @property
     def select_job(self):
@@ -334,6 +338,9 @@ class DBDispatch(DBTask):
                     return []
                 niter: int = self.config["production"]["niter"]
                 ncall: int = opt["ntot_job"] // niter
+                if ncall * niter == 0:
+                    print(f"part {part_id} has ntot={opt['ntot_job']} -> 0 = {ncall} * {niter}")
+                    return []
                 jobs: list[Job] = [
                     Job(
                         run_tag=self.run_tag,
@@ -469,8 +476,8 @@ class DBDispatch(DBTask):
                 job.seed = seed_start
                 job.status = JobStatus.DISPATCHED
                 session.commit()
-                if self.id == 0:
-                    self.decrease_running_resources({"DBDispatch": 1})
+                # if self.id == 0:
+                #     self.decrease_running_resources({"DBDispatch": 1})
                 print(f"DBDispatch[{self._n}]: {job!r}")
                 yield self.clone(cls=DBRunner, id=job.id)
 
