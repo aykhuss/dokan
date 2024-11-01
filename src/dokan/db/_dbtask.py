@@ -406,6 +406,7 @@ class DBDispatch(DBTask):
                         qbreak = True
                     nsuc = nsuc if nsuc else 0
                     nact = nact if nact else 0
+                    # can i do:  nsuc = nsuc or 0
                     if nque >= 2 * (nsuc + (nact - nque)):
                         qbreak = True
                     # @todo: more?

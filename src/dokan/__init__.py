@@ -8,10 +8,12 @@ from .exe import ExecutionPolicy, ExecutionMode, Executor, LocalExec, ExeData
 from .entry import Entry
 from .preproduction import PreProduction
 from .runcard import Runcard, RuncardTemplate
+from .monitor import Monitor
 
 __all__ = [
     "main",
     "Config",
+    "Monitor",
     "Runcard",
     "RuncardTemplate",
     "Task",

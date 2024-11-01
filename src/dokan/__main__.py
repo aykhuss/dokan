@@ -124,8 +124,10 @@ def main() -> None:
                     config=config,
                     run_tag=time.time(),
                     channels=channels,
-                    order=1,
-                )  # @todo: , dokan.Monitor(poll_rate=xsec,) control with --monitor CLI arg
+                    order=0,
+                ),
+                dokan.Monitor(config=config, run_tag=0.),
+                # @todo: , dokan.Monitor(poll_rate=xsec,) control with --monitor CLI arg
             ],
             worker_scheduler_factory=dokan.WorkerSchedulerFactory(
                 resources={"local_ncores": 8, "DBTask": 10, "DBDispatch": 1},
