@@ -42,6 +42,11 @@ class WarmupFlag(IntFlag):
 class PreProduction(DBTask):
     part_id: int = luigi.IntParameter()
 
+    @property
+    def resources(self):
+        # > each part can only have one active pre-production
+        return {f"PreProduction_{self.part_id}": 1}
+
     def complete(self) -> bool:
         # > check all warmup QC criteria
         if self.append_warmup() > 0:
@@ -89,6 +94,7 @@ class PreProduction(DBTask):
             # > calls before completion of active warmup jobs
             active_warmup = session.scalars(
                 select(Job)
+                .where(Job.run_tag == self.run_tag)
                 .where(Job.part_id == self.part_id)
                 .where(Job.mode == ExecutionMode.WARMUP)
                 .where(Job.status.in_(JobStatus.active_list()))
@@ -153,7 +159,9 @@ class PreProduction(DBTask):
             NW_time_estimate: float = LW.elapsed_time * float(NW_ntot) / float(LW_ntot)
             # > try accommodate runtime limt by reducing iterations
             if NW_time_estimate > self.config["run"]["job_max_runtime"]:
-                NW_niter = float(NW_niter) * self.config["run"]["job_max_runtime"] // NW_time_estimate
+                NW_niter = (
+                    float(NW_niter) * self.config["run"]["job_max_runtime"] // NW_time_estimate
+                )
                 if NW_niter <= 0:
                     wflag |= WarmupFlag.RUNTIME
                     return -int(wflag)
@@ -209,6 +217,7 @@ class PreProduction(DBTask):
             # > calls before completion of active warmup jobs
             active_production = session.scalars(
                 select(Job)
+                .where(Job.run_tag == self.run_tag)
                 .where(Job.part_id == self.part_id)
                 .where(Job.mode == ExecutionMode.PRODUCTION)
                 .where(Job.policy == self.config["exe"]["policy"])
