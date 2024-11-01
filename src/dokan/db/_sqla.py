@@ -51,6 +51,22 @@ class Part(JobDB):
     def __repr__(self) -> str:
         return f"Part(id={self.id!r}, name={self.name!r}, string={self.string!r}, part={self.part!r}, part_num={self.part_num!r}, region={self.region!r}, order={self.order!r}, active={self.active!r}, result={self.result!r}, error={self.error!r})"
 
+    def job_summary(self):
+        display_mode: ExecutionMode = ExecutionMode.WARMUP if any(job.mode==ExecutionMode.WARMUP for job in self.jobs if job.status in JobStatus.active_list()) else ExecutionMode.PRODUCTION
+        n_active: int = 0
+        n_success: int = 0
+        n_failed: int = 0
+        for job in self.jobs:
+            if job.mode != display_mode:
+                continue
+            if job.status in JobStatus.success_list():
+                n_success += 1
+            elif job.status in JobStatus.active_list():
+                n_active += 1
+            elif job.status == JobStatus.FAILED:
+                n_failed += 1
+        return (display_mode, n_active, n_success, n_failed)
+
 
 class Job(JobDB):
     __tablename__ = "job"
