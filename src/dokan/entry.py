@@ -25,26 +25,26 @@ class Entry(DBTask):
         return False
 
     def run(self):
-        print("Entry: run")
+        self.logger("Entry: run")
         # > all pre-productions must complete before we can dispatch production jobs
         preprods: list[PreProduction] = []
         with self.session as session:
             for pt in session.scalars(select(Part).where(Part.active.is_(True))):
-                print(pt)
+                self.logger(str(pt))
                 preprod = self.clone(
                     cls=PreProduction,
                     part_id=pt.id,
                 )
                 preprods.append(preprod)
-        print("Entry: yield preprods")
+        self.logger("Entry: yield preprods")
         yield preprods
-        print("Entry: complete preprods -> run MergeAll")
+        self.logger("Entry: complete preprods -> run MergeAll")
         yield self.clone(MergeAll, force=True)
-        print("Entry: complete MergeAll -> distribute time")
+        self.logger("Entry: complete MergeAll -> distribute time")
         opt_dist = self.distribute_time(100.0)
         for pt in sorted(opt_dist["part"].items(), key=lambda x: x[1]["T_opt"], reverse=True):
-            print(f"{pt[0]}: {pt[1]}")
-        print(
+            self.logger(f"{pt[0]}: {pt[1]}")
+        self.logger(
             f"estimate = {opt_dist["tot_result"]} +/- {opt_dist["tot_error_estimate_opt"]} [{100.*opt_dist["tot_error_estimate_opt"]/opt_dist["tot_result"]}%]"
         )
         # self.print_job()
@@ -53,5 +53,5 @@ class Entry(DBTask):
         ]
         dispatch[0].repopulate()
         yield dispatch
-        print("Entry: complete dispatch -> run MergeAll")
+        self.logger("Entry: complete dispatch -> run MergeAll")
         yield self.clone(MergeAll, force=True)  # , run_tag=0.0)

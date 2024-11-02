@@ -5,7 +5,7 @@ import json
 import re
 import shutil
 import math
-
+import datetime
 
 from abc import ABCMeta, abstractmethod
 from pathlib import Path
@@ -13,15 +13,19 @@ from pathlib import Path
 from sqlalchemy import create_engine, Engine, select, func
 from sqlalchemy.orm import Session, aliased
 
+from rich.console import Console
+
 from ._jobstatus import JobStatus
-from ._sqla import JobDB, Part, Job
+from ._loglevel import LogLevel
+from ._sqla import DokanDB, Part, Job, Log
 
 from ..task import Task
 from ..exe import ExecutionMode, ExecutionPolicy, ExeData, Executor
 from ..order import Order
 from ..runcard import Runcard, RuncardTemplate
 
-logger = logging.getLogger("luigi-interface")
+
+_console = Console()
 
 
 class DBTask(Task, metaclass=ABCMeta):
@@ -48,7 +52,7 @@ class DBTask(Task, metaclass=ABCMeta):
         return Session(self.engine)
 
     def output(self):
-        # DBHandlers do not have output files but use the DB
+        # > DBTask has no output files but uses the DB itself to track the status
         return []
 
     @abstractmethod
@@ -65,14 +69,18 @@ class DBTask(Task, metaclass=ABCMeta):
             for job in session.scalars(select(Job)):
                 print(job)
 
-    # @staticmethod
-    # def job_count_subquery(session, js_list: list[JobStatus]):
-    #     return (
-    #         session.query(Job.part_id, func.count(Job.id).label("job_count"))
-    #         .filter(Job.status.in_(js_list))
-    #         .group_by(Job.part_id)
-    #         .subquery()
-    #     )
+    def logger(self, message: str, level: LogLevel = LogLevel.INFO) -> None:
+        if level < self.config["ui"]["log_level"]:
+            return
+        if not self.config["ui"]["monitor"]:
+            dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            _console.print(f"[dim][{dt_str}][/dim]({level!r}): {message}")
+            return
+        # > general case: monitor is ON: store messages in DB
+        with self.session as session:
+            session.add(Log(level=level, timestamp=time.time(), message=message))
+            session.commit()
+
 
     def remainders(self) -> tuple[int, float]:
         with self.session as session:
@@ -145,6 +153,7 @@ class DBTask(Task, metaclass=ABCMeta):
             result = {
                 "part": {},  # part_id -> {tau, tau_err, T_opt, T_max_job, T_job, njobs, ntot_job}
                 "tot_result": 0.0,
+                "tot_error": 0.0,
                 "tot_error_estimate_opt": 0.0,
                 "tot_error_estimate_jobs": 0.0,
             }
@@ -190,14 +199,17 @@ class DBTask(Task, metaclass=ABCMeta):
             # > normalize at the end to account for the dropped negative weights
             # and compute an estimate for the error to be achieved
             result["tot_result"] = 0.0
+            result["tot_error"] = 0.0
             result["tot_error_estimate_opt"] = 0.0
             for part_id, ires in result["part"].items():
                 ires["T_opt"] *= T / acc_T_opt
                 i_T: float = ires.get("i_T")
                 result["tot_result"] += cache[part_id]["result"]
+                result["tot_error"] += cache[part_id]["error"] ** 2
                 result["tot_error_estimate_opt"] += (
                     cache[part_id]["error"] ** 2 * i_T / (i_T + ires["T_opt"])
                 )
+            result["tot_error"] = math.sqrt(result["tot_error"])
             result["tot_error_estimate_opt"] = math.sqrt(result["tot_error_estimate_opt"])
 
             # > split up into jobs
@@ -245,7 +257,7 @@ class DBInit(DBTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        JobDB.metadata.create_all(self.engine)
+        DokanDB.metadata.create_all(self.engine)
 
     def complete(self) -> bool:
         with self.session as session:
@@ -616,3 +628,6 @@ class DBRunner(DBTask):
             else:
                 db_job.status = JobStatus.FAILED
             session.commit()
+
+            # nope: cyclic dependence #> see if a re-merge is possible
+            # yield MergePart(part_id=db_job.part_id)

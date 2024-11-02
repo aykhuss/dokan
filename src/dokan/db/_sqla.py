@@ -3,8 +3,8 @@
 module defining the job database
 """
 
-from ..exe._exe_config import ExecutionMode, ExecutionPolicy
-from ._jobstatus import JobStatus
+
+import datetime
 
 from sqlalchemy import BigInteger, ForeignKey
 from sqlalchemy import String
@@ -15,12 +15,15 @@ from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 
+from ..exe._exe_config import ExecutionMode, ExecutionPolicy
+from ._jobstatus import JobStatus
 
-class JobDB(DeclarativeBase):
+
+class DokanDB(DeclarativeBase):
     pass
 
 
-class Part(JobDB):
+class Part(DokanDB):
     __tablename__ = "part"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -51,24 +54,8 @@ class Part(JobDB):
     def __repr__(self) -> str:
         return f"Part(id={self.id!r}, name={self.name!r}, string={self.string!r}, part={self.part!r}, part_num={self.part_num!r}, region={self.region!r}, order={self.order!r}, active={self.active!r}, result={self.result!r}, error={self.error!r})"
 
-    def job_summary(self):
-        display_mode: ExecutionMode = ExecutionMode.WARMUP if any(job.mode==ExecutionMode.WARMUP for job in self.jobs if job.status in JobStatus.active_list()) else ExecutionMode.PRODUCTION
-        n_active: int = 0
-        n_success: int = 0
-        n_failed: int = 0
-        for job in self.jobs:
-            if job.mode != display_mode:
-                continue
-            if job.status in JobStatus.success_list():
-                n_success += 1
-            elif job.status in JobStatus.active_list():
-                n_active += 1
-            elif job.status == JobStatus.FAILED:
-                n_failed += 1
-        return (display_mode, n_active, n_success, n_failed)
 
-
-class Job(JobDB):
+class Job(DokanDB):
     __tablename__ = "job"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -96,3 +83,15 @@ class Job(JobDB):
 
     def __repr__(self) -> str:
         return f"Job(id={self.id!r}, part_id={self.part_id!r}, status={(self.status)!r}, timestamp={self.timestamp!r}, mode={ExecutionMode(self.mode)!r}, policy={ExecutionPolicy(self.policy)!r})"
+
+
+class Log(DokanDB):
+    __tablename__ = "log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    level: Mapped[int]
+    timestamp: Mapped[float] = mapped_column(default=0.0)
+    message: Mapped[str] = mapped_column(default="")
+
+    def __repr__(self) -> str:
+        return f"Log(id={self.id!r}, level={self.level!r}, timestamp={(self.timestamp)!r}, message={self.message!r})"

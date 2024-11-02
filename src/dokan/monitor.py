@@ -1,6 +1,6 @@
 import luigi
 import time
-import random
+import datetime
 
 from operator import itemgetter
 
@@ -9,16 +9,16 @@ from rich.live import Live
 from rich.table import Table, Column
 from rich import box
 
-from sqlalchemy import select
+from sqlalchemy import select, delete
 
-from .db import Part, Job, DBTask
+from .db import Part, Job, Log, DBTask
 from .db._jobstatus import JobStatus
+from .db._loglevel import LogLevel
 from .exe import ExecutionMode
 
 
 class Monitor(DBTask):
-
-    #@todo: poll_rate? --> config
+    # @todo: poll_rate? --> config
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -120,8 +120,20 @@ class Monitor(DBTask):
             return
         print(f"Monitor::run")
         with Live(self.generate_table(), auto_refresh=False) as live:
-            for i in range(30):
-                live.console.print(f"Monitor: {i}")
+            for i in range(60):
                 time.sleep(1)
                 live.update(self.generate_table(), refresh=True)
+                with self.session as session:
+                    logs = session.execute(
+                        delete(Log).returning(Log.timestamp, Log.level, Log.message)
+                    ).fetchall()
+                    session.commit()
+
+                for log in logs:
+                    time.sleep(0.1)
+                    dt_str: str = datetime.datetime.fromtimestamp(log[0]).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                    live.console.print(f"[dim][{dt_str}][/dim]({LogLevel(log[1])!r}): {log[2]}")
+
         print("Monitor: done")

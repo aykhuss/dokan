@@ -3,7 +3,7 @@ from enum import IntEnum, unique
 
 @unique
 class LogLevel(IntEnum):
-    """possible log levels (values as in logging module)"""
+    """possible log levels (c.f. logging module)"""
 
     SIG_TERM = -1  # signal to terminate the `Monitor`
     NOTSET = 0
