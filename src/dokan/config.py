@@ -19,6 +19,7 @@ from os import PathLike
 from .util import validate_schema
 from .exe import ExecutionPolicy
 from .order import Order
+from .db._loglevel import LogLevel
 
 _default_config: Path = Path(__file__).parent.resolve() / "config.json"
 
@@ -42,6 +43,10 @@ _schema: dict = {
         "jobs_batch_size": int,  # @todo: size of runs to batch
         "seed_offset": int,  # seed number offset
         "timestamps": float,  # @todo list of timestamps when `run` was called
+    },
+    "ui": {
+        "monitor": bool,
+        "log_level": LogLevel,
     },
     "process": {
         "name": str,  # name of the process in NNLOJET
@@ -142,12 +147,10 @@ class Config(UserDict):
     def load(self, default_ok: bool = True) -> None:
         if self.file_cfg and self.file_cfg.exists():
             with open(self.file_cfg, "rt") as fin:
-                print(f"Config: loading {self.file_cfg}")
                 self.data = json.load(fin)
         else:
             if not default_ok:
                 raise FileNotFoundError(f"Config file not found: {self.file_cfg}")
-            print(f"Config: loading default {_default_config}")
             self.load_defaults()
         if not self.is_valid(convert_to_type=True):
             raise RuntimeError("ExeData load encountered conflict with schema")

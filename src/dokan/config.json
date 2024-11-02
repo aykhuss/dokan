@@ -6,12 +6,16 @@
     "order": 2,
     "histograms": {},
     "target_rel_acc": 0.01,
-    "job_max_runtime": 300,
-    "job_fill_max_runtime": false,
-    "jobs_max_total": 10000,
+    "job_max_runtime": 120,
+    "job_fill_max_runtime": true,
+    "jobs_max_total": 50,
     "jobs_max_concurrent": 10,
-    "jobs_batch_size": 1,
+    "jobs_batch_size": 2,
     "seed_offset": 0
+  },
+  "ui": {
+    "monitor": true,
+    "log_level": 20
   },
   "process": {
     "channels": {}
