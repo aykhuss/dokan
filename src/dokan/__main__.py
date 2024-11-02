@@ -1,7 +1,8 @@
 """The main execution of the NNLOJET workflow"""
 
 import luigi
-from luigi.execution_summary import LuigiRunResult
+#from luigi.execution_summary import LuigiRunResult
+
 import dokan
 import dokan.nnlojet
 import argparse
@@ -61,7 +62,6 @@ def main() -> None:
     if args.action == "init":
         config: dokan.Config = dokan.Config(default_ok=True)
         runcard: dokan.Runcard = dokan.Runcard(runcard=args.runcard)
-        console.print(runcard.data)
         if nnlojet_exe is None:
             sys.exit("please specify an NNLOJET executable")
         # > save all to the run config file
@@ -69,6 +69,7 @@ def main() -> None:
             config.set_path(args.job_path)
         else:
             config.set_path(os.path.relpath(runcard.data["run_name"]))
+
         config["exe"]["path"] = nnlojet_exe
         config["run"]["name"] = runcard.data["run_name"]
         config["run"]["histograms"] = runcard.data["histograms"]
@@ -81,18 +82,6 @@ def main() -> None:
         )
         config.write()
         runcard.to_tempalte(Path(config["run"]["path"]) / config["run"]["template"])
-        # > create the DB skeleton
-        channels: dict = config["process"].pop("channels")
-        luigi_result = luigi.build(
-            [dokan.DBInit(config=config, channels=channels, run_tag=0.)],
-            worker_scheduler_factory=dokan.WorkerSchedulerFactory(),
-            detailed_summary=True,
-            workers=1,
-            local_scheduler=True,
-            log_level="WARNING",
-        )  # 'WARNING', 'INFO', 'DEBUG''
-
-        print(luigi_result.status)
 
     # >-----
     if args.action == "submit":
@@ -106,28 +95,30 @@ def main() -> None:
         # @todo determine # cores on this machine
         local_ncores: int = 1
 
+        # > create the DB skeleton & activate parts
         channels: dict = config["process"].pop("channels")
+        db_init = dokan.DBInit(
+            config=config,
+            channels=channels,
+            run_tag=time.time(),
+            order=1,
+        )
+        luigi_result = luigi.build(
+            [db_init],
+            worker_scheduler_factory=dokan.WorkerSchedulerFactory(),
+            detailed_summary=True,
+            workers=1,
+            local_scheduler=True,
+            log_level="WARNING",
+        )  # 'WARNING', 'INFO', 'DEBUG''
+        if not luigi_result:
+            sys.exit("DBInit failed")
 
-        # > spawn a background process to launch the monitor
-        # can there be a never-ending process running the monitor?
-        # spawn it in the build stage?
-        # proc_monitor = multiprocessing.Process(
-        #     target=dokan.monitor, args=(config["run"]["path"],)
-        # )
-        # proc_monitor.start()
-        # time.sleep(5)
-        # proc_monitor.join()
-
+        # > actually submit the root task to run NNLOJET and spawn the monitor
         luigi_result = luigi.build(
             [
-                dokan.Entry(
-                    config=config,
-                    run_tag=time.time(),
-                    channels=channels,
-                    order=0,
-                ),
-                dokan.Monitor(config=config, run_tag=0.),
-                # @todo: , dokan.Monitor(poll_rate=xsec,) control with --monitor CLI arg
+                db_init.clone(dokan.Entry),
+                db_init.clone(dokan.Monitor),
             ],
             worker_scheduler_factory=dokan.WorkerSchedulerFactory(
                 resources={"local_ncores": 8, "DBTask": 10, "DBDispatch": 1},
@@ -137,14 +128,16 @@ def main() -> None:
                 wait_interval=0.1,
             ),
             detailed_summary=True,
-            workers=12,  #@todo set to number of cores of the machine
+            workers=12,  # @todo set to number of cores of the machine
             local_scheduler=True,
             log_level="WARNING",
         )  # 'WARNING', 'INFO', 'DEBUG''
+        if not luigi_result.scheduling_succeeded:
+            console.print(luigi_result.summary_text)
 
-        print(luigi_result.one_line_summary)
-        print(luigi_result.status)
-        print(luigi_result.summary_text)
+        console.print(luigi_result.one_line_summary)
+        console.print(luigi_result.status)
+        console.print(luigi_result.summary_text)
 
 
 if __name__ == "__main__":

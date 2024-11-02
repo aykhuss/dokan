@@ -1,35 +1,18 @@
 import luigi
 import time
 import json
-from sqlalchemy import select
 
-from dokan.db._dbtask import DBDispatch
+from sqlalchemy import select
 
 from .order import Order
 from .db import Part, Job, DBTask, DBInit, MergeAll
+from .db._dbtask import DBDispatch
 from .preproduction import PreProduction
 
 
 class Entry(DBTask):
-    # @todo job options
-    # seed start
-    # njobs max
-    # max concurrent
-    order: int = luigi.IntParameter(default=Order.NNLO)
-    channels: dict = luigi.DictParameter()
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        print(f"starter: {self.run_tag}: {time.ctime(self.run_tag)}")
-
     def requires(self):
-        # @todo variations to be added here?
-        return [
-            self.clone(
-                cls=DBInit,
-                channels=self.channels,
-            )
-        ]
+        return []
 
     def output(self):
         return []
@@ -38,7 +21,7 @@ class Entry(DBTask):
         njobs_rem, T_rem = self.remainders()
         if njobs_rem <= 0 or T_rem <= 0.0:
             return True
-        #@todo still need to check target_acc somehow.
+        # @todo still need to check target_acc somehow.
         return False
 
     def run(self):
@@ -47,7 +30,7 @@ class Entry(DBTask):
         preprods: list[PreProduction] = []
         with self.session as session:
             for pt in session.scalars(select(Part).where(Part.active.is_(True))):
-                # print(pt)
+                print(pt)
                 preprod = self.clone(
                     cls=PreProduction,
                     part_id=pt.id,
@@ -71,4 +54,4 @@ class Entry(DBTask):
         dispatch[0].repopulate()
         yield dispatch
         print("Entry: complete dispatch -> run MergeAll")
-        yield self.clone(MergeAll, force=True, run_tag=0.0)
+        yield self.clone(MergeAll, force=True)  # , run_tag=0.0)

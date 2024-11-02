@@ -221,4 +221,4 @@ class MergeAll(DBMerge):
                 hist.write_to_file(out_file)
 
         print("MergeAll: complete all")
-        self.print_job()
+        #self.print_job()
