@@ -54,12 +54,12 @@ class SingleLocalExec(LocalExec):
         return [luigi.LocalTarget(self.file_out)]
 
     def exe(self):
-        print(f"SingleLocalExec: exe {self.path}")
+        # print(f"SingleLocalExec: exe {self.path}")
         # > should never run since we overwrote run!
         raise RuntimeError("SingleLocalExec: exe should never be called")
 
     def run(self):
-        print(f"SingleLocalExec: run {self.path}")
+        # print(f"SingleLocalExec: run {self.path}")
 
         job_env = os.environ.copy()
         job_env["OMP_NUM_THREADS"] = "{}".format(self.local_ncores)

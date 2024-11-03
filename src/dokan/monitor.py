@@ -39,7 +39,7 @@ class Monitor(DBTask):
         self._data: list[list[str]] = [
             ["-" for _ in range(len(part_order) + 1)] for _ in range(self._nchan + 1)
         ]
-        self._data[0][0] = "id"
+        self._data[0][0] = "#"
         for irow in range(1, len(self._data)):
             self._data[irow][0] = f"{irow}"
         for pt_name, icol in self._map_col.items():
@@ -69,12 +69,12 @@ class Monitor(DBTask):
             elif job.status == JobStatus.FAILED:
                 n_failed[idx] += 1
         result: str = (
-            "[bold blue]Warm[/bold blue]"
+            "[bold blue]WRM[/bold blue]"
             if display_mode == ExecutionMode.WARMUP
-            else "[bold magenta]Prod[/bold magenta]"
+            else "[bold magenta]PRD[/bold magenta]"
         )
         result += f" [yellow][bold]A[/bold][[dim]{n_active[0]}+[/dim]{n_active[1]}][/yellow]"
-        result += f" [green][bold]S[/bold][[dim]{n_success[0]}+[/dim]{n_success[1]}][/green]"
+        result += f" [green][bold]D[/bold][[dim]{n_success[0]}+[/dim]{n_success[1]}][/green]"
         result += f" [red][bold]F[/bold][[dim]{n_failed[0]}+[/dim]{n_failed[1]}][/red]"
         return result
 
@@ -118,11 +118,10 @@ class Monitor(DBTask):
     def run(self):
         if not self.config["ui"]["monitor"]:
             return
-        print(f"Monitor::run")
-        with Live(self.generate_table(), auto_refresh=False) as live:
-            for i in range(60):
-                time.sleep(1)
-                live.update(self.generate_table(), refresh=True)
+        self.logger(f"Monitor: switching on the job status board...")
+        with Live(self.generate_table()) as live:
+            while True:
+                live.update(self.generate_table())
                 with self.session as session:
                     logs = session.execute(
                         delete(Log).returning(Log.timestamp, Log.level, Log.message)
@@ -130,10 +129,13 @@ class Monitor(DBTask):
                     session.commit()
 
                 for log in logs:
-                    time.sleep(0.1)
                     dt_str: str = datetime.datetime.fromtimestamp(log[0]).strftime(
                         "%Y-%m-%d %H:%M:%S"
                     )
                     live.console.print(f"[dim][{dt_str}][/dim]({LogLevel(log[1])!r}): {log[2]}")
+                    if log[1] == LogLevel.SIG_TERM:
+                        return
+                    #time.sleep(0.01)
 
-        print("Monitor: done")
+                time.sleep(1)
+

@@ -286,13 +286,13 @@ class PreProduction(DBTask):
             return queue_production(PP_ncall, self.config["production"]["niter"])
 
     def run(self):
-        print(f"PreProduction: run {self.part_id}")
+        self.logger(f"PreProduction: run {self.part_id}")
         if (job_id := self.append_warmup()) > 0:
-            # print(f"PreProduction: yield {job_id}")
+            # self.logger(f"PreProduction: yield {job_id}")
             yield self.clone(cls=DBDispatch, id=job_id)
-        print(
+        self.logger(
             f"PreProduction: warmup done {self.part_id}: {WarmupFlag.print_flags(WarmupFlag(-job_id))}"
         )
         if (job_id := self.append_production()) > 0:
-            # print(f"PreProduction: yield {job_id}")
+            # self.logger(f"PreProduction: yield {job_id}")
             yield self.clone(cls=DBDispatch, id=job_id)

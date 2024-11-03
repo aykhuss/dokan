@@ -3,7 +3,6 @@
 module defining the job database
 """
 
-
 import datetime
 
 from sqlalchemy import BigInteger, ForeignKey
