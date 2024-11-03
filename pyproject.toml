@@ -7,13 +7,13 @@ license = {file = "LICENSE"}
 dynamic = ["version"]
 keywords = []
 authors = [
-  { name = "Alexander Huss", email = "alexander.huss@cern.ch" },
+  { name = "NNLOJET" },
 ]
 dependencies = [
   "luigi",
-  "numpy>=2.0.2",
-  "rich>=13.9.2",
-  "sqlalchemy>=2.0.35",
+  "numpy",
+  "rich",
+  "sqlalchemy",
 ]
 
 [project.urls]
@@ -22,7 +22,7 @@ Issues = "https://github.com/aykhuss/dokan/issues"
 Source = "https://github.com/aykhuss/dokan"
 
 [project.scripts]
-dokan = "dokan:main"
+nnlojet-run = "dokan:main"
 
 [build-system]
 requires = ["hatchling"]
