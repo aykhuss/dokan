@@ -10,7 +10,9 @@ from sqlalchemy import select
 
 from ..exe._exe_config import ExecutionMode
 from ..exe._exe_data import ExeData
-from ._sqla import Part, Job, JobStatus
+from ._sqla import Part, Job
+from ._jobstatus import JobStatus
+from ._loglevel import LogLevel
 from ._dbtask import DBTask
 from ..combine import NNLOJETHistogram, NNLOJETContainer
 
@@ -77,7 +79,7 @@ class MergePart(DBMerge):
             c_done = query_job.filter(Job.status == JobStatus.DONE).count()
             c_merged = query_job.filter(Job.status == JobStatus.MERGED).count()
 
-            print(f"MergePart::complete[{self.part_id}]: done {c_done}, merged {c_merged}")
+            self.debug(f"MergePart::complete[{self.part_id}]: done {c_done}, merged {c_merged}")
 
             if self.force and c_done > 0:
                 return False
@@ -87,7 +89,7 @@ class MergePart(DBMerge):
         return False
 
     def run(self):
-        print(f"MergePart: run {self.part_id}")
+        self.debug(f"MergePart: run {self.part_id}")
         with self.session as session:
             # > get the part and update timestamp to tag for 'MERGE'
             pt: Part = session.get_one(Part, self.part_id)
@@ -130,8 +132,7 @@ class MergePart(DBMerge):
                     try:
                         container.append(NNLOJETHistogram(nx=nx, filename=self._path / in_file))
                     except ValueError as e:
-                        print(e)
-                        print("error reading file:", in_file)
+                        self.logger(f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR)
                 container.mask_outliers(3.5, 0.01)
                 container.optimise_k(maxdev_unwgt=None, nsteps=3, maxdev_steps=0.5)
                 hist = container.merge(weighted=True)
@@ -170,7 +171,7 @@ class MergeAll(DBMerge):
 
     def requires(self):
         if self.force:
-            print("MergeAll: requires parts...")
+            self.debug("MergeAll: requires parts...")
             with self.session as session:
                 return [
                     self.clone(cls=MergePart, part_id=pt.id)
@@ -180,21 +181,25 @@ class MergeAll(DBMerge):
             return []
 
     def complete(self) -> bool:
+        #> check input requirements
+        if any(not mpt.complete() for mpt in self.requires()):
+            return False
+        #> check file modifiation time
         timestamp: float = -1.0
         for hist in os.scandir(self.fin_path):
             timestamp = max(timestamp, hist.stat().st_mtime)
         if self.run_tag > timestamp:
             return False
-        print(f"MergeAll: files {datetime.datetime.fromtimestamp(timestamp)}")
+        self.debug(f"MergeAll: files {datetime.datetime.fromtimestamp(timestamp)}")
         with self.session as session:
             for pt in session.scalars(self.select_part):
-                print(f"MergeAll: {pt.name} {datetime.datetime.fromtimestamp(pt.timestamp)}")
+                self.debug(f"MergeAll: {pt.name} {datetime.datetime.fromtimestamp(pt.timestamp)}")
                 if pt.timestamp > timestamp:
                     return False
             return True
 
     def run(self):
-        print("MergeAll: run all")
+        self.debug("MergeAll: run all")
         mrg_parent: Path = self._path.joinpath("result", "part")
 
         with self.session as session:
@@ -216,9 +221,8 @@ class MergeAll(DBMerge):
                     try:
                         hist = hist + NNLOJETHistogram(nx=nx, filename=self._path / in_file)
                     except ValueError as e:
-                        print(e)
-                        print("error reading file:", in_file)
+                        self.logger(f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR)
                 hist.write_to_file(out_file)
 
-        print("MergeAll: complete all")
+        self.debug("MergeAll: complete all")
         #self.print_job()
