@@ -70,7 +70,8 @@ class DBTask(Task, metaclass=ABCMeta):
                 print(job)
 
     def logger(self, message: str, level: LogLevel = LogLevel.INFO) -> None:
-        if level < self.config["ui"]["log_level"]:
+        if level >= 0 and level < self.config["ui"]["log_level"]:
+            #> negative values are signals that I want to be passed *always*
             return
         if not self.config["ui"]["monitor"]:
             dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -81,6 +82,8 @@ class DBTask(Task, metaclass=ABCMeta):
             session.add(Log(level=level, timestamp=time.time(), message=message))
             session.commit()
 
+    def debug(self, message: str) -> None:
+        self.logger(message, LogLevel.DEBUG)
 
     def remainders(self) -> tuple[int, float]:
         with self.session as session:
@@ -273,7 +276,7 @@ class DBInit(DBTask):
         return True
 
     def run(self) -> None:
-        print(f"DBInit: run {Order(self.order)!r}")
+        self.logger(f"DBInit: run {Order(self.order)!r}")
         with self.session as session:
             for db_pt in session.scalars(select(Part)):
                 db_pt.active = False  # reset to be safe
@@ -347,7 +350,9 @@ class DBDispatch(DBTask):
                 niter: int = self.config["production"]["niter"]
                 ncall: int = opt["ntot_job"] // niter
                 if ncall * niter == 0:
-                    print(f"part {part_id} has ntot={opt['ntot_job']} -> 0 = {ncall} * {niter}")
+                    self.logger(
+                        f"part {part_id} has ntot={opt['ntot_job']} -> 0 = {ncall} * {niter}"
+                    )
                     return []
                 jobs: list[Job] = [
                     Job(
@@ -367,9 +372,9 @@ class DBDispatch(DBTask):
                 session.commit()
                 return [job.id for job in jobs]
 
-            print(f"DBDispatch[{self._n}]: repopulate {self.id} | {self.run_tag}")
-            print(f"njobs  - remaining: {njobs_rem}")
-            print(f"T      - remaining: {T_rem}")
+            self.logger(f"DBDispatch[{self._n}]: repopulate {self.id} | {self.run_tag}")
+            self.logger(f"njobs  - remaining: {njobs_rem}")
+            self.logger(f"T      - remaining: {T_rem}")
 
             # > build up subquery to get Parts with job counts
             def job_count_subquery(js_list: list[JobStatus]):
@@ -410,7 +415,7 @@ class DBDispatch(DBTask):
                 # > termination condition based on #queued of individul jobs
                 qbreak: bool = False
                 for pt, nque, nact, nsuc in sorted_parts:
-                    print(f"  >> {pt!r} | {nque} | {nact} | {nsuc}")
+                    self.debug(f"  >> {pt!r} | {nque} | {nact} | {nsuc}")
                     if not nque:
                         continue
                     # > implement termination conditions
@@ -436,6 +441,9 @@ class DBDispatch(DBTask):
                     T_rem,
                 )
                 opt_dist: dict = self.distribute_time(T_next)
+                rel_acc: float = opt_dist["tot_error"] / opt_dist["tot_result"]
+                if rel_acc <= self.config["run"]["target_rel_acc"]:
+                    break
                 while (
                     tot_njobs := sum(opt["njobs"] for opt in opt_dist["part"].values())
                 ) > njobs_rem:
@@ -453,12 +461,12 @@ class DBDispatch(DBTask):
                         # > at least one job: pick largest T_opt one
                         opt["njobs"] = 1
                         tot_njobs = 1  # trigger only 1st iteration
-                    print(f"{part_id}: {opt}")
+                    self.debug(f"{part_id}: {opt}")
                     if opt["njobs"] <= 0:
                         continue
                     # > regiser njobs new jobs with ncall,niter and time estime to DB
                     ids = queue_production(part_id, opt)
-                    print(f"queued[{part_id}]: {len(ids)} = {ids}")
+                    self.logger(f"queued[{part_id}]: {len(ids)} = {ids}")
                     tot_njobs += opt["njobs"]
                     tot_T += opt["njobs"] * opt["T_job"]
 
@@ -506,7 +514,7 @@ class DBDispatch(DBTask):
                 session.commit()
                 # if self.id == 0:
                 #     self.decrease_running_resources({"DBDispatch": 1})
-                print(f"DBDispatch[{self._n}]: {job!r}")
+                self.logger(f"DBDispatch[{self._n}]: {job!r}")
                 yield self.clone(cls=DBRunner, id=job.id)
 
 
@@ -527,7 +535,7 @@ class DBRunner(DBTask):
             return job.status in JobStatus.terminated_list()
 
     def run(self):
-        # print(f"DBRunner: run {self.id}")
+        # self.logger(f"DBRunner: run {self.id}")
         with self.session as session:
             db_job: Job = session.get_one(Job, self.id)
             # @todo mode, policy, channel string, etc all should be extracted here for the
