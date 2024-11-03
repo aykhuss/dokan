@@ -10,8 +10,8 @@ class Order(IntEnum):
     NLO_ONLY = -1  # coefficient
     NNLO = 2
     NNLO_ONLY = -2
-    N3LO = 3
-    N3LO_ONLY = -3
+    # N3LO = 3
+    # N3LO_ONLY = -3
 
     def __str__(self):
         return self.name.lower()

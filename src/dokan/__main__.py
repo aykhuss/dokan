@@ -5,6 +5,8 @@ import luigi
 
 import dokan
 import dokan.nnlojet
+from dokan.exe import ExecutionPolicy
+from dokan.order import Order
 import argparse
 import os
 import shutil
@@ -13,10 +15,26 @@ import time
 import multiprocessing
 
 from rich.console import Console
-from rich.prompt import Prompt
+from rich.prompt import Prompt, IntPrompt, FloatPrompt, PromptBase, Confirm
 from rich.syntax import Syntax
 
 from pathlib import Path
+
+
+class OrderPrompt(PromptBase[Order]):
+    response_type = Order
+    validate_error_message = "[prompt.invalid]Please enter a valid order"
+
+    def process_response(self, value: str) -> Order:
+        return self.response_type.argparse(value.strip())
+
+
+class ExecutionPolicyPrompt(PromptBase[ExecutionPolicy]):
+    response_type = ExecutionPolicy
+    validate_error_message = "[prompt.invalid]Please enter a valid order"
+
+    def process_response(self, value: str) -> ExecutionPolicy:
+        return self.response_type.argparse(value.strip())
 
 
 def main() -> None:
@@ -38,9 +56,9 @@ def main() -> None:
     parser_submit.add_argument("run_path", metavar="RUN", help="run directory")
     parser_submit.add_argument(
         "--policy",
-        type=dokan.ExecutionPolicy.argparse,
-        choices=list(dokan.ExecutionPolicy),
-        default=dokan.ExecutionPolicy.LOCAL,
+        type=ExecutionPolicy.argparse,
+        choices=list(ExecutionPolicy),
+        default=ExecutionPolicy.LOCAL,
         dest="policy",
         help="execution policy",
     )
@@ -71,26 +89,26 @@ def main() -> None:
             if path_exe.is_file() and os.access(path_exe, os.X_OK):
                 nnlojet_exe = str(path_exe.absolute())
             else:
-                sys.exit(f"invalid executable {path_exe}")
+                sys.exit(f"invalid executable {str(path_exe.absolute())}")
 
         # > save all to the run config file
         if args.run_path:
             config.set_path(args.run_path)
         else:
             config.set_path(os.path.relpath(runcard.data["run_name"]))
-        console.print(f"created run folder at \n  [italic]{(config.path).absolute()}[/italic]")
+        console.print(f"run folder: [italic]{(config.path).absolute()}[/italic]")
 
         bibout, bibtex = dokan.make_bib(runcard.data["process_name"], config.path)
-        console.print(f"identified process \"[bold]{runcard.data['process_name']}[/bold]\"")
-        console.print(f"created bibliography file: [italic]{bibout.relative_to(config.path)}[/italic]")
-        console.print(f" - {bibtex.relative_to(config.path)}")
+        console.print(f"process: \"[bold]{runcard.data['process_name']}[/bold]\"")
+        console.print(f"bibliography: [italic]{bibout.relative_to(config.path)}[/italic]")
+        # console.print(f" - {bibtex.relative_to(config.path)}")
         # with open(bibout, "r") as bib:
         #     syntx = Syntax(bib.read(), "bibtex")
         #     console.print(syntx)
         with open(bibtex, "r") as bib:
             syntx = Syntax(bib.read(), "tex")
             console.print(syntx)
-        #@todo please confirm that you will cite these references in you work
+        # @todo please confirm that you will cite these references in you work
 
         config["exe"]["path"] = nnlojet_exe
         config["run"]["name"] = runcard.data["run_name"]
@@ -104,6 +122,88 @@ def main() -> None:
         )
         config.write()
         runcard.to_tempalte(Path(config["run"]["path"]) / config["run"]["template"])
+
+        # > optional default settings
+        set_defaults: bool = Confirm.ask(
+            f"do you want to set new defaults for the run configuration?\n(can be overwritten later as well as though CLI flags)",
+            default=True,
+        )
+        if set_defaults:
+            default_policy: ExecutionPolicy = ExecutionPolicyPrompt.ask(
+                "policy",
+                choices=list(str(p) for p in ExecutionPolicy),
+                default=ExecutionPolicy.LOCAL,
+            )
+            config["exe"]["policy"] = default_policy
+            console.print(f"[dim]policy = {config["exe"]["policy"]!r}[/dim]")
+
+            default_order: Order = OrderPrompt.ask(
+                "order", choices=list(str(o) for o in Order), default=Order.NNLO
+            )
+            config["run"]["order"] = default_order
+            console.print(f"[dim]order = {config["run"]["order"]!r}[/dim]")
+
+            while True:
+                default_target_rel_acc: float = FloatPrompt.ask(
+                    "target relative accuracy", default=1e-3
+                )
+                if default_target_rel_acc > 0.0:
+                    break
+                console.print("please enter a positive value")
+            config["run"]["target_rel_acc"] = default_target_rel_acc
+            console.print(f"[dim]target_rel_acc = {config["run"]["target_rel_acc"]!r}[/dim]")
+
+            while True:
+                default_job_max_runtime: float = FloatPrompt.ask(
+                    "maximum runtime (in seconds) for individual jobs"
+                )
+                if default_job_max_runtime > 0.0:
+                    break
+                console.print("please enter a positive value")
+            config["run"]["job_max_runtime"] = default_job_max_runtime
+            console.print(f"[dim]job_max_runtime = {config["run"]["job_max_runtime"]!r}[/dim]")
+
+            default_job_fill_max_runtime: bool = Confirm.ask(
+                "attempt to exhaust the maximum runtime for each job?", default=True
+            )
+            console.print(f"[dim]job_fill_max_runtime = {default_job_fill_max_runtime!r}[/dim]")
+            while True:
+                default_jobs_max_total: int = IntPrompt.ask("maximum number of jobs")
+                if default_jobs_max_total >= 0:
+                    break
+                console.print("please enter a non-negative value")
+            config["run"]["jobs_max_total"] = default_jobs_max_total
+            console.print(f"[dim]jobs_max_total = {config["run"]["jobs_max_total"]!r}[/dim]")
+
+            while True:
+                default_jobs_max_concurrent: int = IntPrompt.ask(
+                    "maximum number of concurrently running jobs"
+                )
+                if default_jobs_max_concurrent > 0:
+                    break
+                console.print("please enter a positive value")
+            config["run"]["jobs_max_concurrent"] = default_jobs_max_concurrent
+            console.print(
+                f"[dim]jobs_max_concurrent = {config["run"]["jobs_max_concurrent"]!r}[/dim]"
+            )
+
+            while True:
+                default_jobs_batch_size: int = IntPrompt.ask("job batch size", default=1)
+                if default_jobs_batch_size > 0:
+                    break
+                console.print("please enter a positive value")
+            config["run"]["jobs_batch_size"] = default_jobs_batch_size
+            console.print(f"[dim]jobs_batch_size = {config["run"]["jobs_batch_size"]!r}[/dim]")
+
+            while True:
+                default_seed_offset: int = IntPrompt.ask("seed offset", default=0)
+                if default_seed_offset >= 0:
+                    break
+                console.print("please enter a non-negative value")
+            config["run"]["seed_offset"] = default_seed_offset
+            console.print(f"[dim]seed_offset = {config["run"]["seed_offset"]!r}[/dim]")
+
+            config.write()
 
     # >-----
     if args.action == "submit":
