@@ -1,7 +1,7 @@
 """The main execution of the NNLOJET workflow"""
 
 import luigi
-#from luigi.execution_summary import LuigiRunResult
+# from luigi.execution_summary import LuigiRunResult
 
 import dokan
 import dokan.nnlojet
@@ -13,6 +13,8 @@ import time
 import multiprocessing
 
 from rich.console import Console
+from rich.prompt import Prompt
+from rich.syntax import Syntax
 
 from pathlib import Path
 
@@ -21,19 +23,19 @@ def main() -> None:
     console = Console()
 
     parser = argparse.ArgumentParser(description="dokan: an automated NNLOJET workflow")
-    parser.add_argument("--exe", dest="exe", help="executable")
+    parser.add_argument("--exe", dest="exe", help="path to NNLOJET executable")
     subparsers = parser.add_subparsers(dest="action")
 
     # > subcommand: init
-    parser_init = subparsers.add_parser("init", help="initialise a job")
-    parser_init.add_argument("runcard", metavar="RUN", help="NNLOJET runcard")
+    parser_init = subparsers.add_parser("init", help="initialise a run")
+    parser_init.add_argument("runcard", metavar="RUNCARD", help="NNLOJET runcard")
     parser_init.add_argument(
-        "-o", "--output", dest="job_path", help="destination of the job directory"
+        "-o", "--output", dest="run_path", help="destination of the run directory"
     )
 
     # > subcommand: submit
-    parser_submit = subparsers.add_parser("submit", help="submit jobs")
-    parser_submit.add_argument("job_path", metavar="JOB", help="job directory")
+    parser_submit = subparsers.add_parser("submit", help="submit a run")
+    parser_submit.add_argument("run_path", metavar="RUN", help="run directory")
     parser_submit.add_argument(
         "--policy",
         type=dokan.ExecutionPolicy.argparse,
@@ -53,22 +55,42 @@ def main() -> None:
     if args.action == "init":
         nnlojet_exe = shutil.which("NNLOJET")
     if args.exe is not None:
-        if os.path.isfile(args.exe) and os.access(args.exe, os.X_OK):
-            nnlojet_exe = args.exe
+        path_exe: Path = Path(args.exe)
+        if path_exe.is_file() and os.access(path_exe, os.X_OK):
+            nnlojet_exe = str(path_exe.absolute())
         else:
-            sys.exit('invalid executable "{}"'.format(args.exe))
+            sys.exit(f"invalid executable {path_exe}")
 
     # >-----
     if args.action == "init":
         config: dokan.Config = dokan.Config(default_ok=True)
         runcard: dokan.Runcard = dokan.Runcard(runcard=args.runcard)
         if nnlojet_exe is None:
-            sys.exit("please specify an NNLOJET executable")
+            prompt_exe = Prompt.ask("Could not find an NNLOJET executable. Please specify path")
+            path_exe: Path = Path(prompt_exe)
+            if path_exe.is_file() and os.access(path_exe, os.X_OK):
+                nnlojet_exe = str(path_exe.absolute())
+            else:
+                sys.exit(f"invalid executable {path_exe}")
+
         # > save all to the run config file
-        if args.job_path:
-            config.set_path(args.job_path)
+        if args.run_path:
+            config.set_path(args.run_path)
         else:
             config.set_path(os.path.relpath(runcard.data["run_name"]))
+        console.print(f"created run folder at \n  [italic]{(config.path).absolute()}[/italic]")
+
+        bibout, bibtex = dokan.make_bib(runcard.data["process_name"], config.path)
+        console.print(f"identified process \"[bold]{runcard.data['process_name']}[/bold]\"")
+        console.print(f"created bibliography file: [italic]{bibout.relative_to(config.path)}[/italic]")
+        console.print(f" - {bibtex.relative_to(config.path)}")
+        # with open(bibout, "r") as bib:
+        #     syntx = Syntax(bib.read(), "bibtex")
+        #     console.print(syntx)
+        with open(bibtex, "r") as bib:
+            syntx = Syntax(bib.read(), "tex")
+            console.print(syntx)
+        #@todo please confirm that you will cite these references in you work
 
         config["exe"]["path"] = nnlojet_exe
         config["run"]["name"] = runcard.data["run_name"]
@@ -85,7 +107,7 @@ def main() -> None:
 
     # >-----
     if args.action == "submit":
-        config: dokan.Config = dokan.Config(path=args.job_path, default_ok=False)
+        config: dokan.Config = dokan.Config(path=args.run_path, default_ok=False)
 
         if nnlojet_exe is not None:
             config["exe"]["path"] = nnlojet_exe
@@ -101,7 +123,7 @@ def main() -> None:
             config=config,
             channels=channels,
             run_tag=time.time(),
-            order=1,
+            order=2,
         )
         luigi_result = luigi.build(
             [db_init],
@@ -136,8 +158,8 @@ def main() -> None:
             console.print(luigi_result.summary_text)
 
         console.print(luigi_result.one_line_summary)
-        console.print(luigi_result.status)
-        console.print(luigi_result.summary_text)
+        # console.print(luigi_result.status)
+        # console.print(luigi_result.summary_text)
 
 
 if __name__ == "__main__":

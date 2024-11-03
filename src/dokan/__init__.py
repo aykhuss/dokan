@@ -9,6 +9,7 @@ from .entry import Entry
 from .preproduction import PreProduction
 from .runcard import Runcard, RuncardTemplate
 from .monitor import Monitor
+from .bib import make_bib
 
 __all__ = [
     "main",
@@ -30,4 +31,5 @@ __all__ = [
     "Job",
     "DBTask",
     "DBInit",
+    "make_bib",
 ]
