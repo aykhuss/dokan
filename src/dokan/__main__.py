@@ -40,7 +40,7 @@ class OrderPrompt(PromptBase[Order]):
 
 class ExecutionPolicyPrompt(PromptBase[ExecutionPolicy]):
     response_type = ExecutionPolicy
-    validate_error_message = "[prompt.invalid]Please enter a valid order"
+    validate_error_message = "[prompt.invalid]Please enter a valid policy"
 
     def process_response(self, value: str) -> ExecutionPolicy:
         return self.response_type.argparse(value.strip())
@@ -48,6 +48,7 @@ class ExecutionPolicyPrompt(PromptBase[ExecutionPolicy]):
 
 def main() -> None:
     # > some action-global variables
+    config: dokan.Config = dokan.Config(default_ok=True)
     console = Console()
     cpu_count: int = multiprocessing.cpu_count()
 
@@ -112,7 +113,6 @@ def main() -> None:
 
     # >-----
     if args.action == "init":
-        config: dokan.Config = dokan.Config(default_ok=True)
         runcard: dokan.Runcard = dokan.Runcard(runcard=args.runcard)
         if nnlojet_exe is None:
             prompt_exe = Prompt.ask("Could not find an NNLOJET executable. Please specify path")
@@ -156,7 +156,8 @@ def main() -> None:
 
     # >-----
     if args.action == "init" or args.action == "config":
-        config: dokan.Config = dokan.Config(path=args.run_path, default_ok=False)
+        if args.action == "config":  # load!
+            config = dokan.Config(path=args.run_path, default_ok=False)
 
         console.print(
             f"setting default values for the run configuration at [italic]{str(config.path.absolute())}[/italic]"
@@ -196,7 +197,7 @@ def main() -> None:
 
         while True:
             new_job_max_runtime: float = TimeIntervalPrompt.ask(
-                'maximum runtime for individual jobs with optional units [s/m/h/d/w: e.g. "1h 30m"]',
+                'maximum runtime for individual jobs with optional units {s,m,h,d,w} e.g. "1h 30m"',
                 default=config["run"]["job_max_runtime"],
             )
             if new_job_max_runtime > 0.0:
