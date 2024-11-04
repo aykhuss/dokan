@@ -47,7 +47,9 @@ class ExecutionPolicyPrompt(PromptBase[ExecutionPolicy]):
 
 
 def main() -> None:
+    # > some action-global variables
     console = Console()
+    cpu_count: int = multiprocessing.cpu_count()
 
     parser = argparse.ArgumentParser(description="dokan: an automated NNLOJET workflow")
     parser.add_argument("--exe", dest="exe", help="path to NNLOJET executable")
@@ -59,6 +61,10 @@ def main() -> None:
     parser_init.add_argument(
         "-o", "--output", dest="run_path", help="destination of the run directory"
     )
+
+    # > subcommand: config
+    parser_config = subparsers.add_parser("config", help="set defaults for the run configuration")
+    parser_config.add_argument("run_path", metavar="RUN", help="run directory")
 
     # > subcommand: submit
     parser_submit = subparsers.add_parser("submit", help="submit a run")
@@ -132,99 +138,119 @@ def main() -> None:
         config.write()
         runcard.to_tempalte(Path(config["run"]["path"]) / config["run"]["template"])
 
-        # > optional default settings
-        set_defaults: bool = Confirm.ask(
-            f"do you want to set new defaults for the run configuration?\n(can be overwritten later as well as though CLI flags)",
-            default=True,
+    # >-----
+    if args.action == "init" or args.action == "config":
+        config: dokan.Config = dokan.Config(path=args.run_path, default_ok=False)
+
+        console.print(
+            f"setting default values for the run configuration at [italic]{str(config.path.absolute())}[/italic]"
         )
-        if set_defaults:
-            default_policy: ExecutionPolicy = ExecutionPolicyPrompt.ask(
-                "policy",
-                choices=list(str(p) for p in ExecutionPolicy),
-                default=ExecutionPolicy.LOCAL,
+        console.print(
+            "these defaults can be reconfigured later with the [italic]"
+            "config"
+            "[/italic] subcommand"
+        )
+
+        new_policy: ExecutionPolicy = ExecutionPolicyPrompt.ask(
+            "policy",
+            choices=list(str(p) for p in ExecutionPolicy),
+            default=config["exe"]["policy"],
+        )
+        config["exe"]["policy"] = new_policy
+        console.print(f"[dim]policy = {config["exe"]["policy"]!r}[/dim]")
+
+        # @todo policy settings
+
+        new_order: Order = OrderPrompt.ask(
+            "order", choices=list(str(o) for o in Order), default=config["run"]["order"]
+        )
+        config["run"]["order"] = new_order
+        console.print(f"[dim]order = {config["run"]["order"]!r}[/dim]")
+
+        while True:
+            new_target_rel_acc: float = FloatPrompt.ask(
+                "target relative accuracy", default=config["run"]["target_rel_acc"]
             )
-            config["exe"]["policy"] = default_policy
-            console.print(f"[dim]policy = {config["exe"]["policy"]!r}[/dim]")
+            if new_target_rel_acc > 0.0:
+                break
+            console.print("please enter a positive value")
+        config["run"]["target_rel_acc"] = new_target_rel_acc
+        console.print(f"[dim]target_rel_acc = {config["run"]["target_rel_acc"]!r}[/dim]")
 
-            default_order: Order = OrderPrompt.ask(
-                "order", choices=list(str(o) for o in Order), default=Order.NNLO
+        while True:
+            new_job_max_runtime: float = TimeIntervalPrompt.ask(
+                "maximum runtime for individual jobs with units \[s/m/h/d/w] (e.g. 1h 30m)",
+                default=config["run"]["job_max_runtime"],
             )
-            config["run"]["order"] = default_order
-            console.print(f"[dim]order = {config["run"]["order"]!r}[/dim]")
+            if new_job_max_runtime > 0.0:
+                break
+            console.print("please enter a positive value")
+        config["run"]["job_max_runtime"] = new_job_max_runtime
+        console.print(f"[dim]job_max_runtime = {config["run"]["job_max_runtime"]!r}s[/dim]")
 
-            while True:
-                default_target_rel_acc: float = FloatPrompt.ask(
-                    "target relative accuracy", default=1e-3
-                )
-                if default_target_rel_acc > 0.0:
-                    break
-                console.print("please enter a positive value")
-            config["run"]["target_rel_acc"] = default_target_rel_acc
-            console.print(f"[dim]target_rel_acc = {config["run"]["target_rel_acc"]!r}[/dim]")
+        new_job_fill_max_runtime: bool = Confirm.ask(
+            "attempt to exhaust the maximum runtime for each job?",
+            default=config["run"]["job_fill_max_runtime"],
+        )
+        config["run"]["job_fill_max_runtime"] = new_job_fill_max_runtime
+        console.print(
+            f"[dim]job_fill_max_runtime = {config["run"]["job_fill_max_runtime"]!r}[/dim]"
+        )
 
-            while True:
-                default_job_max_runtime: float = FloatPrompt.ask(
-                    "maximum runtime (in seconds) for individual jobs"
-                )
-                if default_job_max_runtime > 0.0:
-                    break
-                console.print("please enter a positive value")
-            config["run"]["job_max_runtime"] = default_job_max_runtime
-            console.print(f"[dim]job_max_runtime = {config["run"]["job_max_runtime"]!r}[/dim]")
-
-            default_job_fill_max_runtime: bool = Confirm.ask(
-                "attempt to exhaust the maximum runtime for each job?", default=True
+        while True:
+            new_jobs_max_total: int = IntPrompt.ask(
+                "maximum number of jobs", default=config["run"]["jobs_max_total"]
             )
-            console.print(f"[dim]job_fill_max_runtime = {default_job_fill_max_runtime!r}[/dim]")
-            while True:
-                default_jobs_max_total: int = IntPrompt.ask("maximum number of jobs")
-                if default_jobs_max_total >= 0:
-                    break
-                console.print("please enter a non-negative value")
-            config["run"]["jobs_max_total"] = default_jobs_max_total
-            console.print(f"[dim]jobs_max_total = {config["run"]["jobs_max_total"]!r}[/dim]")
+            if new_jobs_max_total >= 0:
+                break
+            console.print("please enter a non-negative value")
+        config["run"]["jobs_max_total"] = new_jobs_max_total
+        console.print(f"[dim]jobs_max_total = {config["run"]["jobs_max_total"]!r}[/dim]")
 
-            while True:
-                default_jobs_max_concurrent: int = IntPrompt.ask(
-                    "maximum number of concurrently running jobs"
-                )
-                if default_jobs_max_concurrent > 0:
-                    break
-                console.print("please enter a positive value")
-            config["run"]["jobs_max_concurrent"] = default_jobs_max_concurrent
-            console.print(
-                f"[dim]jobs_max_concurrent = {config["run"]["jobs_max_concurrent"]!r}[/dim]"
+        while True:
+            new_jobs_max_concurrent: int = IntPrompt.ask(
+                "maximum number of concurrently running jobs",
+                default=config["run"]["jobs_max_concurrent"],
             )
+            if new_jobs_max_concurrent > 0:
+                break
+            console.print("please enter a positive value")
+        config["run"]["jobs_max_concurrent"] = new_jobs_max_concurrent
+        console.print(f"[dim]jobs_max_concurrent = {config["run"]["jobs_max_concurrent"]!r}[/dim]")
 
-            while True:
-                default_jobs_batch_size: int = IntPrompt.ask("job batch size", default=1)
-                if default_jobs_batch_size > 0:
-                    break
-                console.print("please enter a positive value")
-            config["run"]["jobs_batch_size"] = default_jobs_batch_size
-            console.print(f"[dim]jobs_batch_size = {config["run"]["jobs_batch_size"]!r}[/dim]")
+        while True:
+            new_jobs_batch_size: int = IntPrompt.ask(
+                "job batch size", default=config["run"]["jobs_batch_size"]
+            )
+            if new_jobs_batch_size > 0:
+                break
+            console.print("please enter a positive value")
+        config["run"]["jobs_batch_size"] = new_jobs_batch_size
+        console.print(f"[dim]jobs_batch_size = {config["run"]["jobs_batch_size"]!r}[/dim]")
 
-            while True:
-                default_seed_offset: int = IntPrompt.ask("seed offset", default=0)
-                if default_seed_offset >= 0:
-                    break
-                console.print("please enter a non-negative value")
-            config["run"]["seed_offset"] = default_seed_offset
-            console.print(f"[dim]seed_offset = {config["run"]["seed_offset"]!r}[/dim]")
+        while True:
+            new_seed_offset: int = IntPrompt.ask(
+                "seed offset", default=config["run"]["seed_offset"]
+            )
+            if new_seed_offset >= 0:
+                break
+            console.print("please enter a non-negative value")
+        config["run"]["seed_offset"] = new_seed_offset
+        console.print(f"[dim]seed_offset = {config["run"]["seed_offset"]!r}[/dim]")
 
-            config.write()
+        config.write()
 
     # >-----
     if args.action == "submit":
         config: dokan.Config = dokan.Config(path=args.run_path, default_ok=False)
 
+        # > CLI override
         if nnlojet_exe is not None:
             config["exe"]["path"] = nnlojet_exe
 
         # @todo: parse CLI args for local config overrides
         # sys.exit("we're debugging here...")
         # @todo determine # cores on this machine
-        local_ncores: int = 1
 
         # > create the DB skeleton & activate parts
         channels: dict = config["process"].pop("channels")
@@ -232,7 +258,7 @@ def main() -> None:
             config=config,
             channels=channels,
             run_tag=time.time(),
-            order=2,
+            order=config["run"]["order"],
         )
         luigi_result = luigi.build(
             [db_init],
@@ -252,14 +278,15 @@ def main() -> None:
                 db_init.clone(dokan.Monitor),
             ],
             worker_scheduler_factory=dokan.WorkerSchedulerFactory(
-                resources={"local_ncores": 8, "DBTask": 10, "DBDispatch": 1},
+                # @todo properly set resources according to config
+                resources={"local_ncores": cpu_count, "DBTask": cpu_count, "DBDispatch": 1},
                 cache_task_completion=False,
                 check_complete_on_run=False,
                 check_unfulfilled_deps=True,
                 wait_interval=0.1,
             ),
             detailed_summary=True,
-            workers=12,  # @todo set to number of cores of the machine
+            workers=cpu_count,
             local_scheduler=True,
             log_level="WARNING",
         )  # 'WARNING', 'INFO', 'DEBUG''
