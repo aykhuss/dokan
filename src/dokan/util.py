@@ -3,6 +3,10 @@
 refactor common functions and patterns here
 """
 
+import re
+
+from datetime import timedelta
+
 
 def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:
     """validate a structure against a predifined schema
@@ -53,8 +57,7 @@ def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:
                 if not isinstance(struct[key], val):
                     struct[key] = val(struct[key])
         return all(
-            k in schema and validate_schema(struct[k], schema[k], convert_to_type)
-            for k in struct
+            k in schema and validate_schema(struct[k], schema[k], convert_to_type) for k in struct
         )
 
     if isinstance(struct, list) and isinstance(schema, list):
@@ -84,6 +87,30 @@ def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:
     return False
 
 
-# @todo
-def parse_time_interval(string: str) -> float:
-    return 0
+def parse_time_interval(interval: str) -> float:
+    """convert a time interval string to seconds
+
+    specify a time interval as a string with units (s, m, h, d, w) and convert
+    the result into a float in seconds. The units are optional (default: sec).
+    using multiple units is possible (e.g. "1d 2h 3m 4s").
+
+    Parameters
+    ----------
+    interval : str
+        time interval string to parse
+
+    Returns
+    -------
+    float
+        time interval in seconds
+    """
+    UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
+
+    return timedelta(
+        **{
+            UNITS.get(m.group("unit").lower(), "seconds"): float(m.group("val"))
+            for m in re.finditer(
+                r"(?P<val>\d+(\.\d+)?)(?P<unit>[smhdw]?)", interval.replace(" ", ""), flags=re.I
+            )
+        }
+    ).total_seconds()
