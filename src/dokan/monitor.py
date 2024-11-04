@@ -117,7 +117,8 @@ class Monitor(DBTask):
             ),
             box=box.ROUNDED,
             safe_box=False,
-            title=f"[{dt_str}](monitor): ",
+            #@todo actually put in the numbrs & # of remaining jobs & current estimate for error
+            title=f"[{dt_str}]\n[dim]legend:[/dim] [yellow][b]A[/b]ctive[/yellow] [green][b]D[/b]one[/green] [red][b]F[/b]ailed[/red]",
             title_justify="left",
             title_style=Style(bold=False, italic=False),
         )

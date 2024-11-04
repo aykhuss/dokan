@@ -219,8 +219,8 @@ class DBTask(Task, metaclass=ABCMeta):
             # (T_max_job, T_job, njobs, ntot_job)
             result["tot_error_estimate_jobs"] = 0.0
             for part_id, ires in result["part"].items():
-                # > 5 sigma buffer but never larger than 50% runtime
-                tau_buf: float = min(5.0 * ires["tau_err"], 0.5 * ires["tau"])
+                # > 3.5 sigma buffer but never larger than 50% runtime
+                tau_buf: float = min(3.5 * ires["tau_err"], 0.5 * ires["tau"])
                 if tau_buf == 0.0:  # in case we have no clue: target 50%
                     tau_buf = 0.5 * ires["tau"]
                 # > target runtime for one job corrected for buffer
@@ -350,7 +350,7 @@ class DBDispatch(DBTask):
                 niter: int = self.config["production"]["niter"]
                 ncall: int = opt["ntot_job"] // niter
                 if ncall * niter == 0:
-                    self.logger(
+                    self.info(
                         f"part {part_id} has ntot={opt['ntot_job']} -> 0 = {ncall} * {niter}"
                     )
                     return []
@@ -372,9 +372,9 @@ class DBDispatch(DBTask):
                 session.commit()
                 return [job.id for job in jobs]
 
-            self.logger(f"DBDispatch[{self._n}]: repopulate {self.id} | {self.run_tag}")
-            self.logger(f"njobs  - remaining: {njobs_rem}")
-            self.logger(f"T      - remaining: {T_rem}")
+            self.debug(f"DBDispatch[{self._n}]: repopulate {self.id} | {self.run_tag}")
+            self.debug(f"njobs  - remaining: {njobs_rem}")
+            self.debug(f"T      - remaining: {T_rem}")
 
             # > build up subquery to get Parts with job counts
             def job_count_subquery(js_list: list[JobStatus]):
@@ -466,7 +466,7 @@ class DBDispatch(DBTask):
                         continue
                     # > regiser njobs new jobs with ncall,niter and time estime to DB
                     ids = queue_production(part_id, opt)
-                    self.logger(f"queued[{part_id}]: {len(ids)} = {ids}")
+                    self.logger(f"DBDispatch[{self._n}]: queued[{part_id}]: {len(ids)} = {ids}")
                     tot_njobs += opt["njobs"]
                     tot_T += opt["njobs"] * opt["T_job"]
 
@@ -514,7 +514,7 @@ class DBDispatch(DBTask):
                 session.commit()
                 # if self.id == 0:
                 #     self.decrease_running_resources({"DBDispatch": 1})
-                self.logger(f"DBDispatch[{self._n}]: {job!r}")
+                self.logger(f"DBDispatch[{self._n}]: submitting {job!r}")
                 yield self.clone(cls=DBRunner, id=job.id)
 
 
@@ -620,6 +620,7 @@ class DBRunner(DBTask):
                 db_job.rel_path = str(job_path.relative_to(self._path))
                 db_job.status = JobStatus.RUNNING
                 session.commit()
+            self.logger(f"DBRunner[{self.id}]: checking {db_job.rel_path}")
             yield Executor.factory(
                 policy=ExecutionPolicy(db_job.policy), path=str(self._path / db_job.rel_path)
             )
