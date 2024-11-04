@@ -15,7 +15,7 @@ PROCESS  Z
 END_PROCESS
 
 
-RUN  example
+RUN  example_run_Z_8TeV
   PDF = NNPDF31_nnlo_as_0118[0]
   scale_coefficients = .true.
   multi_channel = 2

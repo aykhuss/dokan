@@ -7,35 +7,80 @@
 
 -----
 
+
 ## Table of Contents
 
 - [Installation](#installation)
-- [License](#license)
 - [Usage](#usage)
+- [License](#license)
 
 This is the implementation of an automated workflow for NNLOJET computations based on the [luigi](https://github.com/spotify/luigi) framework. 
 
+
 ## Installation
 
+### Release version
+
+todo?: publish package on pypi
+
+### Development version
+
+To install the develpment version, first clone this repository
+```console
+git clone git@github.com:aykhuss/dokan.git
+cd dokan
+```
+You can either install the tool using `pip` or `uv`.
+
+#### `pip`
+Within the repository directory, run
 ```console
 pip install -e .
 ```
+This should intall the `nnlojet-run` command for you.
+
+#### `uv`
+[`uv`](https://docs.astral.sh/uv/) is a modern and more powerful alternative to `pip`.
+`dokan` can be installed by running within the repository directory (add `--force` to re-install after a new commits were made):
+```console
+uv tool install .
+```
+With this, the `nnlojet-run` executable sould be available in your path.
+
 
 ## Usage
 
 Some example usage:
 ```console
 
+# general help
+nnlojet-run --help
+
+### subcommand `init` 
+#   to initialise a new run
+#   
 # help
-pyton -m dokan --help
-pyton -m dokan init --help
-pyton -m dokan submit --help
+nnlojet-run init --help
 
-# initialise a job
-pyton -m dokan init example.run
+# take any runcard and use it to initialise a new run
+nnlojet-run init example.run
+# this will create a new folder under the current path named after the `RUN` name in the runcard
+# or you can add `-o <RUN_PATH>` to specify a location where the run should be initialised
 
-# submit a job
-python -m dokan submit example
+### subcommand `config` 
+#   to re-configure default settings for a calculation
+#   
+nnlojet-run config example_run_Z_8TeV
+
+### subcommand `submit` 
+#   to submit a run
+#   
+# help
+nnlojet-run submit --help
+
+# by default, the settings from `init`/`config` will be used. 
+# you can override them by passing the desired settings as options, e.g.
+nnlojet-run submit example_run_Z_8TeV --job-max-runtime 1h30m --jobs-max-total 10 --target-rel-acc 1e-2
 
 ```
 
