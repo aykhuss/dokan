@@ -78,8 +78,10 @@ nnlojet-run config example_run_Z_8TeV
 # help
 nnlojet-run submit --help
 
-# by default, the settings from `init`/`config` will be used. 
-# you can override them by passing the desired settings as options, e.g.
+# submit jobs with default configuration as set during `init`/`config`
+nnlojet-run submit example_run_Z_8TeV 
+
+# you can override defaults by passing the desired settings as options, e.g.
 nnlojet-run submit example_run_Z_8TeV --job-max-runtime 1h30m --jobs-max-total 10 --target-rel-acc 1e-2
 
 ```

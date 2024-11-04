@@ -11,7 +11,7 @@ from abc import ABCMeta, abstractmethod
 from pathlib import Path
 
 from sqlalchemy import create_engine, Engine, select, func
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session, scoped_session, sessionmaker
 
 from rich.console import Console
 
@@ -45,11 +45,14 @@ class DBTask(Task, metaclass=ABCMeta):
 
     @property
     def engine(self) -> Engine:
-        return create_engine(self.dbname)
+        return create_engine(self.dbname, connect_args={"check_same_thread": False})
 
     @property
     def session(self) -> Session:
-        return Session(self.engine)
+        # return Session(self.engine)
+        # > scoped session needed for threadsafety
+        Session = scoped_session(sessionmaker(self.engine))
+        return Session()
 
     def output(self):
         # > DBTask has no output files but uses the DB itself to track the status
@@ -71,7 +74,7 @@ class DBTask(Task, metaclass=ABCMeta):
 
     def logger(self, message: str, level: LogLevel = LogLevel.INFO) -> None:
         if level >= 0 and level < self.config["ui"]["log_level"]:
-            #> negative values are signals that I want to be passed *always*
+            # > negative values are signals that I want to be passed *always*
             return
         if not self.config["ui"]["monitor"]:
             dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -350,9 +353,7 @@ class DBDispatch(DBTask):
                 niter: int = self.config["production"]["niter"]
                 ncall: int = opt["ntot_job"] // niter
                 if ncall * niter == 0:
-                    self.info(
-                        f"part {part_id} has ntot={opt['ntot_job']} -> 0 = {ncall} * {niter}"
-                    )
+                    self.info(f"part {part_id} has ntot={opt['ntot_job']} -> 0 = {ncall} * {niter}")
                     return []
                 jobs: list[Job] = [
                     Job(
