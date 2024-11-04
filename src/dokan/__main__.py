@@ -73,10 +73,26 @@ def main() -> None:
         "--policy",
         type=ExecutionPolicy.argparse,
         choices=list(ExecutionPolicy),
-        default=ExecutionPolicy.LOCAL,
         dest="policy",
         help="execution policy",
     )
+    parser_submit.add_argument(
+        "--order",
+        type=Order.argparse,
+        choices=list(Order),
+        dest="order",
+        help="order of the calculation",
+    )
+    parser_submit.add_argument("--target-rel-acc", type=float, help="target relative accuracy")
+    parser_submit.add_argument(
+        "--job-max-runtime", type=parse_time_interval, help="maximum runtime for a single job"
+    )
+    parser_submit.add_argument("--jobs-max-total", type=int, help="maximum number of jobs")
+    parser_submit.add_argument(
+        "--jobs-max-concurrent", type=int, help="maximum number of concurrently running jobs"
+    )
+    parser_submit.add_argument("--jobs-batch-size", type=int, help="job batch size")
+    parser_submit.add_argument("--seed-offset", type=int, help="seed offset")
 
     # > parse arguments
     args = parser.parse_args()
@@ -146,9 +162,10 @@ def main() -> None:
             f"setting default values for the run configuration at [italic]{str(config.path.absolute())}[/italic]"
         )
         console.print(
-            "these defaults can be reconfigured later with the [italic]"
-            "config"
-            "[/italic] subcommand"
+            'these defaults can be reconfigured later with the [italic]"config"[/italic] subcommand'
+        )
+        console.print(
+            "consult the subcommand help `submit --help` how these settings can be overridden for each submission"
         )
 
         new_policy: ExecutionPolicy = ExecutionPolicyPrompt.ask(
@@ -179,7 +196,7 @@ def main() -> None:
 
         while True:
             new_job_max_runtime: float = TimeIntervalPrompt.ask(
-                "maximum runtime for individual jobs with units \[s/m/h/d/w] (e.g. 1h 30m)",
+                'maximum runtime for individual jobs with optional units [s/m/h/d/w: e.g. "1h 30m"]',
                 default=config["run"]["job_max_runtime"],
             )
             if new_job_max_runtime > 0.0:
@@ -244,13 +261,25 @@ def main() -> None:
     if args.action == "submit":
         config: dokan.Config = dokan.Config(path=args.run_path, default_ok=False)
 
-        # > CLI override
+        # > CLI overrides
         if nnlojet_exe is not None:
             config["exe"]["path"] = nnlojet_exe
-
-        # @todo: parse CLI args for local config overrides
-        # sys.exit("we're debugging here...")
-        # @todo determine # cores on this machine
+        if args.policy is not None:
+            config["exe"]["policy"] = args.policy
+        if args.order is not None:
+            config["run"]["order"] = args.order
+        if args.target_rel_acc is not None:
+            config["run"]["target_rel_acc"] = args.target_rel_acc
+        if args.job_max_runtime is not None:
+            config["run"]["job_max_runtime"] = args.job_max_runtime
+        if args.jobs_max_total is not None:
+            config["run"]["jobs_max_total"] = args.jobs_max_total
+        if args.jobs_max_concurrent is not None:
+            config["run"]["jobs_max_concurrent"] = args.jobs_max_concurrent
+        if args.jobs_batch_size is not None:
+            config["run"]["jobs_batch_size"] = args.jobs_batch_size
+        if args.seed_offset is not None:
+            config["run"]["seed_offset"] = args.seed_offset
 
         # > create the DB skeleton & activate parts
         channels: dict = config["process"].pop("channels")
