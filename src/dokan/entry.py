@@ -32,7 +32,7 @@ class Entry(DBTask):
         preprods: list[PreProduction] = []
         with self.session as session:
             for pt in session.scalars(select(Part).where(Part.active.is_(True))):
-                #self.debug(str(pt))
+                # self.debug(str(pt))
                 preprod = self.clone(
                     cls=PreProduction,
                     part_id=pt.id,
@@ -50,9 +50,8 @@ class Entry(DBTask):
             f"estimate = {opt_dist["tot_result"]} +/- {opt_dist["tot_error_estimate_opt"]} [{100.*opt_dist["tot_error_estimate_opt"]/opt_dist["tot_result"]}%]"
         )
         # self.print_job()
-        dispatch: list[DBDispatch] = [
-            self.clone(DBDispatch, id=0, _n=n) for n, _ in enumerate(preprods)
-        ]
+        n_dispatch: int = max(len(preprods), self.config["run"]["jobs_max_concurrent"])
+        dispatch: list[DBDispatch] = [self.clone(DBDispatch, id=0, _n=n) for n in range(n_dispatch)]
         dispatch[0].repopulate()
         yield dispatch
         self.logger("Entry: complete dispatch -> run MergeAll")
