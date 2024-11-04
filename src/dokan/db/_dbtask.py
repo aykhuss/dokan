@@ -441,7 +441,7 @@ class DBDispatch(DBTask):
                     T_rem,
                 )
                 opt_dist: dict = self.distribute_time(T_next)
-                rel_acc: float = opt_dist["tot_error"] / opt_dist["tot_result"]
+                rel_acc: float = abs(opt_dist["tot_error"] / opt_dist["tot_result"])
                 if rel_acc <= self.config["run"]["target_rel_acc"]:
                     break
                 while (
@@ -475,7 +475,7 @@ class DBDispatch(DBTask):
                 njobs_rem -= tot_njobs
                 T_rem -= tot_T
 
-                estimate_rel_acc: float = (
+                estimate_rel_acc: float = abs(
                     opt_dist["tot_error_estimate_jobs"] / opt_dist["tot_result"]
                 )
                 if estimate_rel_acc <= self.config["run"]["target_rel_acc"]:
