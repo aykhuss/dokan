@@ -6,11 +6,11 @@ a factory design pattern to obtain tasks for the different policies
 
 import luigi
 import logging
+import os
+import time
 
 from abc import ABCMeta, abstractmethod
 from pathlib import Path
-import os
-import time
 
 from ._exe_config import ExecutionMode, ExecutionPolicy
 from ._exe_data import ExeData
@@ -55,6 +55,7 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         # @todo check if job files are already there? (recovery mode?)
 
         self.exe()
+        time.sleep(1)  # @todo little time for file system?
         # print(f"[{time.time()}] Executor: done with exe {self.path}")
 
         # > exe done populate job data and write target file

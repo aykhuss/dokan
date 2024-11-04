@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .db import Job, DBTask, JobStatus
 from .db._dbtask import DBDispatch
+from .db._loglevel import LogLevel
 from .exe import ExecutionMode, ExecutionPolicy, ExeData
 
 
@@ -253,7 +254,10 @@ class PreProduction(DBTask):
                 PP_ntot: int = (FPP.ncall * FPP.niter) // 2
                 PP_ncall: int = PP_ntot // self.config["production"]["niter"]
                 if PP_ncall < self.config["production"]["ncall_start"]:
-                    raise RuntimeError("pre-production failed after reaching minimum ncall")
+                    self.logger(
+                        "pre-production failed after reaching minimum ncall", level=LogLevel.WARN
+                    )
+                PP_ncall = self.config["production"]["ncall_start"]
                 return queue_production(PP_ncall, self.config["production"]["niter"])
 
             # > queue up a pre-production (PP) with time estimates from the
