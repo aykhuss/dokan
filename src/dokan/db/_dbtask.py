@@ -578,7 +578,7 @@ class DBRunner(DBTask):
                     channel_region: str = f"region = {db_job.part.region}"
                 template.fill(
                     run_file,
-                    sweep=f"{exe_data["mode"]!s} = {exe_data["ncall"]}[{exe_data["niter"]}]",
+                    sweep=f"{exe_data['mode']!s} = {exe_data['ncall']}[{exe_data['niter']}]",
                     run="",
                     channels=db_job.part.string,
                     channels_region=channel_region,
