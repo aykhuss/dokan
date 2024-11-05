@@ -11,7 +11,7 @@ from abc import ABCMeta, abstractmethod
 from pathlib import Path
 
 from sqlalchemy import create_engine, Engine, select, func
-from sqlalchemy.orm import Session, scoped_session, sessionmaker
+from sqlalchemy.orm import Session #, scoped_session, sessionmaker
 
 from rich.console import Console
 
@@ -45,14 +45,17 @@ class DBTask(Task, metaclass=ABCMeta):
 
     @property
     def engine(self) -> Engine:
-        return create_engine(self.dbname, connect_args={"check_same_thread": False})
+        return create_engine(
+            self.dbname,
+            connect_args={"autocommit": False, "check_same_thread": True, "timeout": 30.0},
+        )
 
     @property
     def session(self) -> Session:
-        # return Session(self.engine)
+        return Session(self.engine)
         # > scoped session needed for threadsafety
-        Session = scoped_session(sessionmaker(self.engine))
-        return Session()
+        # Session = scoped_session(sessionmaker(self.engine))
+        # return Session()
 
     def output(self):
         # > DBTask has no output files but uses the DB itself to track the status

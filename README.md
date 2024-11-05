@@ -25,7 +25,7 @@ todo?: publish package on pypi
 
 ### Development version
 
-To install the develpment version, first clone this repository
+To install the development version, first clone this repository
 ```shell
 git clone git@github.com:aykhuss/dokan.git
 cd dokan
