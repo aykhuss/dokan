@@ -197,6 +197,10 @@ class Runcard:
         skiplines = False
         with open(runcard, "r") as f, open(template, "w") as t:
             for line in f:
+                # > deal with comment lines first (preserve them)
+                if re.match(r"^\s*!", line):
+                    t.write(line)
+                    continue
                 # > collapse line continuations
                 while re.search(r"&", line):
                     line = re.sub(r"\s*&\s*(!.*)?$", "", line.rstrip())
