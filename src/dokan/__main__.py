@@ -302,6 +302,7 @@ def main() -> None:
             sys.exit("DBInit failed")
 
         # > actually submit the root task to run NNLOJET and spawn the monitor
+        console.print(f"using {cpu_count} workers...")
         luigi_result = luigi.build(
             [
                 db_init.clone(dokan.Entry),

@@ -46,8 +46,10 @@ class DBTask(Task, metaclass=ABCMeta):
     @property
     def engine(self) -> Engine:
         return create_engine(
-            self.dbname,
-            connect_args={"autocommit": False, "check_same_thread": True, "timeout": 30.0},
+            self.dbname +
+            "?nolock=0",
+            #connect_args={"check_same_thread": False, "timeout": 30.0},
+            connect_args={"check_same_thread": True, "uri": True},
         )
 
     @property
@@ -77,7 +79,7 @@ class DBTask(Task, metaclass=ABCMeta):
 
     def logger(self, message: str, level: LogLevel = LogLevel.INFO) -> None:
         if level >= 0 and level < self.config["ui"]["log_level"]:
-            # > negative values are signals that I want to be passed *always*
+            # > negative values are signals that I want passed *always*
             return
         if not self.config["ui"]["monitor"]:
             dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -624,7 +626,7 @@ class DBRunner(DBTask):
                 db_job.rel_path = str(job_path.relative_to(self._path))
                 db_job.status = JobStatus.RUNNING
                 session.commit()
-            self.logger(f"DBRunner[{self.id}]: checking {db_job.rel_path}")
+            # self.logger(f"DBRunner[{self.id}]: checking {db_job.rel_path}")
             yield Executor.factory(
                 policy=ExecutionPolicy(db_job.policy), path=str(self._path / db_job.rel_path)
             )
