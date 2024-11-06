@@ -80,7 +80,7 @@ class Executor(luigi.Task, metaclass=ABCMeta):
             log_matches = [
                 of
                 for of in self.exe_data["output_files"]
-                if of.endswith(f".s{job_data["seed"]}.log")
+                if of.endswith(f".s{job_data['seed']}.log")
             ]
             # print(f" > log_matches: {log_matches}")
             if len(log_matches) != 1:

@@ -175,7 +175,7 @@ def main() -> None:
             default=config["exe"]["policy"],
         )
         config["exe"]["policy"] = new_policy
-        console.print(f"[dim]policy = {config["exe"]["policy"]!r}[/dim]")
+        console.print(f"[dim]policy = {config['exe']['policy']!r}[/dim]")
 
         # @todo policy settings
 
@@ -183,7 +183,7 @@ def main() -> None:
             "order", choices=list(str(o) for o in Order), default=config["run"]["order"]
         )
         config["run"]["order"] = new_order
-        console.print(f"[dim]order = {config["run"]["order"]!r}[/dim]")
+        console.print(f"[dim]order = {config['run']['order']!r}[/dim]")
 
         while True:
             new_target_rel_acc: float = FloatPrompt.ask(
@@ -193,7 +193,7 @@ def main() -> None:
                 break
             console.print("please enter a positive value")
         config["run"]["target_rel_acc"] = new_target_rel_acc
-        console.print(f"[dim]target_rel_acc = {config["run"]["target_rel_acc"]!r}[/dim]")
+        console.print(f"[dim]target_rel_acc = {config['run']['target_rel_acc']!r}[/dim]")
 
         while True:
             new_job_max_runtime: float = TimeIntervalPrompt.ask(
@@ -204,7 +204,7 @@ def main() -> None:
                 break
             console.print("please enter a positive value")
         config["run"]["job_max_runtime"] = new_job_max_runtime
-        console.print(f"[dim]job_max_runtime = {config["run"]["job_max_runtime"]!r}s[/dim]")
+        console.print(f"[dim]job_max_runtime = {config['run']['job_max_runtime']!r}s[/dim]")
 
         new_job_fill_max_runtime: bool = Confirm.ask(
             "attempt to exhaust the maximum runtime for each job?",
@@ -212,7 +212,7 @@ def main() -> None:
         )
         config["run"]["job_fill_max_runtime"] = new_job_fill_max_runtime
         console.print(
-            f"[dim]job_fill_max_runtime = {config["run"]["job_fill_max_runtime"]!r}[/dim]"
+            f"[dim]job_fill_max_runtime = {config['run']['job_fill_max_runtime']!r}[/dim]"
         )
 
         while True:
@@ -223,7 +223,7 @@ def main() -> None:
                 break
             console.print("please enter a non-negative value")
         config["run"]["jobs_max_total"] = new_jobs_max_total
-        console.print(f"[dim]jobs_max_total = {config["run"]["jobs_max_total"]!r}[/dim]")
+        console.print(f"[dim]jobs_max_total = {config['run']['jobs_max_total']!r}[/dim]")
 
         while True:
             new_jobs_max_concurrent: int = IntPrompt.ask(
@@ -234,7 +234,7 @@ def main() -> None:
                 break
             console.print("please enter a positive value")
         config["run"]["jobs_max_concurrent"] = new_jobs_max_concurrent
-        console.print(f"[dim]jobs_max_concurrent = {config["run"]["jobs_max_concurrent"]!r}[/dim]")
+        console.print(f"[dim]jobs_max_concurrent = {config['run']['jobs_max_concurrent']!r}[/dim]")
 
         while True:
             new_jobs_batch_size: int = IntPrompt.ask(
@@ -244,7 +244,7 @@ def main() -> None:
                 break
             console.print("please enter a positive value")
         config["run"]["jobs_batch_size"] = new_jobs_batch_size
-        console.print(f"[dim]jobs_batch_size = {config["run"]["jobs_batch_size"]!r}[/dim]")
+        console.print(f"[dim]jobs_batch_size = {config['run']['jobs_batch_size']!r}[/dim]")
 
         while True:
             new_seed_offset: int = IntPrompt.ask(
@@ -254,7 +254,7 @@ def main() -> None:
                 break
             console.print("please enter a non-negative value")
         config["run"]["seed_offset"] = new_seed_offset
-        console.print(f"[dim]seed_offset = {config["run"]["seed_offset"]!r}[/dim]")
+        console.print(f"[dim]seed_offset = {config['run']['seed_offset']!r}[/dim]")
 
         config.write()
 
