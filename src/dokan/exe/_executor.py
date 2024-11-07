@@ -55,23 +55,30 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         # @todo check if job files are already there? (recovery mode?)
 
         self.exe()
-        time.sleep(1)  # @todo little time for file system?
         # print(f"[{time.time()}] Executor: done with exe {self.path}")
 
         # > exe done populate job data and write target file
 
         # > keep track of files that were generated
-        for entry in os.scandir(self.path):
-            # > input files can also become output files (warmup grids)
-            # if entry.name in self.exe_data["input_files"]:
-            #     continue
-            if entry.name in [ExeData._file_tmp, ExeData._file_fin]:
-                continue
-            # print(f"> [{entry.stat().st_mtime} < {self.exe_data["timestamp"]} {entry.stat().st_mtime < self.exe_data["timestamp"]}] {self.path}: {entry.name}")
-            if entry.stat().st_mtime < self.exe_data["timestamp"]:
-                continue
-            # > genuine output file that was generated/modified
-            self.exe_data["output_files"].append(entry.name)
+        # > some file systems have delays: add delays & re-tries
+        fs_max_retry: int = 10
+        fs_delay: float = 1
+        for fs_try in range(fs_max_retry):
+            for entry in os.scandir(self.path):
+                # > input files can also become output files (warmup grids)
+                # if entry.name in self.exe_data["input_files"]:
+                #     continue
+                if entry.name in [ExeData._file_tmp, ExeData._file_fin]:
+                    continue
+                # print(f"> [{entry.stat().st_mtime} < {self.exe_data["timestamp"]} {entry.stat().st_mtime < self.exe_data["timestamp"]}] {self.path}: {entry.name}")
+                if entry.stat().st_mtime < self.exe_data["timestamp"]:
+                    continue
+                # > genuine output file that was generated/modified
+                self.exe_data["output_files"].append(entry.name)
+            if len(self.exe_data["output_files"]) > 0:
+                break
+            # > could not find any output files, wait and try again
+            time.sleep(fs_delay)
 
         # print(f"  >>  {self.exe_data["output_files"]}:")
 
