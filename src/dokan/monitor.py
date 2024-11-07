@@ -117,7 +117,7 @@ class Monitor(DBTask):
             ),
             box=box.ROUNDED,
             safe_box=False,
-            #@todo actually put in the numbrs & # of remaining jobs & current estimate for error
+            # @todo actually put in the numbrs & # of remaining jobs & current estimate for error
             title=f"[{dt_str}]\n[dim]legend:[/dim] [yellow][b]A[/b]ctive[/yellow] [green][b]D[/b]one[/green] [red][b]F[/b]ailed[/red]",
             title_justify="left",
             title_style=Style(bold=False, italic=False),
@@ -138,10 +138,17 @@ class Monitor(DBTask):
         with Live(self.generate_table()) as live:
             while True:
                 live.update(self.generate_table())
+                logs: list[tuple[float,int,str]] = []
                 with self.session as session:
-                    logs = session.execute(
-                        delete(Log).returning(Log.timestamp, Log.level, Log.message)
-                    ).fetchall()
+                    # logs = session.execute(
+                    #     delete(Log).returning(Log.timestamp, Log.level, Log.message)
+                    # ).fetchall()
+                    # session.commit()
+                    # logs = [ (log.timestamp, log.level, log.message,) for log in session.scalars(delete(Log).returning(Log)) ]
+                    # session.commit()
+                    for log in session.scalars(select(Log)):
+                        logs.append((log.timestamp, log.level, log.message,))
+                        session.delete(log)
                     session.commit()
 
                 for log in logs:
