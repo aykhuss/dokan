@@ -54,6 +54,7 @@ class Executor(luigi.Task, metaclass=ABCMeta):
 
         # @todo check if job files are already there? (recovery mode?)
 
+        time.sleep(1.5)
         self.exe()
         # print(f"[{time.time()}] Executor: done with exe {self.path}")
 
@@ -62,16 +63,21 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         # > keep track of files that were generated
         # > some file systems have delays: add delays & re-tries
         fs_max_retry: int = 10
-        fs_delay: float = 1
+        fs_delay: float = 1  # seconds
+        tmp_time: float = Path.joinpath(Path(self.path), ExeData._file_tmp).stat().st_mtime
+        print(f"{self.path}: tmp_time   = {tmp_time}")
+        print(f"{self.path}: timestamp' = {self.exe_data.timestamp}")
         for fs_try in range(fs_max_retry):
             for entry in os.scandir(self.path):
+                if entry.name in [ExeData._file_tmp]:
+                    print(f"[{fs_try}]{self.path}: entry_time = {entry.stat().st_mtime}")
                 # > input files can also become output files (warmup grids)
                 # if entry.name in self.exe_data["input_files"]:
                 #     continue
                 if entry.name in [ExeData._file_tmp, ExeData._file_fin]:
                     continue
-                # print(f"> [{entry.stat().st_mtime} < {self.exe_data["timestamp"]} {entry.stat().st_mtime < self.exe_data["timestamp"]}] {self.path}: {entry.name}")
-                if entry.stat().st_mtime < self.exe_data["timestamp"]:
+                print(f"[{fs_try}]{self.path}: entry_time = {entry.stat().st_mtime} [{entry.name}] {entry.stat().st_mtime < self.exe_data.timestamp}")
+                if entry.stat().st_mtime < self.exe_data.timestamp:
                     continue
                 # > genuine output file that was generated/modified
                 self.exe_data["output_files"].append(entry.name)

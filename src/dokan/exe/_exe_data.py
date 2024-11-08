@@ -39,7 +39,7 @@ _schema: dict = {
     "ncall": int,
     "niter": int,
     # ---
-    "timestamp": float,  # updated on each write
+    # now a property! "timestamp": float,  # updated on each write
     "input_files": [str],  # first entry must be runcard?
     "output_files": [str],
     "jobs": {
@@ -102,6 +102,13 @@ class ExeData(UserDict):
         if not self.is_valid():
             raise ValueError(f"ExeData scheme forbids: {key} : {item}")
 
+    @property
+    def timestamp(self) -> float:
+        if self._mutable:
+            return self.file_tmp.stat().st_mtime
+        else:
+            return  self.file_fin.stat().st_mtime
+
     def load(self, expect_tmp: bool = False) -> None:
         self._mutable = True
         if self.file_fin.exists():
@@ -123,7 +130,7 @@ class ExeData(UserDict):
 
     def write(self) -> None:
         if self._mutable:
-            self.data["timestamp"] = time.time()
+            # self.data["timestamp"] = time.time()
             with open(self.file_tmp, "w") as tmp:
                 json.dump(self.data, tmp, indent=2)
         else:
