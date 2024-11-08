@@ -609,8 +609,10 @@ class DBRunner(DBTask):
                         # @todo always skip log (& dat) files
                         # @todo if warmup copy over also txt files
                         # @todo for production, only take the weights (skip txt)
-                        # > skip "*.s<seed>.*" files
+                        # > skip "*.s<seed>.*" files & job files
                         if re.match(r"^.*\.s[0-9]+\.[^0-9.]+$", wfile):
+                            continue
+                        if re.match(r"^job.*$", wfile):
                             continue
                         shutil.copyfile(last_warm_path / wfile, job_path / wfile)
                         exe_data["input_files"].append(wfile)
