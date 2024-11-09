@@ -65,18 +65,18 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         fs_max_retry: int = 10
         fs_delay: float = 1  # seconds
         tmp_time: float = Path.joinpath(Path(self.path), ExeData._file_tmp).stat().st_mtime
-        print(f"{self.path}: tmp_time   = {tmp_time}")
-        print(f"{self.path}: timestamp' = {self.exe_data.timestamp}")
+        # print(f"{self.path}: tmp_time   = {tmp_time}")
+        # print(f"{self.path}: timestamp' = {self.exe_data.timestamp}")
         for fs_try in range(fs_max_retry):
             for entry in os.scandir(self.path):
-                if entry.name in [ExeData._file_tmp]:
-                    print(f"[{fs_try}]{self.path}: entry_time = {entry.stat().st_mtime}")
+                # if entry.name in [ExeData._file_tmp]:
+                #     print(f"[{fs_try}]{self.path}: entry_time = {entry.stat().st_mtime}")
                 # > input files can also become output files (warmup grids)
                 # if entry.name in self.exe_data["input_files"]:
                 #     continue
                 if entry.name in [ExeData._file_tmp, ExeData._file_fin]:
                     continue
-                print(f"[{fs_try}]{self.path}: entry_time = {entry.stat().st_mtime} [{entry.name}] {entry.stat().st_mtime < self.exe_data.timestamp}")
+                # print(f"[{fs_try}]{self.path}: entry_time = {entry.stat().st_mtime} [{entry.name}] {entry.stat().st_mtime < self.exe_data.timestamp}")
                 if entry.stat().st_mtime < self.exe_data.timestamp:
                     continue
                 # > genuine output file that was generated/modified
