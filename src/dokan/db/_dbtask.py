@@ -47,9 +47,9 @@ class DBTask(Task, metaclass=ABCMeta):
     def engine(self) -> Engine:
         return create_engine(
             self.dbname +
-            "?nolock=0",
+            "?check_same_thread=true&timeout=30&nolock=1&uri=true",
             #connect_args={"check_same_thread": False, "timeout": 30.0},
-            connect_args={"check_same_thread": True, "uri": True},
+            #connect_args={"check_same_thread": False, "timeout": 60.0, "uri": True},
         )
 
     @property
