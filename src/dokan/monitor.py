@@ -23,9 +23,18 @@ class Monitor(DBTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         print(f"Monitor:init {time.ctime(self.run_tag)}")
+        self._log_id: int = 0
         self._nchan: int = 0
         part_order: list[tuple[int, str]] = []
         with self.session as session:
+            last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
+            if last_log:
+                self._log_id = last_log.id
+                # > last run was successful: reset log table.
+                if last_log.level == LogLevel.SIG_TERM:
+                    for log in session.scalars(select(Log)):
+                        session.delete(log)
+                    session.commit()
             for pt in session.scalars(select(Part).where(Part.active.is_(True))):
                 self._nchan = max(self._nchan, pt.part_num)
                 ipt: tuple[int, str] = (abs(pt.order), pt.part)
@@ -135,29 +144,45 @@ class Monitor(DBTask):
         if not self.config["ui"]["monitor"]:
             return
         self.logger(f"Monitor: switching on the job status board...")
-        with Live(self.generate_table()) as live:
+        with Live(self.generate_table(), auto_refresh=False) as live:
             while True:
-                live.update(self.generate_table())
-                logs: list[tuple[float,int,str]] = []
-                with self.session as session:
-                    # logs = session.execute(
-                    #     delete(Log).returning(Log.timestamp, Log.level, Log.message)
-                    # ).fetchall()
-                    # session.commit()
-                    # logs = [ (log.timestamp, log.level, log.message,) for log in session.scalars(delete(Log).returning(Log)) ]
-                    # session.commit()
-                    for log in session.scalars(select(Log)):
-                        logs.append((log.timestamp, log.level, log.message,))
-                        session.delete(log)
-                    session.commit()
+                live.update(self.generate_table(), refresh=True)
 
-                for log in logs:
-                    dt_str: str = datetime.datetime.fromtimestamp(log[0]).strftime(
-                        "%Y-%m-%d %H:%M:%S"
-                    )
-                    live.console.print(f"[dim][{dt_str}][/dim]({LogLevel(log[1])!r}): {log[2]}")
-                    if log[1] == LogLevel.SIG_TERM:
-                        return
-                    # time.sleep(0.01)
+                # > logging variant that deletes old logs
+                # logs: list[tuple[float, int, str]] = []
+                # with self.session as session:
+                #     # > `returning` is not supported everywhere
+                #     # logs = [ (log.timestamp, log.level, log.message,) for l goin session.scalars(delete(Log).returning(Log)) ]
+                #     # session.commit()
+                #     # > delete logs after reading
+                #     for log in session.scalars(select(Log)):
+                #         logs.append((log.timestamp, log.level, log.message,))
+                #         session.delete(log)
+                #     session.commit()
+
+                # for logMergeAll in logs:
+                #     dt_str: str = datetime.datetime.fromtimestamp(log[0]).strftime(
+                #         "%Y-%m-%d %H:%M:%S"
+                #     )
+                #     live.console.print(f"[dim][{dt_str}][/dim]({LogLevel(log[1])!r}): {log[2]}")
+                #     if log[1] == LogLevel.SIG_TERM:
+                #         return
+                #     # time.sleep(0.01)
+
+                # > logging variant with only read so less DB clashes
+                with self.session as session:
+                    for log in session.scalars(
+                        select(Log).where(Log.id > self._log_id).order_by(Log.id.asc())
+                    ):
+                        self._log_id = log.id  # save last id
+                        dt_str: str = datetime.datetime.fromtimestamp(log.timestamp).strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        )
+                        live.console.print(
+                            f"[dim][{dt_str}][/dim]({LogLevel(log.level)!r}): {log.message}"
+                        )
+                        if log.level == LogLevel.SIG_TERM:
+                            return
+                        # time.sleep(0.01)
 
                 time.sleep(1)
