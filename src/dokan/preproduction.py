@@ -5,7 +5,7 @@ from sqlalchemy import select
 from pathlib import Path
 
 from .db import Job, DBTask, JobStatus
-from .db._dbtask import DBDispatch
+from .db._dbdispatch import DBDispatch
 from .db._loglevel import LogLevel
 from .exe import ExecutionMode, ExecutionPolicy, ExeData
 

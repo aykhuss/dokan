@@ -79,17 +79,21 @@ class MergePart(DBMerge):
             c_done = query_job.filter(Job.status == JobStatus.DONE).count()
             c_merged = query_job.filter(Job.status == JobStatus.MERGED).count()
 
-            self.debug(f"MergePart::complete[{self.part_id}]: done {c_done}, merged {c_merged}")
+            if (c_done + c_merged) == 0:
+                # @todo raise error as we should never be in this situation?
+                return True
+
+            self.debug(f"MergePart::complete[{self.part_id},{self.force}]: done {c_done}, merged {c_merged}")
 
             if self.force and c_done > 0:
                 return False
 
-            if float(c_done) / float(c_merged + 1) < 1.0:  # @todo make config parameter?
+            if float(c_done) / float(c_merged + 1) <= 1.0:  # @todo make config parameter?
                 return True
         return False
 
     def run(self):
-        self.debug(f"MergePart: run {self.part_id}")
+        self.logger(f"MergePart::run[{self.part_id}]")
         with self.session as session:
             # > get the part and update timestamp to tag for 'MERGE'
             pt: Part = session.get_one(Part, self.part_id)
@@ -111,6 +115,7 @@ class MergePart(DBMerge):
             for job in session.scalars(self.select_job):
                 if not job.rel_path:
                     continue  # @todo raise warning in logger?
+                self.debug(f"MergePart::run[{self.part_id}] appending {job!r}")
                 pt.Ttot += job.elapsed_time
                 pt.ntot += job.niter * job.ncall
                 job_path: Path = self._path / job.rel_path
@@ -181,10 +186,10 @@ class MergeAll(DBMerge):
             return []
 
     def complete(self) -> bool:
-        #> check input requirements
+        # > check input requirements
         if any(not mpt.complete() for mpt in self.requires()):
             return False
-        #> check file modifiation time
+        # > check file modifiation time
         timestamp: float = -1.0
         for hist in os.scandir(self.fin_path):
             timestamp = max(timestamp, hist.stat().st_mtime)
@@ -199,7 +204,7 @@ class MergeAll(DBMerge):
             return True
 
     def run(self):
-        self.debug("MergeAll: run all")
+        self.logger("MergeAll::run")
         mrg_parent: Path = self._path.joinpath("result", "part")
 
         with self.session as session:
@@ -225,4 +230,4 @@ class MergeAll(DBMerge):
                 hist.write_to_file(out_file)
 
         self.debug("MergeAll: complete all")
-        #self.print_job()
+        # self.print_job()

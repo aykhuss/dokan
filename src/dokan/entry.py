@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from .order import Order
 from .db import Part, Job, DBTask, DBInit, MergeAll
-from .db._dbtask import DBDispatch
+from .db._dbdispatch import DBDispatch
 from .db._loglevel import LogLevel
 from .preproduction import PreProduction
 
