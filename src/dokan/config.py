@@ -36,7 +36,7 @@ _schema: dict = {
         "histograms_single_file": str,  # name in case we concatenate all histograms to a single file
         "order": Order,  # what order to compute (LO, NLO, NNLO)
         "target_rel_acc": float,  # target relative accuracy
-        "job_max_runtime": int,  # maximum runtime (in sec) for a single NNLOJET run
+        "job_max_runtime": float,  # maximum runtime (in sec) for a single NNLOJET run
         "job_fill_max_runtime": bool,  # if we want to exhause the maximum runtime
         "jobs_max_total": int,  # maximum number of total (production?) jobs
         "jobs_max_concurrent": int,  # maximum number of concurrent jobs

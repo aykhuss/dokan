@@ -1,17 +1,12 @@
 import luigi
-import logging
 import time
-import json
-import re
-import shutil
 import math
 import datetime
 
 from abc import ABCMeta, abstractmethod
-from pathlib import Path
 
-from sqlalchemy import create_engine, Engine, select, func
-from sqlalchemy.orm import Session #, scoped_session, sessionmaker
+from sqlalchemy import create_engine, Engine, select
+from sqlalchemy.orm import Session  # , scoped_session, sessionmaker
 
 from rich.console import Console
 
@@ -20,9 +15,8 @@ from ._loglevel import LogLevel
 from ._sqla import DokanDB, Part, Job, Log
 
 from ..task import Task
-from ..exe import ExecutionMode, ExecutionPolicy, ExeData, Executor
+from ..exe import ExecutionMode
 from ..order import Order
-from ..runcard import Runcard, RuncardTemplate
 
 
 _console = Console()
@@ -47,10 +41,10 @@ class DBTask(Task, metaclass=ABCMeta):
     def engine(self) -> Engine:
         return create_engine(
             self.dbname,
-            #+ r"?uri=true&nolock=1"
+            # + r"?uri=true&nolock=1"
             # + "?check_same_thread=false&timeout=30&nolock=1&uri=true",
             connect_args={"check_same_thread": True, "timeout": 30.0},
-            #connect_args={"check_same_thread": False, "timeout": 60.0, "uri": True},
+            # connect_args={"check_same_thread": False, "timeout": 60.0, "uri": True},
         )
 
     @property
@@ -262,7 +256,19 @@ class DBTask(Task, metaclass=ABCMeta):
 
 
 class DBInit(DBTask):
-    """initilization of the 'parts' table of the database with process channel information"""
+    """initialization of the `parts` database table
+
+    create a database if it does not yet exist. populate the `parts` table
+    with the channels information and set the `active` state according to
+    the requested order.
+
+    Attributes
+    ----------
+    order : int
+        the order of the calculation according to the `Order` IntEnum
+    channels : dict
+        channel description as parsed from the `NNLOJER -listlumi <PROC>` output
+    """
 
     order: int = luigi.IntParameter(default=Order.NNLO)
     channels: dict = luigi.DictParameter()
@@ -285,7 +291,7 @@ class DBInit(DBTask):
         return True
 
     def run(self) -> None:
-        self.logger(f"DBInit: run {Order(self.order)!r}")
+        self.logger(f"DBInit::run order = {Order(self.order)!r}")
         with self.session as session:
             for db_pt in session.scalars(select(Part)):
                 db_pt.active = False  # reset to be safe
@@ -300,4 +306,3 @@ class DBInit(DBTask):
                     db_pt.active = Order(db_pt.order).is_in(Order(self.order))
             session.commit()
         # self.print_part()
-
