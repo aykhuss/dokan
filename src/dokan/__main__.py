@@ -225,10 +225,15 @@ def main() -> None:
         config["run"]["jobs_max_total"] = new_jobs_max_total
         console.print(f"[dim]jobs_max_total = {config['run']['jobs_max_total']!r}[/dim]")
 
+        if config["exe"]["policy"] == ExecutionPolicy.LOCAL:
+            max_concurrent_msg: str = f"maximum number of concurrent jobs [CPU count: {cpu_count}]"
+            max_concurrent_def: int = min(cpu_count, config["run"]["jobs_max_concurrent"])
+        else:
+            max_concurrent_msg: str = "maximum number of concurrent jobs"
+            max_concurrent_def: int = config["run"]["jobs_max_concurrent"]
         while True:
             new_jobs_max_concurrent: int = IntPrompt.ask(
-                "maximum number of concurrently running jobs",
-                default=config["run"]["jobs_max_concurrent"],
+                max_concurrent_msg, default=max_concurrent_def
             )
             if new_jobs_max_concurrent > 0:
                 break
@@ -302,7 +307,11 @@ def main() -> None:
             sys.exit("DBInit failed")
 
         # > actually submit the root task to run NNLOJET and spawn the monitor
-        console.print(f"using {cpu_count} workers...")
+        console.print(f"found {cpu_count} CPU cores...")
+        if config["exe"]["policy"] == ExecutionPolicy.LOCAL:
+            local_ncores: int = config["run"]["jobs_max_concurrent"]
+        else:
+            local_ncores: int = cpu_count
         luigi_result = luigi.build(
             [
                 db_init.clone(dokan.Entry),
@@ -310,7 +319,7 @@ def main() -> None:
             ],
             worker_scheduler_factory=dokan.WorkerSchedulerFactory(
                 # @todo properly set resources according to config
-                resources={"local_ncores": cpu_count, "DBTask": cpu_count+1, "DBDispatch": 1},
+                resources={"local_ncores": local_ncores, "DBTask": cpu_count + 1, "DBDispatch": 1},
                 cache_task_completion=False,
                 check_complete_on_run=False,
                 check_unfulfilled_deps=True,
