@@ -23,18 +23,23 @@ class Monitor(DBTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         print(f"Monitor::init {time.ctime(self.run_tag)}")
+
         self._log_id: int = 0
-        self._nchan: int = 0
-        part_order: list[tuple[int, str]] = []
-        with self.session as session:
-            last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
+        with self.log_session as log_session:
+            last_log = log_session.scalars(select(Log).order_by(Log.id.desc())).first()
             if last_log:
+                print(f"Monitor::init last log: {last_log!r}")
                 self._log_id = last_log.id
                 # > last run was successful: reset log table.
                 if last_log.level == LogLevel.SIG_TERM:
-                    for log in session.scalars(select(Log)):
-                        session.delete(log)
-                    session.commit()
+                    print("Monitor::init clearing old logs")
+                    for log in log_session.scalars(select(Log)):
+                        log_session.delete(log)
+                    log_session.commit()
+
+        self._nchan: int = 0
+        part_order: list[tuple[int, str]] = []
+        with self.session as session:
             for pt in session.scalars(select(Part).where(Part.active.is_(True))):
                 self._nchan = max(self._nchan, pt.part_num)
                 ipt: tuple[int, str] = (abs(pt.order), pt.part)
@@ -170,8 +175,8 @@ class Monitor(DBTask):
                 #     # time.sleep(0.01)
 
                 # > logging variant with only read so less DB clashes
-                with self.session as session:
-                    for log in session.scalars(
+                with self.log_session as log_session:
+                    for log in log_session.scalars(
                         select(Log).where(Log.id > self._log_id).order_by(Log.id.asc())
                     ):
                         self._log_id = log.id  # save last id

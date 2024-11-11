@@ -12,7 +12,7 @@ from rich.console import Console
 
 from ._jobstatus import JobStatus
 from ._loglevel import LogLevel
-from ._sqla import DokanDB, Part, Job, Log
+from ._sqla import DokanDB, Part, Job, DokanLog, Log
 
 from ..task import Task
 from ..exe import ExecutionMode
@@ -36,6 +36,7 @@ class DBTask(Task, metaclass=ABCMeta):
         super().__init__(*args, **kwargs)
         # @todo all DBTasks need to be started in the job root path: check?
         self.dbname: str = "sqlite:///" + str(self._local("db.sqlite").absolute())
+        self.logname: str = "sqlite:///" + str(self._local("log.sqlite").absolute())
 
     @property
     def engine(self) -> Engine:
@@ -53,6 +54,16 @@ class DBTask(Task, metaclass=ABCMeta):
         # > scoped session needed for threadsafety
         # Session = scoped_session(sessionmaker(self.engine))
         # return Session()
+
+    @property
+    def log_engine(self) -> Engine:
+        return create_engine(
+            self.logname, connect_args={"check_same_thread": True, "timeout": 30.0}
+        )
+
+    @property
+    def log_session(self) -> Session:
+        return Session(self.log_engine)
 
     def output(self):
         # > DBTask has no output files but uses the DB itself to track the status
@@ -81,9 +92,9 @@ class DBTask(Task, metaclass=ABCMeta):
             _console.print(f"[dim][{dt_str}][/dim]({level!r}): {message}")
             return
         # > general case: monitor is ON: store messages in DB
-        with self.session as session:
-            session.add(Log(level=level, timestamp=time.time(), message=message))
-            session.commit()
+        with self.log_session as log_session:
+            log_session.add(Log(level=level, timestamp=time.time(), message=message))
+            log_session.commit()
 
     def debug(self, message: str) -> None:
         self.logger(message, LogLevel.DEBUG)
@@ -276,6 +287,19 @@ class DBInit(DBTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         DokanDB.metadata.create_all(self.engine)
+        DokanLog.metadata.create_all(self.log_engine)
+        with self.log_session as log_session:
+            last_log = log_session.scalars(select(Log).order_by(Log.id.desc())).first()
+            if last_log:
+                print(f"DBInit::init last log: {last_log!r}")
+                self._log_id = last_log.id
+                # > last run was successful: reset log table.
+                if last_log.level == LogLevel.SIG_TERM:
+                    print("Monitor::init clearing old logs...")
+                    for log in log_session.scalars(select(Log)):
+                        log_session.delete(log)
+                    log_session.commit()
+
 
     def complete(self) -> bool:
         with self.session as session:

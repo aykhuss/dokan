@@ -84,7 +84,10 @@ class Job(DokanDB):
         return f"Job(id={self.id!r}, part_id={self.part_id!r}, status={(self.status)!r}, timestamp={self.timestamp!r}, mode={ExecutionMode(self.mode)!r}, policy={ExecutionPolicy(self.policy)!r})"
 
 
-class Log(DokanDB):
+class DokanLog(DeclarativeBase):
+    pass
+
+class Log(DokanLog):
     __tablename__ = "log"
 
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -15,12 +15,14 @@ from rich.console import Console
 from rich.prompt import Prompt, IntPrompt, FloatPrompt, PromptBase, Confirm
 from rich.syntax import Syntax
 
+from .__about__ import __version__
+
 import dokan
 import dokan.nnlojet
 from dokan.exe import ExecutionPolicy
 from dokan.order import Order
 from dokan.util import parse_time_interval
-from .__about__ import __version__
+from .db._sqla import Part
 
 
 class TimeIntervalPrompt(PromptBase[float]):
@@ -55,7 +57,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="dokan: an automated NNLOJET workflow")
     parser.add_argument("--exe", dest="exe", help="path to NNLOJET executable")
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + __version__)
+    parser.add_argument("-v", "--version", action="version", version="%(prog)s " + __version__)
     subparsers = parser.add_subparsers(dest="action")
 
     # > subcommand: init
@@ -308,9 +310,13 @@ def main() -> None:
         )  # 'WARNING', 'INFO', 'DEBUG''
         if not luigi_result:
             sys.exit("DBInit failed")
+        nactive: int = 0
+        with db_init.session as session:
+            nactive = session.query(Part).filter(Part.active.is_(True)).count()
+        console.print(f"active parts: {nactive}")
 
         # > actually submit the root task to run NNLOJET and spawn the monitor
-        console.print(f"found {cpu_count} CPU cores...")
+        console.print(f"CPU cores: {cpu_count}")
         if config["exe"]["policy"] == ExecutionPolicy.LOCAL:
             local_ncores: int = config["run"]["jobs_max_concurrent"]
         else:
@@ -329,7 +335,7 @@ def main() -> None:
                 wait_interval=0.1,
             ),
             detailed_summary=True,
-            workers=cpu_count,
+            workers=max(cpu_count + 1, nactive),
             local_scheduler=True,
             log_level="WARNING",
         )  # 'WARNING', 'INFO', 'DEBUG''

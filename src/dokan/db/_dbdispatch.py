@@ -56,6 +56,9 @@ class DBDispatch(DBTask):
 
         njobs_rem, T_rem = self.remainders()
         if njobs_rem <= 0 or T_rem <= 0.0:
+            self.debug(
+                f"DBDispatch[{self._n}] resources depleted:  njobs = {njobs_rem}, T = {T_rem}"
+            )
             return
 
         with self.session as session:
@@ -142,6 +145,7 @@ class DBDispatch(DBTask):
                         qbreak = True
                     # @todo: more?
                 if qbreak:
+                    self.debug(f"DBDispatch[{self._n}]: qbreak = {qbreak}")
                     break
 
                 # for pt in session.scalars(select(Part).where(Part.active.is_(True))):
@@ -157,6 +161,9 @@ class DBDispatch(DBTask):
                 opt_dist: dict = self.distribute_time(T_next)
                 rel_acc: float = abs(opt_dist["tot_error"] / opt_dist["tot_result"])
                 if rel_acc <= self.config["run"]["target_rel_acc"]:
+                    self.debug(
+                        f'DBDispatch[{self._n}]: rel_acc = {rel_acc} v.s. {self.config["run"]["target_rel_acc"]}'
+                    )
                     break
                 while (
                     tot_njobs := sum(opt["njobs"] for opt in opt_dist["part"].values())
