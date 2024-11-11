@@ -46,10 +46,10 @@ class DBTask(Task, metaclass=ABCMeta):
     @property
     def engine(self) -> Engine:
         return create_engine(
-            self.dbname
-            + r"?uri=true&nolock=1"
+            self.dbname,
+            #+ r"?uri=true&nolock=1"
             # + "?check_same_thread=false&timeout=30&nolock=1&uri=true",
-            #connect_args={"check_same_thread": False, "timeout": 30.0},
+            connect_args={"check_same_thread": True, "timeout": 30.0},
             #connect_args={"check_same_thread": False, "timeout": 60.0, "uri": True},
         )
 
