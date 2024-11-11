@@ -21,7 +21,7 @@ This is the implementation of an automated workflow for NNLOJET computations bas
 
 ### Release version
 
-todo?: publish package on pypi
+todo: publish on pypi
 
 ### Development version
 

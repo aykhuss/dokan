@@ -12,6 +12,11 @@ from .preproduction import PreProduction
 
 
 class Entry(DBTask):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.logger(f"Entry::init {time.ctime(self.run_tag)}")
+
     def requires(self):
         return []
 
