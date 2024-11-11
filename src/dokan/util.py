@@ -43,7 +43,8 @@ def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:
                     and key is not str
                     and all(isinstance(k, str) for k in struct.keys())
                 ):
-                    for k in struct.keys():
+                    struct_keys : list = list(struct.keys())
+                    for k in struct_keys:
                         struct[key(k)] = struct.pop(k)
                 return all(
                     isinstance(k, key) and validate_schema(v, val, convert_to_type)
