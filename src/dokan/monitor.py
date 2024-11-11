@@ -22,7 +22,7 @@ class Monitor(DBTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        print(f"Monitor:init {time.ctime(self.run_tag)}")
+        print(f"Monitor::init {time.ctime(self.run_tag)}")
         self._log_id: int = 0
         self._nchan: int = 0
         part_order: list[tuple[int, str]] = []

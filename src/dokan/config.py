@@ -29,6 +29,7 @@ _schema: dict = {
         "policy": ExecutionPolicy,  # (local, htcondor, slurm, ...)
     },
     "run": {
+        "dokan_version": str,  # verion of the workflow
         "name": str,  # job name
         "path": str,  # absolute path to job directory
         "template": str,  # template file name (not path)

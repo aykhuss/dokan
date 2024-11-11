@@ -20,6 +20,7 @@ import dokan.nnlojet
 from dokan.exe import ExecutionPolicy
 from dokan.order import Order
 from dokan.util import parse_time_interval
+from .__about__ import __version__
 
 
 class TimeIntervalPrompt(PromptBase[float]):
@@ -54,6 +55,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="dokan: an automated NNLOJET workflow")
     parser.add_argument("--exe", dest="exe", help="path to NNLOJET executable")
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + __version__)
     subparsers = parser.add_subparsers(dest="action")
 
     # > subcommand: init
@@ -142,6 +144,7 @@ def main() -> None:
         # @todo please confirm that you will cite these references in you work
 
         config["exe"]["path"] = nnlojet_exe
+        config["run"]["dokan_version"] = __version__
         config["run"]["name"] = runcard.data["run_name"]
         config["run"]["histograms"] = runcard.data["histograms"]
         if "histograms_single_file" in runcard.data:
