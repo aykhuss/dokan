@@ -3,6 +3,8 @@ import time
 import subprocess
 import logging
 import string
+import os
+import json
 
 from pathlib import Path
 
@@ -34,7 +36,14 @@ class HTCondorExec(Executor):
         with open(self.htcondor_template, "r") as t, open(self.file_sub, "w") as f:
             f.write(string.Template(t.read()).substitute(HTCsettings))
 
-        HTCsubmit = subprocess.run(["condor_submit", HTCondorExec._file_sub], capture_output=True, text=True)
+        job_env = os.environ.copy()
+
+        HTCsubmit = subprocess.run(
+            ["condor_submit", HTCondorExec._file_sub],
+            env=job_env,
+            cwd=self.exe_data.path,
+            capture_output=True,
+            text=True,)
         print(HTCsubmit)
         # > raise error if submission command failed
         HTCsubmit.check_returncode()
@@ -60,7 +69,7 @@ class HTCondorExec(Executor):
         job_id: int = self.exe_data["policy_settings"]["htcondor_id"]
         poll_time: float = self.exe_data["policy_settings"]["htcondor_poll_time"]
 
-        match_job_id = re.compile(r"^{:d}".format(job_id))
+        # match_job_id = re.compile(r"^{:d}".format(job_id))
         # for i in range(10):
         while True:
             time.sleep(poll_time)
@@ -72,7 +81,7 @@ class HTCondorExec(Executor):
             #     print(line)
 
             HTCquery = subprocess.run(
-                ["condor_q", "-json", str(self.job_id)], capture_output=True, text=True
+                ["condor_q", "-json", str(job_id)], capture_output=True, text=True
             )
             # print(HTCquery)
             if HTCquery.stdout == "":
