@@ -35,6 +35,7 @@ _schema: dict = {
         # --- HTCONDOR
         "htcondor_id": int,
         "htcondor_ncores": int,
+        "htcondor_poll_time": float,
     },
     "ncall": int,
     "niter": int,

@@ -1,6 +1,7 @@
 {
   "exe": {
-    "policy": 1
+    "policy": 1,
+    "policy_settings": {}
   },
   "run": {
     "order": 2,

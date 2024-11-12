@@ -27,6 +27,13 @@ _schema: dict = {
     "exe": {
         "path": str,  # absolute path to NNLOJET
         "policy": ExecutionPolicy,  # (local, htcondor, slurm, ...)
+        "policy_settings": {
+            # --- LOCAL
+            "local_ncores": int,
+            # --- HTCONDOR
+            "htcondor_ncores": int,
+            "htcondor_poll_time": float,
+        },
     },
     "run": {
         "dokan_version": str,  # verion of the workflow

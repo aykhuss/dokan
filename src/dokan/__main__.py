@@ -183,6 +183,21 @@ def main() -> None:
         console.print(f"[dim]policy = {config['exe']['policy']!r}[/dim]")
 
         # @todo policy settings
+        if config["exe"]["policy"] == ExecutionPolicy.HTCONDOR:
+            while True:
+                new_poll_time: float = TimeIntervalPrompt.ask(
+                    "time interval between pinging HTCondor scheduler for job updates",
+                    default=config["exe"]["policy_settings"]["htcondor_poll_time"]
+                    if "htcondor_poll_time" in config["exe"]["policy_settings"]
+                    else 10.0,
+                )
+                if new_poll_time > 0.0:
+                    break
+                console.print("please enter a positive value")
+            config["exe"]["policy_settings"]["htcondor_poll_time"] = new_poll_time
+            console.print(
+                f"[dim]poll_time = {config["exe"]["policy_settings"]["htcondor_poll_time"]!r}s[/dim]"
+            )
 
         new_order: Order = OrderPrompt.ask(
             "order", choices=list(str(o) for o in Order), default=config["run"]["order"]

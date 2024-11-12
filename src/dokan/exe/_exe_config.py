@@ -14,7 +14,7 @@ class ExecutionPolicy(IntEnum):
     # NULL = 0
     LOCAL = 1
     HTCONDOR = 2
-    # SLURM = 3
+    SLURM = 3
     # LSF = 4
     # ...
 
