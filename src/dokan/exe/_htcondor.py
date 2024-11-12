@@ -44,7 +44,7 @@ class HTCondorExec(Executor):
             cwd=self.exe_data.path,
             capture_output=True,
             text=True,)
-        print(HTCsubmit)
+        # print(HTCsubmit)
         # > raise error if submission command failed
         HTCsubmit.check_returncode()
         # > extract the job id (if submission was successful)
@@ -60,7 +60,7 @@ class HTCondorExec(Executor):
                 f"HTCondorExec failed to submit job {self.exe_data['path']} with output {HTCsubmit.stdout} and error {HTCsubmit.stderr}"
             )
             return  # this will flag the task as failed down the line
-        print(f"[{cluster_id}]: {HTCsubmit.stdout}")
+        # print(f"[{cluster_id}]: {HTCsubmit.stdout}")
 
         # > now we need to track the job
         self._track_job()
@@ -101,11 +101,11 @@ class HTCondorExec(Executor):
                 istatus = entry["JobStatus"]
                 count_status[istatus] += 1
             njobs = sum(count_status)
-            print(
-                "job status: R:{:d}  I:{:d}  [total:{:d}]".format(
-                    count_status[2], count_status[1], njobs
-                )
-            )
+            # print(
+            #     "job[{:d}] status: R:{:d}  I:{:d}  [total:{:d}]".format(
+            #         job_id, count_status[2], count_status[1], njobs
+            #     )
+            # )
 
             if njobs == 0:
                 raise Exception("shouldn't get here")

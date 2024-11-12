@@ -69,12 +69,14 @@ class DBRunner(DBTask):
                 exe_data["mode"] = ExecutionMode(db_job.mode)
                 exe_data["policy"] = ExecutionPolicy(db_job.policy)
                 # @todo: add policy settings
-                # exe_data["policy_settings"] = {}
+                exe_data["policy_settings"] = {}
                 # if db_job.policy == ExecutionPolicy.LOCAL:
                 #     exe_data["policy_settings"]["local_ncores"] = 1
                 # elif db_job.policy == ExecutionPolicy.HTCONDOR:
                 #     exe_data["policy_settings"]["htcondor_id"] = 42
-                exe_data["policy_settings"] = self.config["exe"]["policy_settings"]
+                for k,v in self.config["exe"]["policy_settings"].items():
+                    exe_data["policy_settings"][k] = v
+                # exe_data["policy_settings"] = self.config["exe"]["policy_settings"]
                 if (db_job.ncall * db_job.niter) == 0:
                     raise RuntimeError(f"job {db_job.id} has ntot={db_job.ncall}×{db_job.niter}=0")
                 exe_data["ncall"] = db_job.ncall

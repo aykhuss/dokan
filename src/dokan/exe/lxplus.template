@@ -3,9 +3,9 @@
 ###########
 
 executable  = ${exe}
-arguments   = -run job.run -iseed $$([ProcId+${start_seed}])
-output      = job.s$$([ProcId+${start_seed}]).out
-error       = job.s$$([ProcId+${start_seed}]).err
+arguments   = -run job.run -iseed $$$$([ProcId+${start_seed}])
+output      = job.s$$$$([ProcId+${start_seed}]).out
+error       = job.s$$$$([ProcId+${start_seed}]).err
 log         = job.log
 getenv      = True
 
