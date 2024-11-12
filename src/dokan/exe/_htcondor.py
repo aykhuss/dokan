@@ -17,7 +17,7 @@ class HTCondorExec(Executor):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.htcondor_template: Path = Path(__file__).parent.resolve() / "lxplus.tempalte"
+        self.htcondor_template: Path = Path(__file__).parent.resolve() / "lxplus.template"
         self.file_sub: Path = self.exe_data.path / self._file_sub
 
     def exe(self):
