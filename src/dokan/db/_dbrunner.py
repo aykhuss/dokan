@@ -68,8 +68,10 @@ class DBRunner(DBTask):
                 exe_data["exe"] = self.config["exe"]["path"]
                 exe_data["mode"] = ExecutionMode(db_job.mode)
                 exe_data["policy"] = ExecutionPolicy(db_job.policy)
-                # @todo: add policy settings
-                exe_data["policy_settings"] = {}
+                # > add policy settings
+                exe_data["policy_settings"] = {
+                    "max_runtime": self.config["run"]["job_max_runtime"]
+                }
                 # if db_job.policy == ExecutionPolicy.LOCAL:
                 #     exe_data["policy_settings"]["local_ncores"] = 1
                 # elif db_job.policy == ExecutionPolicy.HTCONDOR:

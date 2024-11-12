@@ -18,9 +18,9 @@ initialdir   = ${job_path}
 # tomorrow     = 1 day
 # testmatch    = 3 days
 # nextweek     = 1 week
-+JobFlavour  = "espresso"
+# +JobFlavour  = "espresso"
 
-# +MaxRuntime = Number of seconds
++MaxRuntime = ${max_runtime}
 
 +RequestCpus = ${ncores}
 

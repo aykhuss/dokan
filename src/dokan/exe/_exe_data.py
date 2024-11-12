@@ -30,6 +30,7 @@ _schema: dict = {
     "mode": ExecutionMode,
     "policy": ExecutionPolicy,
     "policy_settings": {
+        "max_runtime": float,
         # --- LOCAL
         "local_ncores": int,
         # --- HTCONDOR
@@ -108,7 +109,7 @@ class ExeData(UserDict):
         if self._mutable:
             return self.file_tmp.stat().st_mtime
         else:
-            return  self.file_fin.stat().st_mtime
+            return self.file_fin.stat().st_mtime
 
     def load(self, expect_tmp: bool = False) -> None:
         self._mutable = True
