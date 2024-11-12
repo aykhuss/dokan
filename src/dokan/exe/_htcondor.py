@@ -39,29 +39,32 @@ class HTCondorExec(Executor):
 
         job_env = os.environ.copy()
 
-        HTCsubmit = subprocess.run(
-            ["condor_submit", HTCondorExec._file_sub],
-            env=job_env,
-            cwd=self.exe_data.path,
-            capture_output=True,
-            text=True,)
-        # print(HTCsubmit)
-        # > raise error if submission command failed
-        HTCsubmit.check_returncode()
-        # > extract the job id (if submission was successful)
-        cluster_id: int = -1
-        if match_id := re.match(
-            r".*job\(s\) submitted to cluster\s+(\d+).*", HTCsubmit.stdout, re.DOTALL
-        ):
-            cluster_id = int(match_id.group(1))
-            self.exe_data["policy_settings"]["htcondor_id"] = cluster_id
-            self.exe_data.write()
-        else:
-            logger.warn(
-                f"HTCondorExec failed to submit job {self.exe_data['path']} with output {HTCsubmit.stdout} and error {HTCsubmit.stderr}"
+        cluster_id: int = -1  # init failed state
+        re_cluster_id = re.compile(r".*job\(s\) submitted to cluster\s+(\d+).*", re.DOTALL)
+
+        for _ in range(self.exe_data["policy_settings"]["htcondor_nretry"]):
+            condor_submit = subprocess.run(
+                ["condor_submit", HTCondorExec._file_sub],
+                env=job_env,
+                cwd=self.exe_data.path,
+                capture_output=True,
+                text=True,
             )
-            return  # this will flag the task as failed down the line
-        # print(f"[{cluster_id}]: {HTCsubmit.stdout}")
+            if condor_submit.returncode == 0 and (
+                match_id := re.match(re_cluster_id, condor_submit.stdout)
+            ):
+                cluster_id = int(match_id.group(1))
+                self.exe_data["policy_settings"]["htcondor_id"] = cluster_id
+                self.exe_data.write()
+                break
+            else:
+                logger.warn(
+                    f"HTCondorExec failed to submit job {self.exe_data['path']} with output {condor_submit.stdout} and error {condor_submit.stderr}"
+                )
+                time.sleep(self.exe_data["policy_settings"]["htcondor_retry_delay"])
+
+        if cluster_id < 0:
+            return  # failed job
 
         # > now we need to track the job
         self._track_job()
@@ -69,26 +72,35 @@ class HTCondorExec(Executor):
     def _track_job(self):
         job_id: int = self.exe_data["policy_settings"]["htcondor_id"]
         poll_time: float = self.exe_data["policy_settings"]["htcondor_poll_time"]
+        nretry: int = self.exe_data["policy_settings"]["htcondor_nretry"]
+        retry_delay: float = self.exe_data["policy_settings"]["htcondor_retry_delay"]
 
         # match_job_id = re.compile(r"^{:d}".format(job_id))
         # for i in range(10):
         while True:
             time.sleep(poll_time)
 
-            # HTCquery = subprocess.run(["condor_q", "-nobatch", str(self.job_id)], capture_output = True, text = True)
-            # print(HTCquery)
-            # for line in HTCquery.stdout.splitlines():
+            # condor_q = subprocess.run(["condor_q", "-nobatch", str(self.job_id)], capture_output = True, text = True)
+            # print(condor_q)
+            # for line in condor_q.stdout.splitlines():
             #   if re.match(match_job_id, line):
             #     print(line)
+            condor_q_json: dict = {}
+            for _ in range(nretry):
+                condor_q = subprocess.run(
+                    ["condor_q", "-json", str(job_id)], capture_output=True, text=True
+                )
+                if condor_q.returncode == 0:
+                    if condor_q.stdout == "":
+                        return  # job terminated: no longer in queue
+                    condor_q_json = json.loads(condor_q.stdout)
+                    break
+                else:
+                    logger.warn(
+                        f"HTCondorExec failed to query job {job_id} with output {condor_q.stdout} and error {condor_q.stderr}"
+                    )
+                    time.sleep(retry_delay)
 
-            HTCquery = subprocess.run(
-                ["condor_q", "-json", str(job_id)], capture_output=True, text=True
-            )
-            # print(HTCquery)
-            if HTCquery.stdout == "":
-                break
-
-            HTCquery_json = json.loads(HTCquery.stdout)
             # > "JobStatus" codes
             # >  0 Unexpanded  U
             # >  1 Idle  I
@@ -98,7 +110,7 @@ class HTCondorExec(Executor):
             # >  5 Held  H
             # >  6 Submission_err  E
             count_status = [0] * 7
-            for entry in HTCquery_json:
+            for entry in condor_q_json:
                 istatus = entry["JobStatus"]
                 count_status[istatus] += 1
             njobs = sum(count_status)
@@ -109,5 +121,5 @@ class HTCondorExec(Executor):
             # )
 
             if njobs == 0:
-                raise Exception("shouldn't get here")
-                break
+                logger.warn(f"HTCondorExec failed to query job {job_id} with njobs = {njobs}")
+                return

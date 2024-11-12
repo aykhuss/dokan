@@ -198,6 +198,9 @@ def main() -> None:
             console.print(
                 f"[dim]poll_time = {config["exe"]["policy_settings"]["htcondor_poll_time"]!r}s[/dim]"
             )
+            # > set defaults, expert user can edit config.json
+            config["exe"]["policy_settings"]["htcondor_nretry"] = 10
+            config["exe"]["policy_settings"]["htcondor_retry_delay"] = 30.0
 
         new_order: Order = OrderPrompt.ask(
             "order", choices=list(str(o) for o in Order), default=config["run"]["order"]

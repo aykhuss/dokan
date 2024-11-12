@@ -32,6 +32,8 @@ _schema: dict = {
             "local_ncores": int,
             # --- HTCONDOR
             "htcondor_ncores": int,
+            "htcondor_nretry": int,
+            "htcondor_retry_delay": float,
             "htcondor_poll_time": float,
         },
     },
