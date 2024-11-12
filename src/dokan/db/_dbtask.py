@@ -233,8 +233,8 @@ class DBTask(Task, metaclass=ABCMeta):
             # (T_max_job, T_job, njobs, ntot_job)
             result["tot_error_estimate_jobs"] = 0.0
             for part_id, ires in result["part"].items():
-                # > 3.5 sigma buffer but never larger than 50% runtime
-                tau_buf: float = min(3.5 * ires["tau_err"], 0.5 * ires["tau"])
+                # > 5 sigma buffer but never larger than 50% runtime
+                tau_buf: float = min(5 * ires["tau_err"], 0.5 * ires["tau"])
                 if tau_buf == 0.0:  # in case we have no clue: target 50%
                     tau_buf = 0.5 * ires["tau"]
                 # > target runtime for one job corrected for buffer
