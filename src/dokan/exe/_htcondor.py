@@ -17,13 +17,18 @@ logger = logging.getLogger("luigi-interface")
 class HTCondorExec(Executor):
     _file_sub: str = "job.sub"
 
+    @property
+    def resources(self):
+        return {"jobs_concurrent": self.njobs}
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.htcondor_template: Path = Path(__file__).parent.resolve() / "lxplus.template"
         self.file_sub: Path = self.exe_data.path / self._file_sub
+        self.njobs: int = len(self.exe_data["jobs"])
 
     def exe(self):
-        HTCsettings: dict = {
+        condor_settings: dict = {
             "exe": self.exe_data["exe"],
             "job_path": str(self.exe_data.path.absolute()),
             "ncores": self.exe_data["policy_settings"]["htcondor_ncores"]
@@ -35,7 +40,7 @@ class HTCondorExec(Executor):
             "max_runtime": int(self.exe_data["policy_settings"]["max_runtime"]),
         }
         with open(self.htcondor_template, "r") as t, open(self.file_sub, "w") as f:
-            f.write(string.Template(t.read()).substitute(HTCsettings))
+            f.write(string.Template(t.read()).substitute(condor_settings))
 
         job_env = os.environ.copy()
 
@@ -58,12 +63,12 @@ class HTCondorExec(Executor):
                 self.exe_data.write()
                 break
             else:
-                logger.warn(
-                    f"HTCondorExec failed to submit job {self.exe_data['path']} with output {condor_submit.stdout} and error {condor_submit.stderr}"
-                )
+                logger.info(f"HTCondorExec failed to submit job {self.exe_data['path']}:")
+                logger.info(f"{condor_submit.stdout}\n{condor_submit.stderr}")
                 time.sleep(self.exe_data["policy_settings"]["htcondor_retry_delay"])
 
         if cluster_id < 0:
+            logger.warn(f"HTCondorExec failed to submit job {self.exe_data['path']}")
             return  # failed job
 
         # > now we need to track the job
@@ -96,9 +101,8 @@ class HTCondorExec(Executor):
                     condor_q_json = json.loads(condor_q.stdout)
                     break
                 else:
-                    logger.warn(
-                        f"HTCondorExec failed to query job {job_id} with output {condor_q.stdout} and error {condor_q.stderr}"
-                    )
+                    logger.info(f"HTCondorExec failed to query job {job_id}:")
+                    logger.info(f"{condor_q.stdout}\n{condor_q.stderr}")
                     time.sleep(retry_delay)
 
             # > "JobStatus" codes

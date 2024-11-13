@@ -19,7 +19,10 @@ class LocalExec(Executor):
 
     @property
     def resources(self):
-        return {"local_ncores": self.local_ncores}
+        return {
+            "local_ncores": self.local_ncores,
+            "jobs_concurrent": self.local_ncores,
+        }
 
 
 class BatchLocalExec(LocalExec):

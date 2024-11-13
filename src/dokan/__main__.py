@@ -346,7 +346,12 @@ def main() -> None:
             ],
             worker_scheduler_factory=dokan.WorkerSchedulerFactory(
                 # @todo properly set resources according to config
-                resources={"local_ncores": local_ncores, "DBTask": cpu_count + 1, "DBDispatch": 1},
+                resources={
+                    "local_ncores": local_ncores,
+                    "jobs_concurrent": config["run"]["jobs_max_concurrent"],
+                    "DBTask": cpu_count + 1,
+                    "DBDispatch": 1,
+                },
                 cache_task_completion=False,
                 check_complete_on_run=False,
                 check_unfulfilled_deps=True,
