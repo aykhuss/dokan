@@ -185,6 +185,7 @@ class Runcard:
         """
         kill_matches = [
             # > kill symbol that will be inserted
+            re.compile(r"\s*${sweep}"),
             re.compile(r"\s*${run}"),
             re.compile(r"\s*${channels}"),
             re.compile(r"\s*${channels_region}"),
@@ -217,6 +218,7 @@ class Runcard:
                     if re.match(r"^\s*$", line):
                         continue
                 if re.match(r"^\s*END_RUN", line, re.IGNORECASE):
+                    t.write("  ${sweep}\n")
                     t.write("  ${run}\n")
                 if re.match(r"^\s*END_CHANNELS", line, re.IGNORECASE):
                     t.write("  ${channels}\n")

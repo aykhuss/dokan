@@ -20,7 +20,7 @@ RUN  example_run_Z_8TeV
   scale_coefficients = .true.
   multi_channel = 2
   iseed   = 1
-  ${sweep}
+  production = 123[auto]
 END_RUN
 
 
