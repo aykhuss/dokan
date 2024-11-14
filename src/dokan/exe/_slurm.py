@@ -5,6 +5,7 @@ import logging
 import string
 import os
 import json
+import datetime
 
 from pathlib import Path
 
@@ -37,7 +38,8 @@ class SlurmExec(Executor):
             "start_seed": min(job["seed"] for job in self.exe_data["jobs"].values()),
             "nseed": len(self.exe_data["jobs"]),
             "input_files": ", ".join(self.exe_data["input_files"]),
-            "max_runtime": int(self.exe_data["policy_settings"]["max_runtime"]),
+            "max_runtime": str(datetime.timedelta(seconds=int(self.exe_data["policy_settings"]["max_runtime"])))
+            #"max_runtime": int(self.exe_data["policy_settings"]["max_runtime"]),
         }
         with open(self.slurm_template, "r") as t, open(self.file_sub, "w") as f:
             f.write(string.Template(t.read()).substitute(slurm_settings))
@@ -45,7 +47,7 @@ class SlurmExec(Executor):
         job_env = os.environ.copy()
 
         cluster_id: int = -1  # init failed state
-        re_cluster_id = re.compile(r".*job\(s\) submitted to cluster\s+(\d+).*", re.DOTALL)
+        re_cluster_id = re.compile(r"Submitted batch job\s+(\d+).*", re.DOTALL)
 
         for _ in range(self.exe_data["policy_settings"]["slurm_nretry"]):
             slurm_submit = subprocess.run(
@@ -93,36 +95,17 @@ class SlurmExec(Executor):
             squeue_json: dict = {}
             for _ in range(nretry):
                 squeue = subprocess.run(
-                    ["squeue", "-h --job", str(job_id)], capture_output=True, text=True
+                    ["squeue", "-h", "--job", str(job_id)], capture_output=True, text=True
                 )
                 if squeue.returncode == 0:
                     if squeue.stdout == "":
                         return  # job terminated: no longer in queue
-                    squeue_json = json.loads(squeue.stdout)
+                    njobs = squeue.stdout.count("\n")
                     break
                 else:
                     logger.info(f"SlurmExec failed to query job {job_id}:")
                     logger.info(f"{squeue.stdout}\n{squeue.stderr}")
                     time.sleep(retry_delay)
-
-            # > "JobStatus" codes
-            # >  0 Unexpanded  U
-            # >  1 Idle  I
-            # >  2 Running R
-            # >  3 Removed X
-            # >  4 Completed C
-            # >  5 Held  H
-            # >  6 Submission_err  E
-            count_status = [0] * 7
-            for entry in squeue_json:
-                istatus = entry["JobStatus"]
-                count_status[istatus] += 1
-            njobs = sum(count_status)
-            # print(
-            #     "job[{:d}] status: R:{:d}  I:{:d}  [total:{:d}]".format(
-            #         job_id, count_status[2], count_status[1], njobs
-            #     )
-            # )
 
             if njobs == 0:
                 logger.warn(f"SlurmExec failed to query job {job_id} with njobs = {njobs}")
