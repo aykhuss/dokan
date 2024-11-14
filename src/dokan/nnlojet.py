@@ -10,6 +10,7 @@ from os import PathLike
 
 from .order import Order
 
+
 def get_lumi(exe: PathLike, proc: str) -> dict:
     """get channels for an NNLOJET process
 
@@ -39,9 +40,9 @@ def get_lumi(exe: PathLike, proc: str) -> dict:
     RuntimeError
         encountered parsing error of the -listobs output
     """
-    exe_out = subprocess.run(
-        [exe, "-listlumi", proc], capture_output=True, text=True, check=True
-    )
+    exe_out = subprocess.run([exe, "-listlumi", proc], capture_output=True, text=True, check=True)
+    if exe_out.returncode != 0:
+        raise RuntimeError(f"get_lumi: failed calling NNLOJET: {exe_out.stderr}")
     chan_list = dict()
     for line in exe_out.stdout.splitlines():
         if not re.search(r" ! channel: ", line):
@@ -65,6 +66,9 @@ def get_lumi(exe: PathLike, proc: str) -> dict:
         else:
             raise RuntimeError("couldn't parse channel line")
         chan_list[label] = chan
+    if not chan_list:
+        print(f"could not parse luminoisty channels from NNLOJET: \n{exe_out.stdout}")
+        raise RuntimeError("get_lumi: no luminosity channels parsed")
     return chan_list
 
 
@@ -76,9 +80,7 @@ def parse_log_file(log_file: PathLike) -> dict:
     with open(log_file, "r") as lf:
         iteration = {}
         for line in lf:
-            match_iteration = re.search(
-                r"\(\s*iteration\s+(\d+)\s*\)", line, re.IGNORECASE
-            )
+            match_iteration = re.search(r"\(\s*iteration\s+(\d+)\s*\)", line, re.IGNORECASE)
             if match_iteration:
                 iteration["iteration"] = int(match_iteration.group(1))
             match_integral = re.search(
@@ -97,9 +99,7 @@ def parse_log_file(log_file: PathLike) -> dict:
             if match_stddev:
                 iteration["error"] = float(match_stddev.group(1))
                 iteration["error_acc"] = float(match_stddev.group(2))
-            match_chi2it = re.search(
-                r"\schi\*\*2/iteration\s*=\s*(\S+)\b", line, re.IGNORECASE
-            )
+            match_chi2it = re.search(r"\schi\*\*2/iteration\s*=\s*(\S+)\b", line, re.IGNORECASE)
             if match_chi2it:
                 iteration["chi2dof"] = float(match_chi2it.group(1))
                 job_data["iterations"].append(iteration)
@@ -119,7 +119,7 @@ def parse_log_file(log_file: PathLike) -> dict:
                 else:
                     raise RuntimeError("unknown time unit")
                 job_data["elapsed_time"] = fac_time * float(match_elapsed_time.group(1))
-                #> the accumulated results
+                # > the accumulated results
                 job_data["result"] = job_data["iterations"][-1]["result_acc"]
                 job_data["error"] = job_data["iterations"][-1]["error_acc"]
                 job_data["chi2dof"] = job_data["iterations"][-1]["chi2dof"]
