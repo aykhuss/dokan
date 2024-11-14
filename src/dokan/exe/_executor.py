@@ -31,7 +31,7 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         # > local import to avoid cyclic dependence
         from ._local import BatchLocalExec
         from ._htcondor import HTCondorExec
-        #from ._slurm import SlurmExec
+        from ._slurm import SlurmExec
 
         if policy == ExecutionPolicy.LOCAL:
             # print(f"factory: BatchLocalExec ...")
@@ -40,8 +40,8 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         if policy == ExecutionPolicy.HTCONDOR:
             return HTCondorExec(*args, **kwargs)
 
-        # if policy == ExecutionPolicy.SLURM:
-        #     return SlurmExec(*args, **kwargs)
+        if policy == ExecutionPolicy.SLURM:
+            return SlurmExec(*args, **kwargs)
 
         raise TypeError(f"invalid ExecutionPolicy: {policy!r}")
 

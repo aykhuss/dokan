@@ -196,11 +196,30 @@ def main() -> None:
                 console.print("please enter a positive value")
             config["exe"]["policy_settings"]["htcondor_poll_time"] = new_poll_time
             console.print(
-                f"[dim]poll_time = {config["exe"]["policy_settings"]["htcondor_poll_time"]!r}s[/dim]"
+                f"[dim]poll_time = {config['exe']['policy_settings']['htcondor_poll_time']!r}s[/dim]"
             )
             # > set defaults, expert user can edit config.json
             config["exe"]["policy_settings"]["htcondor_nretry"] = 10
             config["exe"]["policy_settings"]["htcondor_retry_delay"] = 30.0
+
+        if config["exe"]["policy"] == ExecutionPolicy.SLURM:
+            while True:
+                new_poll_time: float = TimeIntervalPrompt.ask(
+                    "time interval between pinging slurm scheduler for job updates",
+                    default=config["exe"]["policy_settings"]["slurm_poll_time"]
+                    if "slurm_poll_time" in config["exe"]["policy_settings"]
+                    else 10.0,
+                )
+                if new_poll_time > 0.0:
+                    break
+                console.print("please enter a positive value")
+            config["exe"]["policy_settings"]["slurm_poll_time"] = new_poll_time
+            console.print(
+                f"[dim]poll_time = {config['exe']['policy_settings']['slurm_poll_time']!r}s[/dim]"
+            )
+            # > set defaults, expert user can edit config.json
+            config["exe"]["policy_settings"]["slurm_nretry"] = 10
+            config["exe"]["policy_settings"]["slurm_retry_delay"] = 30.0
 
         new_order: Order = OrderPrompt.ask(
             "order", choices=list(str(o) for o in Order), default=config["run"]["order"]

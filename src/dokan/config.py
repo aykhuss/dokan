@@ -35,6 +35,11 @@ _schema: dict = {
             "htcondor_nretry": int,
             "htcondor_retry_delay": float,
             "htcondor_poll_time": float,
+            # --- SLURM
+            "slurm_ncores": int,
+            "slurm_nretry": int,
+            "slurm_retry_delay": float,
+            "slurm_poll_time": float,
         },
     },
     "run": {

@@ -1,0 +1,16 @@
+############
+# Slurm submission template
+############
+#!/bin/bash
+
+#SBATCH -a=1-${nseed}
+
+jobseed = "$$(($$SLURM_ARRAY_TASK_ID+${start_seed}))"
+
+#SBATCH --cpu-per-task=1
+##SBATCH --partition=${partition} 
+#SBATCH --time=${max_runtime}
+#SBATCH --output=job.s$jobseed.out  
+#SBATCH --error=job.s$jobseed.err
+
+srun ${exe} -run job.run -iseed $jobseed
