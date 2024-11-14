@@ -272,8 +272,8 @@ def make_bib(proc: str, destination: PathLike) -> tuple[Path, Path]:
     if proc not in procs:
         raise ValueError(f"make_bib: cannot recognise process {proc}")
 
-    bibout: Path = dest_path / f"references_{original_proc}.bib"
-    bibtex: Path = dest_path / f"references_{original_proc}.tex"
+    bibout: Path = dest_path / f"NNLOJET_references_{original_proc}.bib"
+    bibtex: Path = dest_path / f"NNLOJET_references_{original_proc}.tex"
 
     with open(bibout, "w") as bib:
         for type in procs[proc].keys():

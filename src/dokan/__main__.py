@@ -141,7 +141,7 @@ def main() -> None:
         #     syntx = Syntax(bib.read(), "bibtex")
         #     console.print(syntx)
         with open(bibtex, "r") as bib:
-            syntx = Syntax(bib.read(), "tex")
+            syntx = Syntax(bib.read(), "tex", word_wrap=True)
             console.print(syntx)
         # @todo please confirm that you will cite these references in you work
 
