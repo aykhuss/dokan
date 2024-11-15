@@ -85,7 +85,7 @@ class DBTask(Task, metaclass=ABCMeta):
 
     def logger(self, message: str, level: LogLevel = LogLevel.INFO) -> None:
         if level >= 0 and level < self.config["ui"]["log_level"]:
-            # > negative values are signals that I want passed *always*
+            # > negative values are signals: always pass through
             return
         if not self.config["ui"]["monitor"]:
             dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -267,9 +267,9 @@ class DBTask(Task, metaclass=ABCMeta):
 
 
 class DBInit(DBTask):
-    """initialization of the `parts` database table
+    """initialization of the databases
 
-    create a database if it does not yet exist. populate the `parts` table
+    create databases if they do not exist yet. populate the `parts` table
     with the channels information and set the `active` state according to
     the requested order.
 
@@ -299,7 +299,6 @@ class DBInit(DBTask):
                     for log in log_session.scalars(select(Log)):
                         log_session.delete(log)
                     log_session.commit()
-
 
     def complete(self) -> bool:
         with self.session as session:

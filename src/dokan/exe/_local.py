@@ -1,20 +1,29 @@
+"""NNLOJET execution on the local machine
+
+implementation of the backend for ExecutionPolicy.LOCAL
+"""
+
 import luigi
 import subprocess
-import json
 import os
-import re
-from time import time
+import logging
+
 from pathlib import Path
 
 from ._executor import Executor
 
+logger = logging.getLogger("luigi-interface")
 
-# > just a master class to collect common properties for local execution
+
 class LocalExec(Executor):
-    """Execution on the local machine"""
+    """Abstract base class for local execution
 
-    # > only runs *one* seed: extra argument to pick the job,
-    # > DBRunner responsible to dispatch a task for each seed!
+    Attributes
+    ----------
+    local_ncores : int
+        number of cores to use on the local machine
+    """
+
     local_ncores: int = luigi.OptionalIntParameter(default=1)
 
     @property
@@ -26,28 +35,32 @@ class LocalExec(Executor):
 
 
 class BatchLocalExec(LocalExec):
-    """Batch execution on the local machine"""
+    """Wrapper task to batch-execute multiple local jobs"""
 
     def requires(self):
-        # print(f"BatchLocalExec: requires {[job_id for job_id in self.exe_data["jobs"].keys()]}")
         return [
             self.clone(cls=SingleLocalExec, job_id=job_id)
             for job_id in self.exe_data["jobs"].keys()
         ]
 
     def exe(self):
-        # print(f"BatchLocalExec: exe {self.path}")
         pass
 
 
 class SingleLocalExec(LocalExec):
-    """Execution of a *single* job on the local machine"""
+    """Task to execute a *single* job on the local machine
+
+    Attributes
+    ----------
+    job_id : int
+        id of the job defined in exe_data to execute
+    """
 
     job_id: int = luigi.IntParameter()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # > use dict.get() -> int | None for non-throwing access
+        # > use dict.get() -> int | None for non-throwing access?
         self.seed: int = self.exe_data["jobs"][self.job_id]["seed"]
         # > extra output & error files
         self.file_out: Path = Path(self.path) / f"job.s{self.seed}.out"
@@ -57,13 +70,10 @@ class SingleLocalExec(LocalExec):
         return [luigi.LocalTarget(self.file_out)]
 
     def exe(self):
-        # print(f"SingleLocalExec: exe {self.path}")
-        # > should never run since we overwrote run!
-        raise RuntimeError("SingleLocalExec: exe should never be called")
+        # > should never run since `run` is overloaded
+        raise RuntimeError("SingleLocalExec::exe: should never be called")
 
     def run(self):
-        # print(f"SingleLocalExec: run {self.path}")
-
         job_env = os.environ.copy()
         job_env["OMP_NUM_THREADS"] = "{}".format(self.local_ncores)
         job_env["OMP_STACKSIZE"] = "1024M"
@@ -84,5 +94,5 @@ class SingleLocalExec(LocalExec):
                 text=True,
             )
             if exec_out.returncode != 0:
-                # raise RuntimeError("NNLOJET exited with an error")
-                return  # safer way to exit -> Task will be flagged as "failed"
+                logger.warn(f"SingleLocalExec failed to execute job {self.path}")
+                return  # job will be flagged "failed"

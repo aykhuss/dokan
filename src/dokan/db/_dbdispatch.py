@@ -69,8 +69,9 @@ class DBDispatch(DBTask):
                 niter: int = self.config["production"]["niter"]
                 ncall: int = opt["ntot_job"] // niter
                 if ncall * niter == 0:
-                    self.info(f"part {part_id} has ntot={opt['ntot_job']} -> 0 = {ncall} * {niter}")
-                    return []
+                    self.logger(f"part {part_id} has ntot={opt['ntot_job']} -> 0 = {ncall} * {niter}")
+                    ncall = self.config["production"]["ncall_start"]
+                    # return []
                 jobs: list[Job] = [
                     Job(
                         run_tag=self.run_tag,

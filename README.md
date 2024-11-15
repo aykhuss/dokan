@@ -32,14 +32,14 @@ cd dokan
 ```
 You can either install the tool using `pip` or `uv`.
 
-#### `pip`
+#### Install using `pip`
 Within the repository directory, run (add `--force-reinstall` if necessary)
 ```shell
 pip install -e .
 ```
 This should install the `nnlojet-run` command for you.
 
-#### `uv`
+#### Install using `uv`
 [`uv`](https://docs.astral.sh/uv/) is a modern and more powerful alternative to `pip`.
 `dokan` can be installed by running within the repository directory (add `--force` if necessary):
 ```shell

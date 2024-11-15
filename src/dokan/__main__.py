@@ -358,7 +358,7 @@ def main() -> None:
                 wait_interval=0.1,
             ),
             detailed_summary=True,
-            workers=max(cpu_count + 1, nactive),
+            workers=min(cpu_count, nactive) + 1,
             local_scheduler=True,
             log_level="WARNING",
         )  # 'WARNING', 'INFO', 'DEBUG''
