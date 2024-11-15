@@ -43,8 +43,8 @@ class Order(IntEnum):
 
         Returns
         -------
-        [type]
-            `Order` type associated with the `part`
+        [Order]
+            type associated with the `part`
 
         Raises
         ------
@@ -61,10 +61,10 @@ class Order(IntEnum):
             return Order.NNLO
         if s.upper() in ["NNLO_ONLY", "DNNLO", "VV", "RV", "RR", "RRA", "RRB"]:
             return Order.NNLO_ONLY
-        if s.upper() == "N3LO":
-            return Order.N3LO
-        if s.upper() in ["N3LO_ONLY", "DN3LO"]:
-            return Order.N3LO_ONLY
+        # if s.upper() == "N3LO":
+        #     return Order.N3LO
+        # if s.upper() in ["N3LO_ONLY", "DN3LO"]:
+        #     return Order.N3LO_ONLY
         raise ValueError(f"Order::partparse: unknown part: {s}")
 
     def is_in(self, other) -> bool:

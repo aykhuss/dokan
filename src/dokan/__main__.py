@@ -143,7 +143,11 @@ def main() -> None:
         with open(bibtex, "r") as bib:
             syntx = Syntax(bib.read(), "tex", word_wrap=True)
             console.print(syntx)
-        # @todo please confirm that you will cite these references in you work
+        console.print(
+            "When using results obtained with this software, you are required to cite the relevant references."
+        )
+        if not Confirm.ask("Please confirm that you agree to these terms"):
+            sys.exit("failed to agree with the terms of use")
 
         config["exe"]["path"] = nnlojet_exe
         config["run"]["dokan_version"] = __version__
@@ -281,7 +285,9 @@ def main() -> None:
                 )
                 if new_poll_time > 10.0 and new_poll_time < max_runtime / 2:
                     break
-                console.print(f"please enter a positive value between [10, {max_runtime/2}] seconds")
+                console.print(
+                    f"please enter a positive value between [10, {max_runtime/2}] seconds"
+                )
             config["exe"]["policy_settings"][f"{cluster}_poll_time"] = new_poll_time
             console.print(
                 f"[dim]poll_time = {config['exe']['policy_settings'][f'{cluster}_poll_time']!r}s[/dim]"
