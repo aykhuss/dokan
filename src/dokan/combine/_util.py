@@ -9,6 +9,8 @@ from ._algo import is_outlier_IQR, is_outlier_MAD, is_outlier_doubleMAD, is_outl
 
 _comment_prefix = "#"
 
+logger = logging.getLogger("luigi-interface")
+
 
 class NNLOJETHistogram:
     def __init__(self, **kwargs):
@@ -111,7 +113,7 @@ class NNLOJETHistogram:
 
         # > warning if no labels line could be found
         if self._labels is None:
-            logging.warning("WARNING: couldn't find a labels line {}".format(self.filename))
+            logger.warn("couldn't find a labels line {}".format(self.filename))
             return
 
         # > default init
@@ -358,13 +360,13 @@ class NNLOJETHistogram:
 
         # > warning if all entries are zero
         if (not np.any(self._yval)) and (not np.any(self._yerr)):
-            logging.warning("WARNING: all entries zero for {}".format(self.filename))
+            logger.info("all entries zero for {}".format(self.filename))
 
         # > warning if nan or inf
         if np.any(np.logical_not(np.isfinite(self._yval))) or np.any(
             np.logical_not(np.isfinite(self._yerr))
         ):
-            logging.warning("WARNING: NaN or Inf encountered in {}".format(self.filename))
+            logger.warn("NaN or Inf encountered in {}".format(self.filename))
 
     def _load_wgt(self):
         if self.filename_wgt is None:
