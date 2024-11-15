@@ -6,22 +6,23 @@ collection of helper functions to parse and manipulate NNLOJET runcards
 import re
 import string
 from enum import IntFlag, auto
-from os import PathLike
 from pathlib import Path
+
+from ._types import GenericPath
 
 
 class RuncardTemplate:
-    def __init__(self, template: PathLike) -> None:
+    def __init__(self, template: GenericPath) -> None:
         self.template: Path = Path(template)
 
         if not self.template.exists() or not self.template.is_file():
             raise ValueError(f"{self.template} not found?!")
 
-    def fill(self, target: PathLike, **kwargs) -> None:
+    def fill(self, target: GenericPath, **kwargs) -> None:
         RuncardTemplate.fill_template(target, self.template, **kwargs)
 
     @staticmethod
-    def fill_template(runcard: PathLike, template: PathLike, **kwargs):
+    def fill_template(runcard: GenericPath, template: GenericPath, **kwargs):
         """create an NNLOJET runcard from a template.
 
         parse the runcard and inject variables that can be ppopulated late.
@@ -32,9 +33,9 @@ class RuncardTemplate:
 
         Parameters
         ----------
-        runcard : PathLike
+        runcard : GenericPath
             NNLOJET runcard file to write out
-        template : PathLike
+        template : GenericPath
             The template file to use
         **kwargs
             values for the variables in the template to be substituted.
@@ -58,18 +59,18 @@ class RuncardBlockFlag(IntFlag):
 
 
 class Runcard:
-    def __init__(self, runcard: PathLike) -> None:
+    def __init__(self, runcard: GenericPath) -> None:
         self.runcard = Path(runcard)
         if not self.runcard.exists() or not self.runcard.is_file():
             raise ValueError(f"{runcard} does not exist?!")
         self.data: dict = Runcard.parse_runcard(self.runcard)
 
-    def to_tempalte(self, template: PathLike) -> RuncardTemplate:
+    def to_tempalte(self, template: GenericPath) -> RuncardTemplate:
         Runcard.runcard_to_template(self.runcard, template)
         return RuncardTemplate(template)
 
     @staticmethod
-    def parse_runcard(runcard: PathLike) -> dict:
+    def parse_runcard(runcard: GenericPath) -> dict:
         """parse an NNLOJET runcard
 
         Extract settings for a calculation and return as a dictionary
@@ -79,7 +80,7 @@ class Runcard:
 
         Parameters
         ----------
-        runcard : PathLike
+        runcard : GenericPath
             A NNLOJET runcard file
 
         Returns
@@ -162,7 +163,7 @@ class Runcard:
         return runcard_data
 
     @staticmethod
-    def runcard_to_template(runcard: PathLike, template: PathLike) -> None:
+    def runcard_to_template(runcard: GenericPath, template: GenericPath) -> None:
         """create an NNLOJET runcard template file from a generic runcard.
 
         parse the runcard and inject variables that can be ppopulated late.
@@ -173,9 +174,9 @@ class Runcard:
 
         Parameters
         ----------
-        runcard : PathLike
+        runcard : GenericPath
             A NNLOJET runcard file
-        template : PathLike
+        template : GenericPath
             The template file to write ou
 
         Raises

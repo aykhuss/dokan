@@ -1,3 +1,8 @@
+"""NNLOJET execution on HTCondor
+
+implementation of the backend for ExecutionPolicy.HTCONDOR
+"""
+
 import re
 import time
 import subprocess
@@ -10,13 +15,21 @@ from pathlib import Path
 
 from .._executor import Executor
 
-
 logger = logging.getLogger("luigi-interface")
 
 
 class HTCondorExec(Executor):
+    """Task to execute batch jobs on HTCondor
+
+    Attributes
+    ----------
+    _file_sub : str
+        name of the HTCondor submisison file
+    """
+
     _file_sub: str = "job.sub"
 
+    # @todo consider using `concurrency_limits` instead?
     @property
     def resources(self):
         return {"jobs_concurrent": self.njobs}
@@ -24,10 +37,19 @@ class HTCondorExec(Executor):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.htcondor_template: Path = Path(__file__).parent.resolve() / "lxplus.template"
-        self.file_sub: Path = self.exe_data.path / self._file_sub
+        self.file_sub: Path = Path(self.path) / self._file_sub
         self.njobs: int = len(self.exe_data["jobs"])
 
     def exe(self):
+        # > recovery mode
+        if (
+            "htcondor_id" in self.exe_data["policy_settings"]
+            and self.exe_data["policy_settings"]["htcondor_id"] > 0
+        ):
+            self._track_job()
+            return
+
+        # > start new submission
         condor_settings: dict = {
             "exe": self.exe_data["exe"],
             "job_path": str(self.exe_data.path.absolute()),
@@ -35,7 +57,7 @@ class HTCondorExec(Executor):
             if "htcondor_ncores" in self.exe_data["policy_settings"]
             else 1,
             "start_seed": min(job["seed"] for job in self.exe_data["jobs"].values()),
-            "nseed": len(self.exe_data["jobs"]),
+            "nseed": self.njobs,
             "input_files": ", ".join(self.exe_data["input_files"]),
             "max_runtime": int(self.exe_data["policy_settings"]["max_runtime"]),
         }
@@ -43,6 +65,8 @@ class HTCondorExec(Executor):
             f.write(string.Template(t.read()).substitute(condor_settings))
 
         job_env = os.environ.copy()
+        job_env["OMP_NUM_THREADS"] = "{}".format(condor_settings["ncores"])
+        job_env["OMP_STACKSIZE"] = "1024M"
 
         cluster_id: int = -1  # init failed state
         re_cluster_id = re.compile(r".*job\(s\) submitted to cluster\s+(\d+).*", re.DOTALL)

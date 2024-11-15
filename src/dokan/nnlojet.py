@@ -5,13 +5,12 @@ helperfunctions to extract information from NNLOJET
 
 import re
 import subprocess
-from os import PathLike
 
-
+from ._types import GenericPath
 from .order import Order
 
 
-def get_lumi(exe: PathLike, proc: str) -> dict:
+def get_lumi(exe: GenericPath, proc: str) -> dict:
     """get channels for an NNLOJET process
 
     get the channels with the "part" & "lumi" information collected in groups
@@ -19,7 +18,7 @@ def get_lumi(exe: PathLike, proc: str) -> dict:
 
     Parameters
     ----------
-    exe : PathLike
+    exe : GenericPath
         path to the NNLOJET executable
     proc : str
         NNLOJET process name
@@ -72,8 +71,25 @@ def get_lumi(exe: PathLike, proc: str) -> dict:
     return chan_list
 
 
-def parse_log_file(log_file: PathLike) -> dict:
-    # > return value follows the structure of ExeData["jobs"][<id>]["iterations"]
+def parse_log_file(log_file: GenericPath) -> dict:
+    """parse information from an NNLOJET log file
+
+    Parameters
+    ----------
+    log_file : GenericPath
+        path to the log file
+
+    Returns
+    -------
+    dict
+        parsed information as a dictionary following the structure of:
+        ExeData["jobs"][<id>]["iterations"]
+
+    Raises
+    ------
+    RuntimeError
+        encountered parsing error of log file
+    """
     job_data: dict = {}
     job_data["iterations"] = []
     # > parse the output file to extract some information
@@ -128,5 +144,5 @@ def parse_log_file(log_file: PathLike) -> dict:
 
 
 # @ todo
-def grid_score(grid_file: PathLike) -> float:
+def grid_score(grid_file: GenericPath) -> float:
     return 42.0

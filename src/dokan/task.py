@@ -4,9 +4,11 @@ sub-class of a luigi Task to impose mandatory attributes to a workflow task.
 """
 
 import luigi
+
 from luigi.parameter import ParameterVisibility
 from pathlib import Path
-from os import PathLike
+
+from ._types import GenericPath
 
 
 class Task(luigi.Task):
@@ -35,7 +37,7 @@ class Task(luigi.Task):
 
     # @todo: maybe add a _post_init_ routine that can be overwritten on a task basis?
 
-    def _local(self, *path: PathLike) -> Path:
+    def _local(self, *path: GenericPath) -> Path:
         """get the "Task local" path
 
         take path and append to local path of the dokan task.

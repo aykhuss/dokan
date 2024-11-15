@@ -15,10 +15,9 @@ import json
 import shutil
 import time
 from pathlib import Path
-from os import PathLike
-
 
 from ._exe_config import ExecutionMode, ExecutionPolicy
+from .._types import GenericPath
 from ..util import validate_schema
 
 # > deifne our own schema:
@@ -44,7 +43,7 @@ _schema: dict = {
         "slurm_ncores": int,
         "slurm_nretry": int,
         "slurm_retry_delay": float,
-        "slurm_poll_time": float, 
+        "slurm_poll_time": float,
     },
     "ncall": int,
     "niter": int,
@@ -80,7 +79,7 @@ class ExeData(UserDict):
     _file_tmp: str = "job.tmp"
     _file_fin: str = "job.json"
 
-    def __init__(self, path: PathLike, *args, **kwargs):
+    def __init__(self, path: GenericPath, *args, **kwargs):
         expect_tmp: bool = kwargs.pop("expect_tmp", False)
         # @todo: pass a path to a folder and automatically create a
         # tmp file if not existent, otherwise load file and go from there.

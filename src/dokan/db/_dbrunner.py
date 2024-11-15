@@ -69,14 +69,12 @@ class DBRunner(DBTask):
                 exe_data["mode"] = ExecutionMode(db_job.mode)
                 exe_data["policy"] = ExecutionPolicy(db_job.policy)
                 # > add policy settings
-                exe_data["policy_settings"] = {
-                    "max_runtime": self.config["run"]["job_max_runtime"]
-                }
+                exe_data["policy_settings"] = {"max_runtime": self.config["run"]["job_max_runtime"]}
                 # if db_job.policy == ExecutionPolicy.LOCAL:
                 #     exe_data["policy_settings"]["local_ncores"] = 1
                 # elif db_job.policy == ExecutionPolicy.HTCONDOR:
                 #     exe_data["policy_settings"]["htcondor_id"] = 42
-                for k,v in self.config["exe"]["policy_settings"].items():
+                for k, v in self.config["exe"]["policy_settings"].items():
                     exe_data["policy_settings"][k] = v
                 # exe_data["policy_settings"] = self.config["exe"]["policy_settings"]
                 if (db_job.ncall * db_job.niter) == 0:
@@ -114,7 +112,7 @@ class DBRunner(DBTask):
                 if last_warm:
                     if not last_warm.rel_path:
                         raise RuntimeError(f"last warmup {last_warm.id} has no path")
-                    last_warm_path: Path = self._path / last_warm.rel_path
+                    last_warm_path: Path = self._local(last_warm.rel_path)
                     last_warm_data: ExeData = ExeData(last_warm_path)
                     if not last_warm_data.is_final:
                         raise RuntimeError(f"last warmup {last_warm.id} is not final")
@@ -143,10 +141,11 @@ class DBRunner(DBTask):
                 session.commit()
             # self.logger(f"DBRunner[{self.id}]: checking {db_job.rel_path}")
             yield Executor.factory(
-                policy=ExecutionPolicy(db_job.policy), path=str(self._path / db_job.rel_path)
+                policy=ExecutionPolicy(db_job.policy),
+                path=str(self._local(db_job.rel_path).absolute()),
             )
             # > parse the retun data
-            exe_data = ExeData(self._path / db_job.rel_path)
+            exe_data = ExeData(self._local(db_job.rel_path))
             if not exe_data.is_final:
                 raise RuntimeError(f"{db_job.id} is not final?!\n{exe_data.path}\n{exe_data.data}")
             if "result" in exe_data["jobs"][db_job.id]:

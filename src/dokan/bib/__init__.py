@@ -17,10 +17,10 @@
 ###
 ###
 
-from ._references import references
-import sys
 from pathlib import Path
-from os import PathLike
+
+from ._references import references
+from .._types import GenericPath
 
 ### common reference blocks
 
@@ -257,7 +257,7 @@ simplify_names = {
 }
 
 
-def make_bib(proc: str, destination: PathLike) -> tuple[Path, Path]:
+def make_bib(proc: str, destination: GenericPath) -> tuple[Path, Path]:
     dest_path: Path = Path(destination)
     if not dest_path.exists():
         dest_path.mkdir(parents=True)

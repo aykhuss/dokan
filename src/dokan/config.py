@@ -14,8 +14,8 @@ _schema : dict
 from collections import UserDict
 import json
 from pathlib import Path
-from os import PathLike
 
+from ._types import GenericPath
 from .util import validate_schema
 from .exe import ExecutionPolicy
 from .order import Order
@@ -142,7 +142,7 @@ class Config(UserDict):
         if not self.is_valid():
             raise ValueError(f"ExeData scheme forbids: {key} : {item}")
 
-    def set_path(self, path: PathLike, load: bool = False) -> None:
+    def set_path(self, path: GenericPath, load: bool = False) -> None:
         self.path: Path = Path(path)
         if not self.path.exists():
             self.path.mkdir(parents=True)
