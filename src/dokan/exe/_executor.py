@@ -1,7 +1,7 @@
 """NNLOJET execution interface
 
-defines an abstraction based on a factory design pattern
-to execute NNLOJET on different backends ("policies")
+defines an abstraction to execute NNLOJET on different backends (policies)
+a factory design pattern to obtain tasks for the different policies
 """
 
 import luigi
@@ -12,7 +12,7 @@ import time
 from abc import ABCMeta, abstractmethod
 from pathlib import Path
 
-from ._exe_config import ExecutionPolicy
+from ._exe_config import ExecutionMode, ExecutionPolicy
 from ._exe_data import ExeData
 from ..nnlojet import parse_log_file
 
@@ -20,19 +20,6 @@ logger = logging.getLogger("luigi-interface")
 
 
 class Executor(luigi.Task, metaclass=ABCMeta):
-    """Abstract base class to define a generic NNLOJET execution
-
-    wrapper for a generic NNLOJET execution using a factroy design pattern
-    to generate new tasks for different execution policies.
-    luigi `run` method abstracts away common logic to interface with the
-    dokan workflow and executors must implement the `exe` method.
-
-    Attributes
-    ----------
-    path : str
-        the path of the NNLOJET job that is to be executed
-    """
-
     path: str = luigi.Parameter()
 
     def __init__(self, *args, **kwargs):
@@ -44,7 +31,7 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         # > local import to avoid cyclic dependence
         from ._local import BatchLocalExec
         from ._htcondor import HTCondorExec
-        # from ._slurm import SlurmExec
+        from ._slurm import SlurmExec
 
         if policy == ExecutionPolicy.LOCAL:
             # print(f"factory: BatchLocalExec ...")
@@ -53,8 +40,8 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         if policy == ExecutionPolicy.HTCONDOR:
             return HTCondorExec(*args, **kwargs)
 
-        # if policy == ExecutionPolicy.SLURM:
-        #     return SlurmExec(*args, **kwargs)
+        if policy == ExecutionPolicy.SLURM:
+            return SlurmExec(*args, **kwargs)
 
         raise TypeError(f"invalid ExecutionPolicy: {policy!r}")
 
