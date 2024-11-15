@@ -281,7 +281,7 @@ def main() -> None:
                 )
                 if new_poll_time > 10.0 and new_poll_time < max_runtime / 2:
                     break
-                console.print("please enter a positive value between [10, {max_runtime/2}] seconds")
+                console.print(f"please enter a positive value between [10, {max_runtime/2}] seconds")
             config["exe"]["policy_settings"][f"{cluster}_poll_time"] = new_poll_time
             console.print(
                 f"[dim]poll_time = {config['exe']['policy_settings'][f'{cluster}_poll_time']!r}s[/dim]"
