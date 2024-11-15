@@ -159,6 +159,9 @@ class MergePart(DBMerge):
             #     for in_file in in_files:
             #         out.write(str(in_file))
 
+        if not self.force:
+            yield self.clone(cls=MergeAll)
+
 
 class MergeAll(DBMerge):
     # > merge all `Part` objects
