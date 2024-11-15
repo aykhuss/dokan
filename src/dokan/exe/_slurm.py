@@ -38,8 +38,10 @@ class SlurmExec(Executor):
             "start_seed": min(job["seed"] for job in self.exe_data["jobs"].values()),
             "nseed": len(self.exe_data["jobs"]),
             "input_files": ", ".join(self.exe_data["input_files"]),
-            "max_runtime": str(datetime.timedelta(seconds=int(self.exe_data["policy_settings"]["max_runtime"])))
-            #"max_runtime": int(self.exe_data["policy_settings"]["max_runtime"]),
+            "max_runtime": str(
+                datetime.timedelta(seconds=int(self.exe_data["policy_settings"]["max_runtime"]))
+            ),
+            # "max_runtime": int(self.exe_data["policy_settings"]["max_runtime"]),
         }
         with open(self.slurm_template, "r") as t, open(self.file_sub, "w") as f:
             f.write(string.Template(t.read()).substitute(slurm_settings))
@@ -65,12 +67,12 @@ class SlurmExec(Executor):
                 self.exe_data.write()
                 break
             else:
-                logger.info(f"SlurmExec failed to submit job {self.exe_data['path']}:")
+                logger.info(f"SlurmExec failed to submit job {self.exe_data.path}:")
                 logger.info(f"{slurm_submit.stdout}\n{slurm_submit.stderr}")
                 time.sleep(self.exe_data["policy_settings"]["slurm_retry_delay"])
 
         if cluster_id < 0:
-            logger.warn(f"SlurmExec failed to submit job {self.exe_data['path']}")
+            logger.warn(f"SlurmExec failed to submit job {self.exe_data.path}")
             return  # failed job
 
         # > now we need to track the job

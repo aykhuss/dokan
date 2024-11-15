@@ -12,7 +12,7 @@ import time
 from abc import ABCMeta, abstractmethod
 from pathlib import Path
 
-from ._exe_config import ExecutionMode, ExecutionPolicy
+from ._exe_config import ExecutionPolicy
 from ._exe_data import ExeData
 from ..nnlojet import parse_log_file
 
@@ -34,7 +34,6 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         from ._slurm import SlurmExec
 
         if policy == ExecutionPolicy.LOCAL:
-            # print(f"factory: BatchLocalExec ...")
             return BatchLocalExec(*args, **kwargs)
 
         if policy == ExecutionPolicy.HTCONDOR:
