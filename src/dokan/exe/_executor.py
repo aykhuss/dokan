@@ -29,9 +29,9 @@ class Executor(luigi.Task, metaclass=ABCMeta):
     @staticmethod
     def factory(policy=ExecutionPolicy.LOCAL, *args, **kwargs):
         # > local import to avoid cyclic dependence
-        from ._local import BatchLocalExec
-        from ._htcondor import HTCondorExec
-        from ._slurm import SlurmExec
+        from .local import BatchLocalExec
+        from .htcondor import HTCondorExec
+        from .slurm import SlurmExec
 
         if policy == ExecutionPolicy.LOCAL:
             return BatchLocalExec(*args, **kwargs)

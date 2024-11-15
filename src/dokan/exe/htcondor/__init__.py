@@ -8,7 +8,7 @@ import json
 
 from pathlib import Path
 
-from ._executor import Executor
+from .._executor import Executor
 
 
 logger = logging.getLogger("luigi-interface")
