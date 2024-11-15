@@ -49,7 +49,7 @@ class HTCondorExec(Executor):
             self._track_job()
             return
 
-        # > start new submission
+        # > populate the submission tempalte file
         condor_settings: dict = {
             "exe": self.exe_data["exe"],
             "job_path": str(self.exe_data.path.absolute()),
@@ -104,16 +104,9 @@ class HTCondorExec(Executor):
         nretry: int = self.exe_data["policy_settings"]["htcondor_nretry"]
         retry_delay: float = self.exe_data["policy_settings"]["htcondor_retry_delay"]
 
-        # match_job_id = re.compile(r"^{:d}".format(job_id))
-        # for i in range(10):
         while True:
             time.sleep(poll_time)
 
-            # condor_q = subprocess.run(["condor_q", "-nobatch", str(self.job_id)], capture_output = True, text = True)
-            # print(condor_q)
-            # for line in condor_q.stdout.splitlines():
-            #   if re.match(match_job_id, line):
-            #     print(line)
             condor_q_json: dict = {}
             for _ in range(nretry):
                 condor_q = subprocess.run(

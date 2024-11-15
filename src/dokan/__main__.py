@@ -182,45 +182,6 @@ def main() -> None:
         config["exe"]["policy"] = new_policy
         console.print(f"[dim]policy = {config['exe']['policy']!r}[/dim]")
 
-        # @todo policy settings
-        if config["exe"]["policy"] == ExecutionPolicy.HTCONDOR:
-            while True:
-                new_poll_time: float = TimeIntervalPrompt.ask(
-                    "time interval between pinging HTCondor scheduler for job updates",
-                    default=config["exe"]["policy_settings"]["htcondor_poll_time"]
-                    if "htcondor_poll_time" in config["exe"]["policy_settings"]
-                    else 10.0,
-                )
-                if new_poll_time > 0.0:
-                    break
-                console.print("please enter a positive value")
-            config["exe"]["policy_settings"]["htcondor_poll_time"] = new_poll_time
-            console.print(
-                f"[dim]poll_time = {config['exe']['policy_settings']['htcondor_poll_time']!r}s[/dim]"
-            )
-            # > set defaults, expert user can edit config.json
-            config["exe"]["policy_settings"]["htcondor_nretry"] = 10
-            config["exe"]["policy_settings"]["htcondor_retry_delay"] = 30.0
-
-        if config["exe"]["policy"] == ExecutionPolicy.SLURM:
-            while True:
-                new_poll_time: float = TimeIntervalPrompt.ask(
-                    "time interval between pinging slurm scheduler for job updates",
-                    default=config["exe"]["policy_settings"]["slurm_poll_time"]
-                    if "slurm_poll_time" in config["exe"]["policy_settings"]
-                    else 10.0,
-                )
-                if new_poll_time > 0.0:
-                    break
-                console.print("please enter a positive value")
-            config["exe"]["policy_settings"]["slurm_poll_time"] = new_poll_time
-            console.print(
-                f"[dim]poll_time = {config['exe']['policy_settings']['slurm_poll_time']!r}s[/dim]"
-            )
-            # > set defaults, expert user can edit config.json
-            config["exe"]["policy_settings"]["slurm_nretry"] = 10
-            config["exe"]["policy_settings"]["slurm_retry_delay"] = 30.0
-
         new_order: Order = OrderPrompt.ask(
             "order", choices=list(str(o) for o in Order), default=config["run"]["order"]
         )
@@ -239,7 +200,7 @@ def main() -> None:
 
         while True:
             new_job_max_runtime: float = TimeIntervalPrompt.ask(
-                'maximum runtime for individual jobs with optional units {s,m,h,d,w} e.g. "1h 30m"',
+                'maximum runtime for individual jobs with optional units {s[default],m,h,d,w} e.g. "1h 30m"',
                 default=config["run"]["job_max_runtime"],
             )
             if new_job_max_runtime > 0.0:
@@ -302,6 +263,32 @@ def main() -> None:
             console.print("please enter a non-negative value")
         config["run"]["seed_offset"] = new_seed_offset
         console.print(f"[dim]seed_offset = {config['run']['seed_offset']!r}[/dim]")
+
+        # @todo policy settings
+
+        # > common cluster settings
+        if config["exe"]["policy"] in [ExecutionPolicy.HTCONDOR, ExecutionPolicy.SLURM]:
+            cluster: str = str(config["exe"]["policy"]).lower()
+            max_runtime: float = config["run"]["job_max_runtime"]
+            # > polling time intervals (aim for polling every 10% of job run but at least 10s)
+            default_poll_time: float = max(10.0, max_runtime / 10.0)
+            if f"{cluster}_poll_time" in config["exe"]["policy_settings"]:
+                default_poll_time = config["exe"]["policy_settings"][f"{cluster}_poll_time"]
+            while True:
+                new_poll_time: float = TimeIntervalPrompt.ask(
+                    f"time interval between pinging {cluster} scheduler for job updates",
+                    default=default_poll_time,
+                )
+                if new_poll_time > 10.0 and new_poll_time < max_runtime / 2:
+                    break
+                console.print("please enter a positive value between [10, {max_runtime/2}] seconds")
+            config["exe"]["policy_settings"][f"{cluster}_poll_time"] = new_poll_time
+            console.print(
+                f"[dim]poll_time = {config['exe']['policy_settings'][f'{cluster}_poll_time']!r}s[/dim]"
+            )
+            # > more cluster defaults, expert user can edit config.json
+            config["exe"]["policy_settings"][f"{cluster}_nretry"] = 10
+            config["exe"]["policy_settings"][f"{cluster}_retry_delay"] = 30.0
 
         config.write()
 
