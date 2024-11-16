@@ -28,6 +28,8 @@ class Executor(luigi.Task, metaclass=ABCMeta):
 
     @staticmethod
     def factory(policy=ExecutionPolicy.LOCAL, *args, **kwargs):
+        """factory method to create an Executor for a specific policy"""
+
         # > local import to avoid cyclic dependence
         from .local import BatchLocalExec
         from .htcondor import HTCondorExec
@@ -52,35 +54,26 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         pass
 
     def run(self):
-        # print(f"[{time.time()}] Executor: run {self.path}")
-
         # > more preparation for execution?
 
         # @todo check if job files are already there? (recovery mode?)
 
+        # > some systems have a different resolution in timestamps
+        # > time.time() vs. os.stat().st_mtime
+        # > this buffer ensures time ordering works
         time.sleep(1.5)
+
+        # > call the backend specific execution
         self.exe()
-        # print(f"[{time.time()}] Executor: done with exe {self.path}")
 
-        # > exe done populate job data and write target file
-
-        # > keep track of files that were generated
+        # > collect files that were generated/modified in this execution
         # > some file systems have delays: add delays & re-tries
         fs_max_retry: int = 10
-        fs_delay: float = 1  # seconds
-        tmp_time: float = Path.joinpath(Path(self.path), ExeData._file_tmp).stat().st_mtime
-        # print(f"{self.path}: tmp_time   = {tmp_time}")
-        # print(f"{self.path}: timestamp' = {self.exe_data.timestamp}")
-        for fs_try in range(fs_max_retry):
+        fs_delay: float = 1.0  # seconds
+        for _ in range(fs_max_retry):
             for entry in os.scandir(self.path):
-                # if entry.name in [ExeData._file_tmp]:
-                #     print(f"[{fs_try}]{self.path}: entry_time = {entry.stat().st_mtime}")
-                # > input files can also become output files (warmup grids)
-                # if entry.name in self.exe_data["input_files"]:
-                #     continue
                 if entry.name in [ExeData._file_tmp, ExeData._file_fin]:
                     continue
-                # print(f"[{fs_try}]{self.path}: entry_time = {entry.stat().st_mtime} [{entry.name}] {entry.stat().st_mtime < self.exe_data.timestamp}")
                 if entry.stat().st_mtime < self.exe_data.timestamp:
                     continue
                 # > genuine output file that was generated/modified
@@ -90,23 +83,19 @@ class Executor(luigi.Task, metaclass=ABCMeta):
             # > could not find any output files, wait and try again
             time.sleep(fs_delay)
 
-        # print(f"  >>  {self.exe_data["output_files"]}:")
-
+        # > save information from logs in exe_data
         for job_id, job_data in self.exe_data["jobs"].items():
-            # print(f".s{job_data["seed"]}.log")
             log_matches = [
                 of
                 for of in self.exe_data["output_files"]
                 if of.endswith(f".s{job_data['seed']}.log")
             ]
-            # print(f" > log_matches: {log_matches}")
             if len(log_matches) != 1:
+                logging.warn(f"Executor: log file not found for job {job_id}")
                 continue
             parsed_data = parse_log_file(Path(self.path) / log_matches[0])
-            # print(f" > parsed data: {parsed_data}")
             for key in parsed_data:
                 job_data[key] = parsed_data[key]
 
-        # print(f"[{time.time()}] Executor: finalize {self.path}")
-        # > add last modification time?
+        # > mark execution complete
         self.exe_data.finalize()

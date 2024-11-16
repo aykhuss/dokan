@@ -350,7 +350,7 @@ def main() -> None:
         # > register signal handlers
         def graceful_exit(sig, frame):
             db_init.logger(
-                f"received signal: {signal.Signals(sig).name}; exiting gracefully...",
+                f"received signal: {signal.Signals(sig).name}; let me attempt to exit gracefully...",
                 level=LogLevel.SIG_TERM,
             )
             time.sleep(2)
@@ -359,6 +359,9 @@ def main() -> None:
         signal.signal(signal.SIGINT, graceful_exit)
         signal.signal(signal.SIGTERM, graceful_exit)
         # @ todo SIGUSR1 to trigger MergeAll?
+
+        #@todo checks of the DB and ask for recovery mode?
+        #@todo skip warmup?
 
         # > actually submit the root task to run NNLOJET and spawn the monitor
         console.print(f"CPU cores: {cpu_count}")
@@ -395,6 +398,8 @@ def main() -> None:
         console.print(luigi_result.one_line_summary)
         # console.print(luigi_result.status)
         # console.print(luigi_result.summary_text)
+
+        #@todo give an estimate in case target accuracy not reached.
 
 
 if __name__ == "__main__":
