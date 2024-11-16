@@ -33,3 +33,10 @@ path = "src/dokan/__about__.py"
 
 [tool.ruff]
 line-length = 100
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.389",
+    "pytest-cov>=6.0.0",
+    "pytest>=8.3.3",
+]
