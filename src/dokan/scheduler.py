@@ -1,5 +1,5 @@
 
-from luigi import scheduler, rpc, worker
+from luigi import rpc, scheduler, worker
 
 
 class WorkerSchedulerFactory:

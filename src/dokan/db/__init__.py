@@ -1,7 +1,7 @@
+from ._dbmerge import DBMerge, MergeAll, MergePart
+from ._dbtask import DBInit, DBTask
 from ._jobstatus import JobStatus
-from ._sqla import Part, Job, Log
-from ._dbtask import DBTask, DBInit
-from ._dbmerge import DBMerge, MergePart, MergeAll
+from ._sqla import Job, Log, Part
 
 __all__ = [
     "JobStatus",

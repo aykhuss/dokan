@@ -1,10 +1,11 @@
-import luigi
 import math
 from enum import IntFlag, auto
-from sqlalchemy import select
 from pathlib import Path
 
-from .db import Job, DBTask, JobStatus
+import luigi
+from sqlalchemy import select
+
+from .db import DBTask, Job, JobStatus
 from .db._dbdispatch import DBDispatch
 from .db._loglevel import LogLevel
 from .exe import ExecutionMode, ExecutionPolicy, ExeData

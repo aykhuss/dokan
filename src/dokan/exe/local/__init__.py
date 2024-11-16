@@ -3,12 +3,12 @@
 implementation of the backend for ExecutionPolicy.LOCAL
 """
 
-import luigi
-import subprocess
-import os
 import logging
-
+import os
+import subprocess
 from pathlib import Path
+
+import luigi
 
 from .._executor import Executor
 

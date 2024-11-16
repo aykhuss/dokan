@@ -1,30 +1,29 @@
 """The main execution of the NNLOJET workflow"""
 
-import luigi
-
 # from luigi.execution_summary import LuigiRunResult
 import argparse
+import multiprocessing
 import os
 import shutil
 import signal
 import sys
 import time
-import multiprocessing
-
 from pathlib import Path
-from rich.console import Console
-from rich.prompt import Prompt, IntPrompt, FloatPrompt, PromptBase, Confirm
-from rich.syntax import Syntax
 
-from .__about__ import __version__
+import luigi
+from rich.console import Console
+from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt, PromptBase
+from rich.syntax import Syntax
 
 import dokan
 import dokan.nnlojet
 from dokan.exe import ExecutionPolicy
 from dokan.order import Order
 from dokan.util import parse_time_interval
-from .db._sqla import Part
+
+from .__about__ import __version__
 from .db._loglevel import LogLevel
+from .db._sqla import Part
 
 
 class TimeIntervalPrompt(PromptBase[float]):

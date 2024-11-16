@@ -11,15 +11,15 @@ _schema : dict
     define the structure of Config
 """
 
-from collections import UserDict
 import json
+from collections import UserDict
 from pathlib import Path
 
 from ._types import GenericPath
-from .util import validate_schema
+from .db._loglevel import LogLevel
 from .exe import ExecutionPolicy
 from .order import Order
-from .db._loglevel import LogLevel
+from .util import validate_schema
 
 _default_config: Path = Path(__file__).parent.resolve() / "config.json"
 

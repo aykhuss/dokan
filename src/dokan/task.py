@@ -3,10 +3,10 @@
 sub-class of a luigi Task to impose mandatory attributes to a workflow task.
 """
 
-import luigi
-
-from luigi.parameter import ParameterVisibility
 from pathlib import Path
+
+import luigi
+from luigi.parameter import ParameterVisibility
 
 from ._types import GenericPath
 

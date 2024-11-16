@@ -1,30 +1,27 @@
-import luigi
-import logging
-import time
+import datetime
 import json
+import logging
+import math
 import re
 import shutil
-import math
-import datetime
-
+import time
 from abc import ABCMeta, abstractmethod
 from pathlib import Path
 
-from sqlalchemy import create_engine, Engine, select, func
+import luigi
+from rich.console import Console
+from sqlalchemy import Engine, create_engine, func, select
 from sqlalchemy.orm import Session  # , scoped_session, sessionmaker
 
-from rich.console import Console
-
-from ._dbtask import DBTask
-from ._dbmerge import MergePart
-from ._jobstatus import JobStatus
-from ._loglevel import LogLevel
-from ._sqla import DokanDB, Part, Job, Log
-
-from ..task import Task
-from ..exe import ExecutionMode, ExecutionPolicy, ExeData, Executor
+from ..exe import ExecutionMode, ExecutionPolicy, Executor, ExeData
 from ..order import Order
 from ..runcard import Runcard, RuncardTemplate
+from ..task import Task
+from ._dbmerge import MergePart
+from ._dbtask import DBTask
+from ._jobstatus import JobStatus
+from ._loglevel import LogLevel
+from ._sqla import DokanDB, Job, Log, Part
 
 
 class DBRunner(DBTask):

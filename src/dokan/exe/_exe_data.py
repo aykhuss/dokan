@@ -10,15 +10,15 @@ _schema : dict
     define the structure of ExeData
 """
 
-from collections import UserDict
 import json
 import shutil
 import time
+from collections import UserDict
 from pathlib import Path
 
-from ._exe_config import ExecutionMode, ExecutionPolicy
 from .._types import GenericPath
 from ..util import validate_schema
+from ._exe_config import ExecutionMode, ExecutionPolicy
 
 # > deifne our own schema:
 # list -> expect arbitrary number of entries with all the same type

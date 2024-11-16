@@ -1,23 +1,19 @@
-import luigi
-import time
-import math
 import datetime
-
+import math
+import time
 from abc import ABCMeta, abstractmethod
 
-from sqlalchemy import create_engine, Engine, select
+import luigi
+from rich.console import Console
+from sqlalchemy import Engine, create_engine, select
 from sqlalchemy.orm import Session  # , scoped_session, sessionmaker
 
-from rich.console import Console
-
-from ._jobstatus import JobStatus
-from ._loglevel import LogLevel
-from ._sqla import DokanDB, Part, Job, DokanLog, Log
-
-from ..task import Task
 from ..exe import ExecutionMode
 from ..order import Order
-
+from ..task import Task
+from ._jobstatus import JobStatus
+from ._loglevel import LogLevel
+from ._sqla import DokanDB, DokanLog, Job, Log, Part
 
 _console = Console()
 

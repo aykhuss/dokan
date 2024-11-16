@@ -4,17 +4,17 @@ defines an abstraction to execute NNLOJET on different backends (policies)
 a factory design pattern to obtain tasks for the different policies
 """
 
-import luigi
 import logging
 import os
 import time
-
 from abc import ABCMeta, abstractmethod
 from pathlib import Path
 
+import luigi
+
+from ..nnlojet import parse_log_file
 from ._exe_config import ExecutionPolicy
 from ._exe_data import ExeData
-from ..nnlojet import parse_log_file
 
 logger = logging.getLogger("luigi-interface")
 
@@ -31,8 +31,8 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         """factory method to create an Executor for a specific policy"""
 
         # > local import to avoid cyclic dependence
-        from .local import BatchLocalExec
         from .htcondor import HTCondorExec
+        from .local import BatchLocalExec
         from .slurm import SlurmExec
 
         if policy == ExecutionPolicy.LOCAL:

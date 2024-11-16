@@ -4,7 +4,6 @@ refactor common functions and patterns here
 """
 
 import re
-
 from datetime import timedelta
 
 

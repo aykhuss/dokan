@@ -1,13 +1,13 @@
-import luigi
-import time
 import json
+import time
 
+import luigi
 from sqlalchemy import select
 
-from .order import Order
-from .db import Part, Job, DBTask, DBInit, MergeAll
+from .db import DBInit, DBTask, Job, MergeAll, Part
 from .db._dbdispatch import DBDispatch
 from .db._loglevel import LogLevel
+from .order import Order
 from .preproduction import PreProduction
 
 

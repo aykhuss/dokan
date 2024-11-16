@@ -19,8 +19,8 @@
 
 from pathlib import Path
 
-from ._references import references
 from .._types import GenericPath
+from ._references import references
 
 ### common reference blocks
 

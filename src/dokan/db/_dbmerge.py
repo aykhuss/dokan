@@ -1,20 +1,20 @@
-import luigi
-import time
 import datetime
-import re
 import os
-
+import re
+import time
 from abc import ABCMeta, abstractmethod
 from pathlib import Path
+
+import luigi
 from sqlalchemy import select
 
+from ..combine import NNLOJETContainer, NNLOJETHistogram
 from ..exe._exe_config import ExecutionMode
 from ..exe._exe_data import ExeData
-from ._sqla import Part, Job
+from ._dbtask import DBTask
 from ._jobstatus import JobStatus
 from ._loglevel import LogLevel
-from ._dbtask import DBTask
-from ..combine import NNLOJETHistogram, NNLOJETContainer
+from ._sqla import Job, Part
 
 
 class DBMerge(DBTask, metaclass=ABCMeta):

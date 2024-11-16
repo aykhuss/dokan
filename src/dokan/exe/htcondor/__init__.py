@@ -3,14 +3,13 @@
 implementation of the backend for ExecutionPolicy.HTCONDOR
 """
 
-import re
-import time
-import subprocess
-import logging
-import string
-import os
 import json
-
+import logging
+import os
+import re
+import string
+import subprocess
+import time
 from pathlib import Path
 
 from .._executor import Executor

@@ -1,11 +1,12 @@
-import numpy as np
-import re
-import math
-import sys
-import os
 import logging
+import math
+import os
+import re
+import sys
 
-from ._algo import is_outlier_IQR, is_outlier_MAD, is_outlier_doubleMAD, is_outlier_dynMAD
+import numpy as np
+
+from ._algo import is_outlier_doubleMAD, is_outlier_dynMAD, is_outlier_IQR, is_outlier_MAD
 
 _comment_prefix = "#"
 

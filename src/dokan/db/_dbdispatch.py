@@ -1,12 +1,11 @@
 import luigi
+from sqlalchemy import func, select
 
-from sqlalchemy import select, func
-
-from ._dbtask import DBTask
-from ._dbrunner import DBRunner
-from ._jobstatus import JobStatus
-from ._sqla import Part, Job
 from ..exe import ExecutionMode
+from ._dbrunner import DBRunner
+from ._dbtask import DBTask
+from ._jobstatus import JobStatus
+from ._sqla import Job, Part
 
 
 class DBDispatch(DBTask):
