@@ -58,5 +58,5 @@ class Entry(DBTask):
         rel_acc: float = abs(opt_dist["tot_error"] / opt_dist["tot_result"])
         self.logger(
             f"[red]cross = {opt_dist['tot_result']} +/- {opt_dist['tot_error']} [{100.*rel_acc}%][/red]",
-            level=LogLevel.SIG_TERM,
+            level=LogLevel.SIG_COMPLETE,
         )

@@ -6,6 +6,7 @@ import luigi
 import argparse
 import os
 import shutil
+import signal
 import sys
 import time
 import multiprocessing
@@ -23,6 +24,7 @@ from dokan.exe import ExecutionPolicy
 from dokan.order import Order
 from dokan.util import parse_time_interval
 from .db._sqla import Part
+from .db._loglevel import LogLevel
 
 
 class TimeIntervalPrompt(PromptBase[float]):
@@ -344,6 +346,19 @@ def main() -> None:
         with db_init.session as session:
             nactive = session.query(Part).filter(Part.active.is_(True)).count()
         console.print(f"active parts: {nactive}")
+
+        # > register signal handlers
+        def graceful_exit(sig, frame):
+            db_init.logger(
+                f"received signal: {signal.Signals(sig).name}; exiting gracefully...",
+                level=LogLevel.SIG_TERM,
+            )
+            time.sleep(2)
+            sys.exit(0)
+
+        signal.signal(signal.SIGINT, graceful_exit)
+        signal.signal(signal.SIGTERM, graceful_exit)
+        # @ todo SIGUSR1 to trigger MergeAll?
 
         # > actually submit the root task to run NNLOJET and spawn the monitor
         console.print(f"CPU cores: {cpu_count}")
