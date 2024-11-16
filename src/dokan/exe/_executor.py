@@ -15,6 +15,7 @@ import luigi
 from ..nnlojet import parse_log_file
 from ._exe_config import ExecutionPolicy
 from ._exe_data import ExeData
+from .._types import GenericPath
 
 logger = logging.getLogger("luigi-interface")
 
@@ -27,31 +28,50 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         self.exe_data: ExeData = ExeData(Path(self.path))
 
     @staticmethod
-    def factory(policy=ExecutionPolicy.LOCAL, *args, **kwargs):
-        """factory method to create an Executor for a specific policy"""
-
+    def get_cls(policy: ExecutionPolicy):
         # > local import to avoid cyclic dependence
         from .htcondor import HTCondorExec
         from .local import BatchLocalExec
         from .slurm import SlurmExec
 
         if policy == ExecutionPolicy.LOCAL:
-            return BatchLocalExec(*args, **kwargs)
+            return BatchLocalExec
 
         if policy == ExecutionPolicy.HTCONDOR:
-            return HTCondorExec(*args, **kwargs)
+            return HTCondorExec
 
         if policy == ExecutionPolicy.SLURM:
-            return SlurmExec(*args, **kwargs)
+            return SlurmExec
 
         raise TypeError(f"invalid ExecutionPolicy: {policy!r}")
+
+    @staticmethod
+    def factory(policy: ExecutionPolicy = ExecutionPolicy.LOCAL, *args, **kwargs):
+        """factory method to create an Executor for a specific policy"""
+
+        exec_cls = Executor.get_cls(policy)
+        return exec_cls(*args, **kwargs)
+
+    @staticmethod
+    def templates() -> list[GenericPath]:
+        """list of built-in templates for this executor
+
+        if the executor requires additional template files, such as submission
+        files, these should be provided through this method though an override
+
+        Returns
+        -------
+        list[GenericPath]
+            a list of all built-in template files for the executor
+        """
+        return []
 
     def output(self):
         return [luigi.LocalTarget(self.exe_data.file_fin)]
 
     @abstractmethod
     def exe(self):
-        pass
+        raise NotImplementedError("Executor::exe")
 
     def run(self):
         # > more preparation for execution?

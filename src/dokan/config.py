@@ -31,11 +31,13 @@ _schema: dict = {
             # --- LOCAL
             "local_ncores": int,
             # --- HTCONDOR
+            "htcondor_template": str,
             "htcondor_ncores": int,
             "htcondor_nretry": int,
             "htcondor_retry_delay": float,
             "htcondor_poll_time": float,
             # --- SLURM
+            "slurm_template": str,
             "slurm_ncores": int,
             "slurm_nretry": int,
             "slurm_retry_delay": float,

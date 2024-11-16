@@ -1,5 +1,4 @@
 import datetime
-import json
 import logging
 import os
 import re
@@ -9,6 +8,7 @@ import time
 from pathlib import Path
 
 from .._executor import Executor
+from ..._types import GenericPath
 
 logger = logging.getLogger("luigi-interface")
 
@@ -22,9 +22,17 @@ class SlurmExec(Executor):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.slurm_template: Path = Path(__file__).parent.resolve() / "slurm.template"
+        self.slurm_template: Path = Path(
+            self.exe_data["policy_settings"]["slurm_template"]
+            if "slurm_template" in self.exe_data["policy_settings"]
+            else self.templates()[0]  # default to first template
+        )
         self.file_sub: Path = self.exe_data.path / self._file_sub
         self.njobs: int = len(self.exe_data["jobs"])
+
+    @staticmethod
+    def templates() -> list[GenericPath]:
+        return [Path(__file__).parent.resolve() / "slurm.template"]
 
     def exe(self):
         slurm_settings: dict = {

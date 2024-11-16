@@ -34,12 +34,14 @@ _schema: dict = {
         "local_ncores": int,
         # --- HTCONDOR
         "htcondor_id": int,
+        "htcondor_template": str,
         "htcondor_ncores": int,
         "htcondor_nretry": int,
         "htcondor_retry_delay": float,
         "htcondor_poll_time": float,
         # --- SLURM
         "slurm_id": int,
+        "slurm_template": str,
         "slurm_ncores": int,
         "slurm_nretry": int,
         "slurm_retry_delay": float,
@@ -48,7 +50,7 @@ _schema: dict = {
     "ncall": int,
     "niter": int,
     # ---
-    # now a property! "timestamp": float,  # updated on each write
+    # now a property! "timestamp": float,  # updated on each write/finalize
     "input_files": [str],  # first entry must be runcard?
     "output_files": [str],
     "jobs": {

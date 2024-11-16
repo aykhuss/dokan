@@ -1,5 +1,5 @@
 ###########
-# HTCondor template for CERN lxplus
+# HTCondor template
 ###########
 
 executable  = ${exe}
@@ -10,15 +10,6 @@ log         = job.log
 getenv      = True
 
 initialdir   = ${job_path}
-
-# espresso     = 20 minutes
-# microcentury = 1 hour
-# longlunch    = 2 hours
-# workday      = 8 hours
-# tomorrow     = 1 day
-# testmatch    = 3 days
-# nextweek     = 1 week
-# +JobFlavour  = "espresso"
 
 +MaxRuntime = ${max_runtime}
 

@@ -1,27 +1,16 @@
-import datetime
-import json
-import logging
-import math
 import re
 import shutil
-import time
-from abc import ABCMeta, abstractmethod
 from pathlib import Path
 
 import luigi
-from rich.console import Console
-from sqlalchemy import Engine, create_engine, func, select
-from sqlalchemy.orm import Session  # , scoped_session, sessionmaker
+from sqlalchemy import select
 
 from ..exe import ExecutionMode, ExecutionPolicy, Executor, ExeData
-from ..order import Order
-from ..runcard import Runcard, RuncardTemplate
-from ..task import Task
+from ..runcard import RuncardTemplate
 from ._dbmerge import MergePart
 from ._dbtask import DBTask
 from ._jobstatus import JobStatus
-from ._loglevel import LogLevel
-from ._sqla import DokanDB, Job, Log, Part
+from ._sqla import Job
 
 
 class DBRunner(DBTask):
@@ -67,22 +56,18 @@ class DBRunner(DBTask):
                 exe_data["policy"] = ExecutionPolicy(db_job.policy)
                 # > add policy settings
                 exe_data["policy_settings"] = {"max_runtime": self.config["run"]["job_max_runtime"]}
-                # if db_job.policy == ExecutionPolicy.LOCAL:
-                #     exe_data["policy_settings"]["local_ncores"] = 1
-                # elif db_job.policy == ExecutionPolicy.HTCONDOR:
-                #     exe_data["policy_settings"]["htcondor_id"] = 42
                 for k, v in self.config["exe"]["policy_settings"].items():
-                    exe_data["policy_settings"][k] = v
-                # exe_data["policy_settings"] = self.config["exe"]["policy_settings"]
+                    if k == f"{str(exe_data["policy"]).lower()}_template":
+                        exe_data["policy_settings"][k] = str(self._local(v).absolute())
+                    else:
+                        exe_data["policy_settings"][k] = v
                 if (db_job.ncall * db_job.niter) == 0:
                     raise RuntimeError(f"job {db_job.id} has ntot={db_job.ncall}×{db_job.niter}=0")
                 exe_data["ncall"] = db_job.ncall
                 exe_data["niter"] = db_job.niter
                 # > create the runcard
                 run_file: Path = job_path / "job.run"
-                template = RuncardTemplate(
-                    Path(self.config["run"]["path"]) / self.config["run"]["template"]
-                )
+                template = RuncardTemplate(self._local(self.config["run"]["template"]))
                 channel_region: str = ""
                 if db_job.part.region:
                     channel_region: str = f"region = {db_job.part.region}"
@@ -157,7 +142,7 @@ class DBRunner(DBTask):
 
         # > see if a re-merge is possible
         if self.mode == ExecutionMode.PRODUCTION:
-            mrg_part: MergePart = self.clone(MergePart, force=False, part_id=self.part_id)
+            mrg_part = self.clone(MergePart, force=False, part_id=self.part_id)
             if mrg_part.complete():
                 self.logger(
                     f"DBRunner::run id = {self.id}, part_id = {self.part_id} > MergePart complete"

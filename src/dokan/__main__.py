@@ -17,7 +17,7 @@ from rich.syntax import Syntax
 
 import dokan
 import dokan.nnlojet
-from dokan.exe import ExecutionPolicy
+from dokan.exe import ExecutionPolicy, Executor
 from dokan.order import Order
 from dokan.util import parse_time_interval
 
@@ -296,6 +296,35 @@ def main() -> None:
             # > more cluster defaults, expert user can edit config.json
             config["exe"]["policy_settings"][f"{cluster}_nretry"] = 10
             config["exe"]["policy_settings"][f"{cluster}_retry_delay"] = 30.0
+
+        # > executor templates
+        if len(templates := Executor.get_cls(policy=config["exe"]["policy"]).templates()) > 0:
+            cluster: str = str(config["exe"]["policy"]).lower()
+            # console.print(f"execution policy \"[bold]{cluster}[/bold]\" requires templates!")
+            template: Path = Path(templates[0])
+            if len(templates) > 1:
+                console.print(f"please select one of the following built-in {cluster} templates:")
+                for i, t in enumerate(templates):
+                    console.print(f" [italic]{i}:[/italic] {Path(t).name}")
+                it: int = IntPrompt.ask(
+                    "template index",
+                    choices=[str(i) for i in range(len(templates))],
+                    default=0,
+                )
+                template = Path(templates[it])
+            config["exe"]["policy_settings"][f"{cluster}_template"] = template.name
+            dst = (
+                Path(config["run"]["path"])
+                / config["exe"]["policy_settings"][f"{cluster}_template"]
+            )
+            shutil.copyfile(template, dst)
+            console.print(
+                f"{cluster} template: [italic]{template.name}[/italic] copied to run folder:"
+            )
+            with open(dst, "r") as run_template:
+                syntx = Syntax(run_template.read(), "shell", word_wrap=True)
+                console.print(syntx)
+            console.print("please edit this file to your needs")
 
         config.write()
 

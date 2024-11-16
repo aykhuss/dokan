@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 from .._executor import Executor
+from ..._types import GenericPath
 
 logger = logging.getLogger("luigi-interface")
 
@@ -35,9 +36,18 @@ class HTCondorExec(Executor):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.htcondor_template: Path = Path(__file__).parent.resolve() / "lxplus.template"
+        self.htcondor_template: Path = Path(
+            self.exe_data["policy_settings"]["htcondor_template"]
+            if "htcondor_template" in self.exe_data["policy_settings"]
+            else self.templates()[0]  # default to first template
+        )
         self.file_sub: Path = Path(self.path) / self._file_sub
         self.njobs: int = len(self.exe_data["jobs"])
+
+    @staticmethod
+    def templates() -> list[GenericPath]:
+        template_list: list[str] = ["htcondor.template", "lxplus.template"]
+        return [Path(__file__).parent.resolve() / t for t in template_list]
 
     def exe(self):
         # > recovery mode
