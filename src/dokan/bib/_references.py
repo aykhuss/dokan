@@ -1,11 +1,8 @@
 ### Big dictionary with all the references
 
 references = {
-
-######### ANTEANNA SUBTRACTION
-"Gehrmann-DeRidder:2004ttg" :
-
-"""
+    ######### ANTEANNA SUBTRACTION
+    "Gehrmann-DeRidder:2004ttg": """
 @article{Gehrmann-DeRidder:2004ttg,
     author = "Gehrmann-De Ridder, A. and Gehrmann, T. and Glover, E. W. N.",
     title = "{Infrared structure of $e^+e^-\\to$ 2 jets at NNLO}",
@@ -18,12 +15,8 @@ references = {
     pages = "195--222",
     year = "2004"
 }
-"""
-,
-
-"Gehrmann-DeRidder:2005svg" :
-
-"""
+""",
+    "Gehrmann-DeRidder:2005svg": """
 @article{Gehrmann-DeRidder:2005svg,
     author = "Gehrmann-De Ridder, A. and Gehrmann, T. and Glover, E. W. N.",
     title = "{Quark-gluon antenna functions from neutralino decay}",
@@ -36,12 +29,8 @@ references = {
     pages = "36--48",
     year = "2005"
 }
-"""
-,
-
-"Gehrmann-DeRidder:2005alt" :
-
-"""
+""",
+    "Gehrmann-DeRidder:2005alt": """
 @article{Gehrmann-DeRidder:2005alt,
     author = "Gehrmann-De Ridder, A. and Gehrmann, T. and Glover, E. W. N.",
     title = "{Gluon-gluon antenna functions from Higgs boson decay}",
@@ -54,12 +43,8 @@ references = {
     pages = "49--60",
     year = "2005"
 }
-"""
-,
-
-"Gehrmann-DeRidder:2005btv" :
-
-"""
+""",
+    "Gehrmann-DeRidder:2005btv": """
 @article{Gehrmann-DeRidder:2005btv,
     author = "Gehrmann-De Ridder, A. and Gehrmann, T. and Glover, E. W. N.",
     title = "{Antenna subtraction at NNLO}",
@@ -72,12 +57,8 @@ references = {
     pages = "056",
     year = "2005"
 }
-"""
-,
-
-"Daleo:2006xa" :
-
-"""
+""",
+    "Daleo:2006xa": """
 @article{Daleo:2006xa,
     author = "Daleo, A. and Gehrmann, T. and Maitre, D.",
     title = "{Antenna subtraction with hadronic initial states}",
@@ -90,12 +71,8 @@ references = {
     pages = "016",
     year = "2007"
 }
-"""
-,
-
-"Gehrmann-DeRidder:2007foh" :
-
-"""
+""",
+    "Gehrmann-DeRidder:2007foh": """
 @article{Gehrmann-DeRidder:2007foh,
     author = "Gehrmann-De Ridder, A. and Gehrmann, T. and Glover, E. W. N. and Heinrich, G.",
     title = "{Infrared structure of e+ e- ---\\ensuremath{>} 3 jets at NNLO}",
@@ -109,13 +86,8 @@ references = {
     pages = "058",
     year = "2007"
 }
-"""
-,
-
-
-"Daleo:2009yj" :
-
-"""
+""",
+    "Daleo:2009yj": """
 @article{Daleo:2009yj,
     author = "Daleo, Alejandro and Gehrmann-De Ridder, Aude and Gehrmann, Thomas and Luisoni, Gionata",
     title = "{Antenna subtraction at NNLO with hadronic initial states: initial-final configurations}",
@@ -129,12 +101,8 @@ references = {
     pages = "118",
     year = "2010"
 }
-"""
-,
-
-"Gehrmann:2011wi" :
-
-"""
+""",
+    "Gehrmann:2011wi": """
 @article{Gehrmann:2011wi,
     author = "Gehrmann, Thomas and Monni, Pier Francesco",
     title = "{Antenna subtraction at NNLO with hadronic initial states: real-virtual initial-initial configurations}",
@@ -147,12 +115,8 @@ references = {
     pages = "049",
     year = "2011"
 }
-"""
-,
-
-"NigelGlover:2010kwr" :
-
-"""
+""",
+    "NigelGlover:2010kwr": """
 @article{NigelGlover:2010kwr,
     author = "Glover, E. W. N. and Pires, Joao",
     title = "{Antenna subtraction for gluon scattering at NNLO}",
@@ -166,12 +130,8 @@ references = {
     pages = "096",
     year = "2010"
 }
-"""
-,
-
-"Boughezal:2010mc" :
-
-"""
+""",
+    "Boughezal:2010mc": """
 @article{Boughezal:2010mc,
     author = "Boughezal, Radja and Gehrmann-De Ridder, Aude and Ritzmann, Mathias",
     title = "{Antenna subtraction at NNLO with hadronic initial states: double real radiation for initial-initial configurations with two quark flavours}",
@@ -185,12 +145,8 @@ references = {
     pages = "098",
     year = "2011"
 }
-"""
-,
-
-"Gehrmann-DeRidder:2012too" :
-
-"""
+""",
+    "Gehrmann-DeRidder:2012too": """
 
 @article{Gehrmann-DeRidder:2012too,
     author = "Gehrmann-De Ridder, Aude and Gehrmann, Thomas and Ritzmann, Mathias",
@@ -205,12 +161,8 @@ references = {
     pages = "047",
     year = "2012"
 }
-"""
-,
-
-"Gehrmann-DeRidder:2011jwo" :
-
-""""
+""",
+    "Gehrmann-DeRidder:2011jwo": """"
 @article{Gehrmann-DeRidder:2011jwo,
     author = "Gehrmann-De Ridder, Aude and Glover, E. W. N. and Pires, Joao",
     title = "{Real-Virtual corrections for gluon scattering at NNLO}",
@@ -224,12 +176,8 @@ references = {
     pages = "141",
     year = "2012"
 }
-"""
-,
-
-"Gehrmann-DeRidder:2012dog" :
-
-"""
+""",
+    "Gehrmann-DeRidder:2012dog": """
 @article{Gehrmann-DeRidder:2012dog,
     author = "Gehrmann-De Ridder, Aude and Gehrmann, Thomas and Glover, E. W. N. and Pires, Joao",
     title = "{Double Virtual corrections for gluon scattering at NNLO}",
@@ -243,12 +191,8 @@ references = {
     pages = "026",
     year = "2013"
 }
-"""
-,
-
-"Currie:2013vh" :
-
-"""
+""",
+    "Currie:2013vh": """
 @article{Currie:2013vh,
     author = "Currie, James and Glover, E. W. N. and Wells, Steven",
     title = "{Infrared Structure at NNLO Using Antenna Subtraction}",
@@ -262,12 +206,8 @@ references = {
     pages = "066",
     year = "2013"
 }
-"""
-,
-
-"Chen:2022clm" :
-
-"""
+""",
+    "Chen:2022clm": """
 @article{Chen:2022clm,
     author = "Chen, X. and Gehrmann, T. and Glover, E. W. N. and Mo, J.",
     title = "{Antenna subtraction for jet production observables in full colour at NNLO}",
@@ -281,13 +221,9 @@ references = {
     pages = "040",
     year = "2022"
 }
-"""
-,
-
-######### NNLOJET CALCULATIONS
-"Gehrmann-DeRidder:2015wbt" :
-
-"""
+""",
+    ######### NNLOJET CALCULATIONS
+    "Gehrmann-DeRidder:2015wbt": """
 @article{Gehrmann-DeRidder:2015wbt,
     author = "Gehrmann-De Ridder, A. and Gehrmann, T. and Glover, E. W. N. and Huss, A. and Morgan, T. A.",
     title = "{Precise QCD predictions for the production of a Z boson in association with a hadronic jet}",
@@ -302,12 +238,8 @@ references = {
     pages = "022001",
     year = "2016"
 }
-"""
-,
-
-"Gehrmann-DeRidder:2016cdi" :
-
-"""
+""",
+    "Gehrmann-DeRidder:2016cdi": """
 @article{Gehrmann-DeRidder:2016cdi,
     author = "Gehrmann-De Ridder, Aude and Gehrmann, T. and Glover, E. W. N. and Huss, A. and Morgan, T. A.",
     title = "{The NNLO QCD corrections to Z boson production at large transverse momentum}",
@@ -321,12 +253,8 @@ references = {
     pages = "133",
     year = "2016"
 }
-"""
-,
-
-"Gehrmann-DeRidder:2016jns" :
-
-"""
+""",
+    "Gehrmann-DeRidder:2016jns": """
 @article{Gehrmann-DeRidder:2016jns,
     author = "Gehrmann-De Ridder, A. and Gehrmann, T. and Glover, E. W. N. and Huss, A. and Morgan, T. A.",
     title = "{NNLO QCD corrections for Drell-Yan $p_T^Z$ and $\\phi^*$ observables at the LHC}",
@@ -341,12 +269,8 @@ references = {
     year = "2016",
     note = "[Erratum: JHEP 10, 126 (2018)]"
 }
-"""
-,
-
-"Currie:2017tpe" :
-
-"""
+""",
+    "Currie:2017tpe": """
 @article{Currie:2017tpe,
     author = "Currie, James and Gehrmann, Thomas and Huss, Alexander and Niehues, Jan",
     title = "{NNLO QCD corrections to jet production in deep inelastic scattering}",
@@ -360,12 +284,8 @@ references = {
     year = "2017",
     note = "[Erratum: JHEP 12, 042 (2020)]"
 }
-"""
-,
-
-"Currie:2017eqf" :
-
-"""
+""",
+    "Currie:2017eqf": """
 @article{Currie:2017eqf,
     author = "Currie, James and Gehrmann-De Ridder, Aude and Gehrmann, Thomas and Glover, E. W. N. and Huss, Alexander and Pires, Joao",
     title = "{Precise predictions for dijet production at the LHC}",
@@ -380,12 +300,8 @@ references = {
     pages = "152001",
     year = "2017"
 }
-"""
-,
-
-"Gauld:2017tww" :
-
-"""
+""",
+    "Gauld:2017tww": """
 @article{Gauld:2017tww,
     author = "Gauld, R. and Gehrmann-De Ridder, A. and Gehrmann, T. and Glover, E. W. N. and Huss, A.",
     title = "{Precise predictions for the angular coefficients in Z-boson production at the LHC}",
@@ -399,12 +315,8 @@ references = {
     pages = "003",
     year = "2017"
 }
-"""
-,
-
-"Gehrmann:2017xfb" :
-
-"""
+""",
+    "Gehrmann:2017xfb": """
 @article{Gehrmann:2017xfb,
     author = "Gehrmann, T. and Glover, E. W. N. and Huss, A. and Niehues, J. and Zhang, H.",
     title = "{NNLO QCD corrections to event orientation in $e^+ e^-$ annihilation}",
@@ -418,12 +330,8 @@ references = {
     pages = "185--189",
     year = "2017"
 }
-"""
-,
-
-"Gehrmann-DeRidder:2017mvr" :
-
-"""
+""",
+    "Gehrmann-DeRidder:2017mvr": """
 @article{Gehrmann-DeRidder:2017mvr,
     author = "Gehrmann-De Ridder, A. and Gehrmann, T. and Glover, E. W. N. and Huss, A. and Walker, D. M.",
     title = "{Next-to-Next-to-Leading-Order QCD Corrections to the Transverse Momentum Distribution of Weak Gauge Bosons}",
@@ -438,12 +346,8 @@ references = {
     pages = "122001",
     year = "2018"
 }
-"""
-,
-
-"Cruz-Martinez:2018rod" :
-
-"""
+""",
+    "Cruz-Martinez:2018rod": """
 @article{Cruz-Martinez:2018rod,
     author = "Cruz-Martinez, J. and Gehrmann, T. and Glover, E. W. N. and Huss, A.",
     title = "{Second-order QCD effects in Higgs boson production through vector boson fusion}",
@@ -457,12 +361,8 @@ references = {
     pages = "672--677",
     year = "2018"
 }
-"""
-,
-
-"Currie:2018fgr" :
-
-"""
+""",
+    "Currie:2018fgr": """
 @article{Currie:2018fgr,
     author = "Currie, J. and Gehrmann, T. and Glover, E. W. N. and Huss, A. and Niehues, J. and Vogt, A.",
     title = "{N$^{3}$LO corrections to jet production in deep inelastic scattering using the Projection-to-Born method}",
@@ -476,12 +376,8 @@ references = {
     pages = "209",
     year = "2018"
 }
-"""
-,
-
-"Currie:2018xkj" :
-
-"""
+""",
+    "Currie:2018xkj": """
 @article{Currie:2018xkj,
     author = "Currie, James and Gehrmann-De Ridder, Aude and Gehrmann, Thomas and Glover, E. W. N. and Huss, Alexander and Pires, Jo\\~ao",
     title = "{Infrared sensitivity of single jet inclusive production at hadron colliders}",
@@ -495,12 +391,8 @@ references = {
     pages = "155",
     year = "2018"
 }
-"""
-,
-
-"Gehrmann:2018odt" :
-
-"""
+""",
+    "Gehrmann:2018odt": """
 @article{Gehrmann:2018odt,
     author = "Gehrmann, T. and Huss, A. and Niehues, J. and Vogt, A. and Walker, D. M.",
     title = "{Jet production in charged-current deep-inelastic scattering to third order in QCD}",
@@ -514,12 +406,8 @@ references = {
     pages = "182--186",
     year = "2019"
 }
-"""
-,
-
-"Gehrmann-DeRidder:2019avi" :
-
-"""
+""",
+    "Gehrmann-DeRidder:2019avi": """
 @article{Gehrmann-DeRidder:2019avi,
     author = "Gehrmann-De Ridder, A. and Gehrmann, T. and Glover, E. W. N. and Huss, A. and Walker, D. M.",
     title = "{Vector Boson Production in Association with a Jet at Forward Rapidities}",
@@ -534,12 +422,8 @@ references = {
     pages = "526",
     year = "2019"
 }
-"""
-,
-
-"Chen:2019zmr" :
-
-"""
+""",
+    "Chen:2019zmr": """
 @article{Chen:2019zmr,
     author = {Chen, Xuan and Gehrmann, Thomas and Glover, Nigel and H\"ofer, Marius and Huss, Alexander},
     title = "{Isolated photon and photon+jet production at NNLO QCD accuracy}",
@@ -553,12 +437,8 @@ references = {
     pages = "166",
     year = "2020"
 }
-"""
-,
-
-"Gehrmann-DeRidder:2019ibf" :
-
-"""
+""",
+    "Gehrmann-DeRidder:2019ibf": """
 @article{Gehrmann-DeRidder:2019ibf,
     author = "Gehrmann-De Ridder, A. and Gehrmann, T. and Glover, E. W. N. and Huss, A. and Pires, J.",
     title = "{Triple Differential Dijet Cross Section at the LHC}",
@@ -573,12 +453,8 @@ references = {
     pages = "102001",
     year = "2019"
 }
-"""
-,
-
-"Chen:2019wxf" :
-
-"""
+""",
+    "Chen:2019wxf": """
 @article{Chen:2019wxf,
     author = "Chen, X. and Gehrmann, T. and Glover, E. W. N. and Huss, A.",
     title = "{Fiducial cross sections for the four-lepton decay mode in Higgs-plus-jet production up to NNLO QCD}",
@@ -592,12 +468,8 @@ references = {
     pages = "052",
     year = "2019"
 }
-"""
-,
-
-"Gehrmann:2020oec" :
-
-"""
+""",
+    "Gehrmann:2020oec": """
 @article{Gehrmann:2020oec,
     author = "Gehrmann, Thomas and Glover, E. W. N. and Huss, Alexander and Whitehead, James",
     title = "{Scale and isolation sensitivity of diphoton distributions at the LHC}",
@@ -611,12 +483,8 @@ references = {
     pages = "108",
     year = "2021"
 }
-"""
-,
-
-"Gauld:2021pkr" :
-
-"""
+""",
+    "Gauld:2021pkr": """
 @article{Gauld:2021pkr,
     author = "Gauld, R. and Gehrmann-De Ridder, A. and Gehrmann, T. and Glover, E. W. N. and Huss, A. and Majer, I. and Rodriguez Garcia, A.",
     title = "{Transverse momentum distributions in low-mass Drell-Yan lepton pair production at NNLO QCD}",
@@ -631,12 +499,8 @@ references = {
     pages = "137111",
     year = "2022"
 }
-"""
-,
-
-"Chen:2021ibm" :
-
-"""
+""",
+    "Chen:2021ibm": """
 @article{Chen:2021ibm,
     author = "Chen, X. and Gehrmann, T. and Glover, E. W. N. and Huss, A.",
     title = "{Fiducial cross sections for the lepton-pair-plus-photon decay mode in Higgs production up to NNLO QCD}",
@@ -650,12 +514,8 @@ references = {
     pages = "053",
     year = "2022"
 }
-"""
-,
-
-"Chen:2022tpk" :
-
-"""
+""",
+    "Chen:2022tpk": """
 @article{Chen:2022tpk,
     author = "Chen, X. and Gehrmann, T. and Glover, E. W. N. and Huss, A. and Mo, J.",
     title = "{NNLO QCD corrections in full colour for jet production observables at the LHC}",
@@ -669,12 +529,8 @@ references = {
     pages = "025",
     year = "2022"
 }
-"""
-,
-
-"Chen:2022gpk" :
-
-"""
+""",
+    "Chen:2022gpk": """
 @article{Chen:2022gpk,
     author = {Chen, X. and Gehrmann, T. and Glover, E. W. N. and H\"ofer, M. and Huss, A. and Sch\"urmann, R.},
     title = "{Single photon production at hadron colliders at NNLO QCD with realistic photon isolation}",
@@ -689,12 +545,8 @@ references = {
     pages = "094",
     year = "2022"
 }
-"""
-,
-
-"Niehues:2018was" :
-
-"""
+""",
+    "Niehues:2018was": """
 @article{Niehues:2018was,
     author = "Niehues, J. and Walker, D. M.",
     title = "{NNLO QCD Corrections to Jet Production in Charged Current Deep Inelastic Scattering}",
@@ -708,12 +560,8 @@ references = {
     pages = "243--248",
     year = "2019"
 }
-"""
-,
-
-"Chen:2014gva" :
-
-"""
+""",
+    "Chen:2014gva": """
 @article{Chen:2014gva,
 	author = "Chen, X. and Gehrmann, T. and Glover, E. W. N. and Jaquier, M.",
 	title = "{Precise QCD predictions for the production of Higgs + jet final states}",
@@ -727,12 +575,8 @@ references = {
 	pages = "147--150",
 	year = "2015"
 }
-"""
-,
-
-"Chen:2016zka" :
-
-"""
+""",
+    "Chen:2016zka": """
 @article{Chen:2016zka,
     author = "Chen, X. and Cruz-Martinez, J. and Gehrmann, T. and Glover, E. W. N. and Jaquier, M.",
     title = "{NNLO QCD corrections to Higgs boson production at large transverse momentum}",
@@ -746,12 +590,8 @@ references = {
     pages = "066",
     year = "2016"
 }
-"""
-,
-
-"Currie:2016bfm" :
-
-"""
+""",
+    "Currie:2016bfm": """
 @article{Currie:2016bfm,
     author = "Currie, J and Glover, E. W. N. and Pires, J",
     title = "{Next-to-Next-to Leading Order QCD Predictions for Single Jet Inclusive Production at the LHC}",
@@ -766,12 +606,8 @@ references = {
     pages = "072002",
     year = "2017"
 }
-"""
-,
-
-"Chen:2021azt" :
-
-"""
+""",
+    "Chen:2021azt": """
 @article{Chen:2021azt,
     author = "Chen, X. and Huss, A. and Jones, S. P. and Kerner, M. and Lang, J. -N. and Lindert, J. M. and Zhang, Hantian",
     title = "{Top-quark mass effects in H+jet and H+2 jets production}",
@@ -787,14 +623,8 @@ references = {
     pages = "096",
     year = "2022"
 }
-"""
-,
-
-
-
-"Gauld:2019yng" :
-
-"""
+""",
+    "Gauld:2019yng": """
 @article{Gauld:2019yng,
     author = "Gauld, R. and Gehrmann-De Ridder, A. and Glover, E. W. N. and Huss, A. and Majer, I.",
     title = "{Associated production of a Higgs boson decaying into bottom quarks and a weak vector boson decaying leptonically at NNLO in QCD}",
@@ -808,13 +638,8 @@ references = {
     pages = "002",
     year = "2019"
 }
-"""
-,
-
-
-"Gehrmann:2019hwf" :
-
-"""
+""",
+    "Gehrmann:2019hwf": """
 @article{Gehrmann:2019hwf,
     author = "Gehrmann, T. and Huss, A. and Mo, J. and Niehues, J.",
     title = "{Second-order QCD corrections to event shape distributions in deep inelastic scattering}",
@@ -829,12 +654,8 @@ references = {
     pages = "1022",
     year = "2019"
 }
-"""
-,
-
-"Gehrmann-DeRidder:2023urf" :
-
-"""
+""",
+    "Gehrmann-DeRidder:2023urf": """
 @article{Gehrmann-DeRidder:2023urf,
     author = "Gehrmann-De Ridder, A. and Gehrmann, T. and Glover, E. W. N. and Huss, A. and Preuss, C. T. and Walker, D. M.",
     title = "{Precision phenomenology with fiducial cross sections in the triple-differential Drell-Yan process}",
@@ -848,14 +669,9 @@ references = {
     pages = "002",
     year = "2023"
 }
-"""
-,
-
-######### AMPLITUDES
-
-"DelDuca:2004wt" :
-
-"""
+""",
+    ######### AMPLITUDES
+    "DelDuca:2004wt": """
 @article{DelDuca:2004wt,
     author = "Del Duca, Vittorio and Frizzo, Alberto and Maltoni, Fabio",
     title = "{Higgs boson production in association with three jets}",
@@ -868,12 +684,8 @@ references = {
     pages = "064",
     year = "2004"
 }
-"""
-,
-
-"Dixon:2009uk" :
-
-"""
+""",
+    "Dixon:2009uk": """
 @article{Dixon:2009uk,
     author = "Dixon, Lance J. and Sofianatos, Yorgos",
     title = "{Analytic one-loop amplitudes for a Higgs boson plus four partons}",
@@ -887,12 +699,8 @@ references = {
     pages = "058",
     year = "2009"
 }
-"""
-,
-
-"Badger:2009hw" :
-
-"""
+""",
+    "Badger:2009hw": """
 @article{Badger:2009hw,
     author = "Badger, Simon and Glover, E. W. N. and Mastrolia, Pierpaolo and Williams, Ciaran",
     title = "{One-loop Higgs plus four gluon amplitudes: Full analytic results}",
@@ -906,12 +714,8 @@ references = {
     pages = "036",
     year = "2010"
 }
-"""
-,
-
-"Badger:2009vh" :
-
-"""
+""",
+    "Badger:2009vh": """
 @article{Badger:2009vh,
     author = "Badger, Simon and Campbell, John M. and Ellis, R. Keith and Williams, Ciaran",
     title = "{Analytic results for the one-loop NMHV Hqqgg amplitude}",
@@ -925,12 +729,8 @@ references = {
     pages = "035",
     year = "2009"
 }
-"""
-,
-
-"Gehrmann:2011aa" :
-
-"""
+""",
+    "Gehrmann:2011aa": """
 @article{Gehrmann:2011aa,
     author = "Gehrmann, T. and Jaquier, M. and Glover, E. W. N. and Koukoutsakis, A.",
     title = "{Two-Loop QCD Corrections to the Helicity Amplitudes for $H \to$ 3 partons}",
@@ -944,12 +744,8 @@ references = {
     pages = "056",
     year = "2012"
 }
-"""
-,
-
-"DelDuca:1999pa" :
-
-"""
+""",
+    "DelDuca:1999pa": """
 @article{DelDuca:1999pa,
     author = "Del Duca, Vittorio and Kilgore, William B. and Maltoni, Fabio",
     title = "{Multiphoton amplitudes for next-to-leading order QCD}",
@@ -962,12 +758,8 @@ references = {
     pages = "252--274",
     year = "2000"
 }
-"""
-,
-
-"Signer:1995np" :
-
-"""
+""",
+    "Signer:1995np": """
 @article{Signer:1995np,
     author = "Signer, Adrian",
     title = "{One loop corrections to five parton amplitudes with external photons}",
@@ -980,36 +772,24 @@ references = {
     pages = "204--210",
     year = "1995"
 }
-"""
-,
-
-"Signer:thesis" :
-
-"""
+""",
+    "Signer:thesis": """
 @phdthesis{Signer:thesis,
     author = "Signer, Adrian",
     title = "{Helicity method for next-to-leading order corrections in QCD}",
     school = "ETH Zurich",
     year = "1995"
 }
-"""
-,
-
-"Kuijf:thesis" :
-
-"""
+""",
+    "Kuijf:thesis": """
 @phdthesis{Kuijf:thesis,
     author = "Kuijf, J.G.M.",
     title = "{Multiparton production at hadron colliders}",
     school = "Leiden",
     year = "1991"
 }
-"""
-,
-
-"Anastasiou:2002zn" :
-
-"""
+""",
+    "Anastasiou:2002zn": """
 @article{Anastasiou:2002zn,
     author = "Anastasiou, C. and Glover, E. W. N. and Tejeda-Yeomans, M. E.",
     title = "{Two loop QED and QCD corrections to massless fermion boson scattering}",
@@ -1022,12 +802,8 @@ references = {
     pages = "255--289",
     year = "2002"
 }
-"""
-,
-
-"Bern:2003ck" :
-
-"""
+""",
+    "Bern:2003ck": """
 
 @article{Bern:2003ck,
     author = "Bern, Zvi and De Freitas, Abilio and Dixon, Lance J.",
@@ -1057,12 +833,8 @@ references = {
     pages = "113007",
     year = "2002"
 }
-"""
-,
-
-"Berends:1987me" :
-
-"""
+""",
+    "Berends:1987me": """
 @article{Berends:1987me,
     author = "Berends, Frits A. and Giele, W. T.",
     title = "{Recursive Calculations for Processes with n Gluons}",
@@ -1073,12 +845,8 @@ references = {
     pages = "759--808",
     year = "1988"
 }
-"""
-,
-
-"Mangano:1990by" :
-
-"""
+""",
+    "Mangano:1990by": """
 @article{Mangano:1990by,
     author = "Mangano, Michelangelo L. and Parke, Stephen J.",
     title = "{Multiparton amplitudes in gauge theories}",
@@ -1091,12 +859,8 @@ references = {
     pages = "301--367",
     year = "1991"
 }
-"""
-,
-
-"Ellis:1985er" :
-
-"""
+""",
+    "Ellis:1985er": """
 @article{Ellis:1985er,
     author = "Ellis, R. Keith and Sexton, J. C.",
     title = "{QCD Radiative Corrections to Parton Parton Scattering}",
@@ -1107,12 +871,8 @@ references = {
     pages = "445--484",
     year = "1986"
 }
-"""
-,
-
-"Bern:1993mq" :
-
-"""
+""",
+    "Bern:1993mq": """
 @article{Bern:1993mq,
     author = "Bern, Zvi and Dixon, Lance J. and Kosower, David A.",
     title = "{One loop corrections to five gluon amplitudes}",
@@ -1125,12 +885,8 @@ references = {
     pages = "2677--2680",
     year = "1993"
 }
-"""
-,
-
-"Bern:1994fz" :
-
-"""
+""",
+    "Bern:1994fz": """
 @article{Bern:1994fz,
     author = "Bern, Zvi and Dixon, Lance J. and Kosower, David A.",
     title = "{One loop corrections to two quark three gluon amplitudes}",
@@ -1143,12 +899,8 @@ references = {
     pages = "259--304",
     year = "1995"
 }
-"""
-,
-
-"Kunszt:1994nq" :
-
-"""
+""",
+    "Kunszt:1994nq": """
 @article{Kunszt:1994nq,
     author = "Kunszt, Zoltan and Signer, Adrian and Trocsanyi, Zoltan",
     title = "{One loop radiative corrections to the helicity amplitudes of QCD processes involving four quarks and one gluon}",
@@ -1161,12 +913,8 @@ references = {
     pages = "529--536",
     year = "1994"
 }
-"""
-,
-
-"Anastasiou:2001sv" :
-
-"""
+""",
+    "Anastasiou:2001sv": """
 
 @article{Anastasiou:2001sv,
     author = "Anastasiou, C. and Glover, E. W. N. and Oleari, C. and Tejeda-Yeomans, M. E.",
@@ -1180,12 +928,8 @@ references = {
     pages = "486--516",
     year = "2001"
 }
-"""
-,
-
-"Glover:2001af" :
-
-"""
+""",
+    "Glover:2001af": """
 @article{Glover:2001af,
     author = "Glover, E. W. N. and Oleari, C. and Tejeda-Yeomans, M. E.",
     title = "{Two loop QCD corrections to gluon-gluon scattering}",
@@ -1198,12 +942,8 @@ references = {
     pages = "467--485",
     year = "2001"
 }
-"""
-,
-
-"Bern:2002tk" :
-
-"""
+""",
+    "Bern:2002tk": """
 @article{Bern:2002tk,
     author = "Bern, Zvi and De Freitas, Abilio and Dixon, Lance J.",
     title = "{Two loop helicity amplitudes for gluon-gluon scattering in QCD and supersymmetric Yang-Mills theory}",
@@ -1216,12 +956,8 @@ references = {
     pages = "018",
     year = "2002"
 }
-"""
-,
-
-"Anastasiou:2000kg" :
-
-"""
+""",
+    "Anastasiou:2000kg": """
 @article{Anastasiou:2000kg,
     author = "Anastasiou, C. and Glover, E. W. N. and Oleari, C. and Tejeda-Yeomans, M. E.",
     title = "{Two-loop QCD corrections to the scattering of massless distinct quarks}",
@@ -1234,12 +970,8 @@ references = {
     pages = "318--340",
     year = "2001"
 }
-"""
-,
-
-"Anastasiou:2000ue" :
-
-"""
+""",
+    "Anastasiou:2000ue": """
 @article{Anastasiou:2000ue,
     author = "Anastasiou, C. and Glover, E. W. N. and Oleari, C. and Tejeda-Yeomans, M. E.",
     title = "{Two loop QCD corrections to massless identical quark scattering}",
@@ -1252,12 +984,8 @@ references = {
     pages = "341--360",
     year = "2001"
 }
-"""
-,
-
-"Anastasiou:2000mv" :
-
-"""
+""",
+    "Anastasiou:2000mv": """
 @article{Anastasiou:2000mv,
     author = "Anastasiou, C. and Glover, E. W. N. and Oleari, C. and Tejeda-Yeomans, M. E.",
     title = "{One loop QCD corrections to quark scattering at NNLO}",
@@ -1270,12 +998,8 @@ references = {
     pages = "59--67",
     year = "2001"
 }
-"""
-,
-
-"Glover:2001rd" :
-
-"""
+""",
+    "Glover:2001rd": """
 @article{Glover:2001rd,
     author = "Glover, E. W. N. and Tejeda-Yeomans, M. E.",
     title = "{One loop QCD corrections to gluon-gluon scattering at NNLO}",
@@ -1288,12 +1012,8 @@ references = {
     pages = "010",
     year = "2001"
 }
-"""
-,
-
-"Hagiwara:1988pp" :
-
-"""
+""",
+    "Hagiwara:1988pp": """
 @article{Hagiwara:1988pp,
     author = "Hagiwara, Kaoru and Zeppenfeld, D.",
     title = "{Amplitudes for Multiparton Processes Involving a Current at $e^+ e^-$, $e^\\pm p$ and Hadron Colliders}",
@@ -1304,12 +1024,8 @@ references = {
     pages = "560--594",
     year = "1989"
 }
-"""
-,
-
-"Glover:1996eh" :
-
-"""
+""",
+    "Glover:1996eh": """
 @article{Glover:1996eh,
     author = "Glover, E. W. N. and Miller, D. J.",
     title = "{The One loop QCD corrections for $\\gamma^* \\to Q \\bar{Q} q \\bar{q}$}",
@@ -1322,12 +1038,8 @@ references = {
     pages = "257--263",
     year = "1997"
 }
-"""
-,
-
-"Campbell:1997tv" :
-
-"""
+""",
+    "Campbell:1997tv": """
 @article{Campbell:1997tv,
     author = "Campbell, John M. and Glover, E. W. N. and Miller, D. J.",
     title = "{The One loop QCD corrections for $\\gamma^* \\to q \\bar{q} g g$}",
@@ -1340,12 +1052,8 @@ references = {
     pages = "503--508",
     year = "1997"
 }
-"""
-,
-
-"Bern:1997sc" :
-
-"""
+""",
+    "Bern:1997sc": """
 @article{Bern:1997sc,
     author = "Bern, Zvi and Dixon, Lance J. and Kosower, David A.",
     title = "{One loop amplitudes for $e^+ e^-$ to four partons}",
@@ -1358,12 +1066,8 @@ references = {
     pages = "3--86",
     year = "1998"
 }
-"""
-,
-
-"Garland:2001tf" :
-
-"""
+""",
+    "Garland:2001tf": """
 @article{Garland:2001tf,
     author = "Garland, L. W. and Gehrmann, T. and Glover, E. W. N. and Koukoutsakis, A. and Remiddi, E.",
     title = "{The Two loop QCD matrix element for $e^+e^-\\to$ 3 jets}",
@@ -1376,12 +1080,8 @@ references = {
     pages = "107--188",
     year = "2002"
 }
-"""
-,
-
-"Garland:2002ak" :
-
-"""
+""",
+    "Garland:2002ak": """
 @article{Garland:2002ak,
     author = "Garland, L. W. and Gehrmann, T. and Glover, E. W. N. and Koukoutsakis, A. and Remiddi, E.",
     title = "{Two loop QCD helicity amplitudes for $e^+e^-\\to$ 3 jets}",
@@ -1394,12 +1094,8 @@ references = {
     pages = "227--262",
     year = "2002"
 }
-"""
-,
-
-"Gehrmann:2002zr" :
-
-"""
+""",
+    "Gehrmann:2002zr": """
 @article{Gehrmann:2002zr,
     author = "Gehrmann, T. and Remiddi, E.",
     title = "{Analytic continuation of massless two loop four point functions}",
@@ -1412,12 +1108,8 @@ references = {
     pages = "379--411",
     year = "2002"
 }
-"""
-,
-
-"Gehrmann:2011ab" :
-
-"""
+""",
+    "Gehrmann:2011ab": """
 @article{Gehrmann:2011ab,
     author = "Gehrmann, Thomas and Tancredi, Lorenzo",
     title = "{Two-loop QCD helicity amplitudes for $q\\bar q \\to W^\\pm \\gamma$ and $q\\bar q \\to Z^0 \\gamma$}",
@@ -1431,12 +1123,8 @@ references = {
     pages = "004",
     year = "2012"
 }
-"""
-,
-
-"Berends:1988yn" :
-
-"""
+""",
+    "Berends:1988yn": """
 
 @article{Berends:1988yn,
     author = "Berends, Frits A. and Giele, W. T. and Kuijf, H.",
@@ -1448,16 +1136,10 @@ references = {
     pages = "39--82",
     year = "1989"
 }
-"""
-,
-
-
-######### EXTERNAL TOOLS
-
-#LHAPDF
-"Buckley:2014ana":
-
-"""
+""",
+    ######### EXTERNAL TOOLS
+    # LHAPDF
+    "Buckley:2014ana": """
 @article{Buckley:2014ana,
     author = {Buckley, Andy and Ferrando, James and Lloyd, Stephen and Nordstr\\"om, Karl and Page, Ben and R\\"ufenacht, Martin and Sch\\"onherr, Marek and Watt, Graeme},
     title = "{LHAPDF6: parton density access in the LHC precision era}",
@@ -1471,6 +1153,5 @@ references = {
     pages = "132",
     year = "2015"
 }
-"""
-
+""",
 }

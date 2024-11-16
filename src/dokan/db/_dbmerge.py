@@ -83,7 +83,9 @@ class MergePart(DBMerge):
                 # @todo raise error as we should never be in this situation?
                 return True
 
-            self.debug(f"MergePart::complete[{self.part_id},{self.force}]: done {c_done}, merged {c_merged}")
+            self.debug(
+                f"MergePart::complete[{self.part_id},{self.force}]: done {c_done}, merged {c_merged}"
+            )
 
             if self.force and c_done > 0:
                 return False

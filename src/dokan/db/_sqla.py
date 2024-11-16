@@ -81,6 +81,7 @@ class Job(DokanDB):
 class DokanLog(DeclarativeBase):
     pass
 
+
 class Log(DokanLog):
     __tablename__ = "log"
 

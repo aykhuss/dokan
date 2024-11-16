@@ -159,8 +159,12 @@ class DBRunner(DBTask):
         if self.mode == ExecutionMode.PRODUCTION:
             mrg_part: MergePart = self.clone(MergePart, force=False, part_id=self.part_id)
             if mrg_part.complete():
-                self.logger(f"DBRunner::run id = {self.id}, part_id = {self.part_id} > MergePart complete")
+                self.logger(
+                    f"DBRunner::run id = {self.id}, part_id = {self.part_id} > MergePart complete"
+                )
                 return
             else:
-                self.logger(f"DBRunner::run id = {self.id}, part_id = {self.part_id} > yield MergePart")
+                self.logger(
+                    f"DBRunner::run id = {self.id}, part_id = {self.part_id} > yield MergePart"
+                )
                 yield mrg_part

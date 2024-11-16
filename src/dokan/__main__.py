@@ -359,8 +359,8 @@ def main() -> None:
         signal.signal(signal.SIGTERM, graceful_exit)
         # @ todo SIGUSR1 to trigger MergeAll?
 
-        #@todo checks of the DB and ask for recovery mode?
-        #@todo skip warmup?
+        # @todo checks of the DB and ask for recovery mode?
+        # @todo skip warmup?
 
         # > actually submit the root task to run NNLOJET and spawn the monitor
         console.print(f"CPU cores: {cpu_count}")
@@ -398,7 +398,7 @@ def main() -> None:
         # console.print(luigi_result.status)
         # console.print(luigi_result.summary_text)
 
-        #@todo give an estimate in case target accuracy not reached.
+        # @todo give an estimate in case target accuracy not reached.
 
 
 if __name__ == "__main__":
