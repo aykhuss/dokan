@@ -3,7 +3,6 @@
 module defining the job database
 """
 
-
 from sqlalchemy import BigInteger, ForeignKey
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
