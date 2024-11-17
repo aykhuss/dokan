@@ -100,7 +100,6 @@ class SlurmExec(Executor):
             # for line in squeue.stdout.splitlines():
             #   if re.match(match_job_id, line):
             #     print(line)
-            squeue_json: dict = {}
             for _ in range(nretry):
                 squeue = subprocess.run(
                     ["squeue", "-h", "--job", str(job_id)], capture_output=True, text=True

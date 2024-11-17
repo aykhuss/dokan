@@ -8,14 +8,13 @@ import datetime
 import time
 from operator import itemgetter
 
-import luigi
 from rich import box
 from rich.live import Live
 from rich.style import Style
 from rich.table import Column, Table
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
-from .db import DBTask, Job, Log, Part
+from .db import DBTask, Log, Part
 from .db._jobstatus import JobStatus
 from .db._loglevel import LogLevel
 from .exe import ExecutionMode
@@ -152,7 +151,7 @@ class Monitor(DBTask):
     def run(self):
         if not self.config["ui"]["monitor"]:
             return
-        self.logger(f"Monitor: switching on the job status board...")
+        self.logger("Monitor: switching on the job status board...")
         with Live(self.generate_table(), auto_refresh=False) as live:
             while True:
                 live.update(self.generate_table(), refresh=True)

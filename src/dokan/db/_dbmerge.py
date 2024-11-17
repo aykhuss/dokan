@@ -2,7 +2,7 @@ import datetime
 import os
 import re
 import time
-from abc import ABCMeta, abstractmethod
+from abc import ABCMeta
 from pathlib import Path
 
 import luigi

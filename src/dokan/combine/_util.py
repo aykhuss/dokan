@@ -6,7 +6,7 @@ import sys
 
 import numpy as np
 
-from ._algo import is_outlier_doubleMAD, is_outlier_dynMAD, is_outlier_IQR, is_outlier_MAD
+from ._algo import is_outlier_dynMAD
 
 _comment_prefix = "#"
 
@@ -1004,7 +1004,7 @@ class NNLOJETContainer:
                 # mask = is_outlier_dynMAD(bin_data, dyn_thresh, dyn_fac, True)
                 # print("out:  {}".format(mask))
                 # print("+++++++++")
-                self._mask[i_row, i_col, mask == True] = 1
+                self._mask[i_row, i_col, mask] = 1
 
     #    def mask_outliers(self, thresh=4., maxfrac=0.05):
     #        if thresh <= 0.:
@@ -1057,8 +1057,8 @@ class NNLOJETContainer:
             ref_hist = self.merge()
 
         (n_rows, n_cols, n_files) = self._yval.shape
-        if self._buffer_size is not None:
-            n_files = self._size
+        # if self._buffer_size is not None:
+        #     n_files = self._size
 
         for i_row in range(n_rows):
             for i_col in range(n_cols):

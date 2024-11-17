@@ -3,13 +3,11 @@
 module defining the job database
 """
 
-import datetime
 
-from sqlalchemy import BigInteger, ForeignKey, String, select
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
+from sqlalchemy import BigInteger, ForeignKey
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from ..exe._exe_config import ExecutionMode, ExecutionPolicy
-from ._jobstatus import JobStatus
 
 
 class DokanDB(DeclarativeBase):

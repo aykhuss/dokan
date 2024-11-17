@@ -73,7 +73,7 @@ def is_outlier_dynMAD(points, thresh=3.5, dsigma=0.6745, qplt=False):
 
 
 def is_outlier_IQR(points, thresh=1.5):
-    median = np.nanmedian(points)
+    # median = np.nanmedian(points)
     lower_quartile = np.nanpercentile(points, 25.0)
     upper_quartile = np.nanpercentile(points, 75.0)
 
