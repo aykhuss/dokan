@@ -1,3 +1,10 @@
+"""dokan job dispatcher
+
+defines the task the dispatches NNLOJET jobs, which also serves the purpose
+of re-populating the queue with new jobs based on the current state of the
+calculation (available resources, target accuracy, etc.)
+"""
+
 import luigi
 from sqlalchemy import func, select
 
@@ -56,7 +63,8 @@ class DBDispatch(DBTask):
         njobs_rem, T_rem = self.remainders()
         if njobs_rem <= 0 or T_rem <= 0.0:
             self.debug(
-                f"DBDispatch[{self._n}] resources depleted:  njobs = {njobs_rem}, T = {T_rem}"
+                f"DBDispatch[{self.id},{self._n}]::repopulate: resources depleted:  "
+                + f"njobs = {njobs_rem}, T = {T_rem}"
             )
             return
 
@@ -71,8 +79,8 @@ class DBDispatch(DBTask):
                     self.logger(
                         f"part {part_id} has ntot={opt['ntot_job']} -> 0 = {ncall} * {niter}"
                     )
-                    ncall = self.config["production"]["ncall_start"]
-                    # return []
+                    # ncall = self.config["production"]["ncall_start"]
+                    return []
                 jobs: list[Job] = [
                     Job(
                         run_tag=self.run_tag,
@@ -91,9 +99,10 @@ class DBDispatch(DBTask):
                 session.commit()
                 return [job.id for job in jobs]
 
-            self.debug(f"DBDispatch[{self._n}]: repopulate {self.id} | {self.run_tag}")
-            self.debug(f"njobs  - remaining: {njobs_rem}")
-            self.debug(f"T      - remaining: {T_rem}")
+            self.debug(
+                f"DBDispatch[{self.id},{self._n}]::repopulate:  "
+                + f"njobs = {njobs_rem}, T = {T_rem}"
+            )
 
             # > build up subquery to get Parts with job counts
             def job_count_subquery(js_list: list[JobStatus]):
@@ -142,31 +151,32 @@ class DBDispatch(DBTask):
                         qbreak = True
                     nsuc = nsuc if nsuc else 0
                     nact = nact if nact else 0
-                    # can i do:  nsuc = nsuc or 0
+                    # > initially, we prefer to increment jobs by 2x
                     if nque >= 2 * (nsuc + (nact - nque)):
                         qbreak = True
                     # @todo: more?
                 if qbreak:
-                    self.debug(f"DBDispatch[{self._n}]: qbreak = {qbreak}")
+                    self.debug(f"DBDispatch[{self.id},{self._n}]::repopulate:  qbreak = {qbreak}")
                     break
 
-                # for pt in session.scalars(select(Part).where(Part.active.is_(True))):
-                #     print(pt)
-                #     print(sum(1 for j in pt.jobs if j.status == JobStatus.DONE))
-
-                # > register new jobs
+                # > allocate & distribute time for next batch of jobs
                 T_next: float = min(
                     self.config["run"]["jobs_batch_size"] * self.config["run"]["job_max_runtime"],
                     njobs_rem * self.config["run"]["job_max_runtime"],
                     T_rem,
                 )
                 opt_dist: dict = self.distribute_time(T_next)
+
+                # > interrupt when target accuracy reached
                 rel_acc: float = abs(opt_dist["tot_error"] / opt_dist["tot_result"])
                 if rel_acc <= self.config["run"]["target_rel_acc"]:
                     self.debug(
-                        f'DBDispatch[{self._n}]: rel_acc = {rel_acc} v.s. {self.config["run"]["target_rel_acc"]}'
+                        f"DBDispatch[{self.id},{self._n}]::repopulate:  "
+                        + f'rel_acc = {rel_acc} vs. {self.config["run"]["target_rel_acc"]}'
                     )
                     break
+
+                # > make sure we stay within `njobs` resource limits
                 while (
                     tot_njobs := sum(opt["njobs"] for opt in opt_dist["part"].values())
                 ) > njobs_rem:
@@ -176,6 +186,8 @@ class DBDispatch(DBTask):
                     for opt in opt_dist["part"].values():
                         if opt["njobs"] > 0:
                             opt["njobs"] -= min_njobs
+
+                # > register (at least one) job(s)
                 tot_T: float = 0.0
                 for part_id, opt in sorted(
                     opt_dist["part"].items(), key=lambda x: x[1]["T_opt"], reverse=True
@@ -189,8 +201,10 @@ class DBDispatch(DBTask):
                         continue
                     # > regiser njobs new jobs with ncall,niter and time estime to DB
                     ids = queue_production(part_id, opt)
-                    self.logger(f"DBDispatch[{self._n}]: queued[{part_id}]: {len(ids)} = {ids}")
-                    tot_njobs += opt["njobs"]
+                    self.logger(
+                        f"DBDispatch[{self.id},{self._n}]::repopulate:  "
+                        + f"part_id = {part_id}:  (#:{len(ids)}) {ids}"
+                    )
                     tot_T += opt["njobs"] * opt["T_job"]
 
                 # > commit & update remaining resources for next iteration
@@ -205,8 +219,6 @@ class DBDispatch(DBTask):
                     break
 
     def run(self):
-        # print(f"DBDispatch: run {self.id}")
-
         self.repopulate()
 
         with self.session as session:
@@ -237,5 +249,5 @@ class DBDispatch(DBTask):
                 session.commit()
                 # if self.id == 0:
                 #     self.decrease_running_resources({"DBDispatch": 1})
-                self.logger(f"DBDispatch[{self._n}]: submitting {job!r}")
+                self.logger(f"DBDispatch[{self.id},{self._n}]::run:  submitting {job!r}")
                 yield self.clone(cls=DBRunner, id=job.id)
