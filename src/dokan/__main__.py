@@ -14,16 +14,24 @@ import luigi
 from rich.console import Console
 from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt, PromptBase
 from rich.syntax import Syntax
+from sqlalchemy import select
 
-import dokan
-import dokan.nnlojet
-from dokan.exe import ExecutionPolicy, Executor
-from dokan.order import Order
-from dokan.util import parse_time_interval
+from dokan.db._jobstatus import JobStatus
 
 from .__about__ import __version__
+from .bib import make_bib
+from .config import Config
+from .db._dbtask import DBInit
 from .db._loglevel import LogLevel
-from .db._sqla import Part
+from .db._sqla import Job, Part
+from .entry import Entry
+from .exe import ExecutionPolicy, Executor
+from .monitor import Monitor
+from .nnlojet import get_lumi
+from .order import Order
+from .runcard import Runcard
+from .scheduler import WorkerSchedulerFactory
+from .util import parse_time_interval
 
 
 class TimeIntervalPrompt(PromptBase[float]):
@@ -52,7 +60,7 @@ class ExecutionPolicyPrompt(PromptBase[ExecutionPolicy]):
 
 def main() -> None:
     # > some action-global variables
-    config: dokan.Config = dokan.Config(default_ok=True)
+    config = Config(default_ok=True)
     console = Console()
     cpu_count: int = multiprocessing.cpu_count()
 
@@ -118,7 +126,7 @@ def main() -> None:
 
     # >-----
     if args.action == "init":
-        runcard: dokan.Runcard = dokan.Runcard(runcard=args.runcard)
+        runcard = Runcard(runcard=args.runcard)
         if nnlojet_exe is None:
             prompt_exe = Prompt.ask("Could not find an NNLOJET executable. Please specify path")
             path_exe: Path = Path(prompt_exe)
@@ -134,7 +142,7 @@ def main() -> None:
             config.set_path(os.path.relpath(runcard.data["run_name"]))
         console.print(f"run folder: [italic]{(config.path).absolute()}[/italic]")
 
-        bibout, bibtex = dokan.make_bib(runcard.data["process_name"], config.path)
+        bibout, bibtex = make_bib(runcard.data["process_name"], config.path)
         console.print(f"process: \"[bold]{runcard.data['process_name']}[/bold]\"")
         console.print(f"bibliography: [italic]{bibout.relative_to(config.path)}[/italic]")
         # console.print(f" - {bibtex.relative_to(config.path)}")
@@ -158,16 +166,14 @@ def main() -> None:
             config["run"]["histograms_single_file"] = runcard.data["histograms_single_file"]
         config["run"]["template"] = "template.run"
         config["process"]["name"] = runcard.data["process_name"]
-        config["process"]["channels"] = dokan.nnlojet.get_lumi(
-            config["exe"]["path"], config["process"]["name"]
-        )
+        config["process"]["channels"] = get_lumi(config["exe"]["path"], config["process"]["name"])
         config.write()
         runcard.to_tempalte(Path(config["run"]["path"]) / config["run"]["template"])
 
     # >-----
     if args.action == "init" or args.action == "config":
         if args.action == "config":  # load!
-            config = dokan.Config(path=args.run_path, default_ok=False)
+            config = Config(path=args.run_path, default_ok=False)
 
         console.print(
             f"setting default values for the run configuration at [italic]{str(config.path.absolute())}[/italic]"
@@ -330,7 +336,7 @@ def main() -> None:
 
     # >-----
     if args.action == "submit":
-        config: dokan.Config = dokan.Config(path=args.run_path, default_ok=False)
+        config = Config(path=args.run_path, default_ok=False)
 
         # > CLI overrides
         if nnlojet_exe is not None:
@@ -354,7 +360,7 @@ def main() -> None:
 
         # > create the DB skeleton & activate parts
         channels: dict = config["process"].pop("channels")
-        db_init = dokan.DBInit(
+        db_init = DBInit(
             config=config,
             channels=channels,
             run_tag=time.time(),
@@ -362,7 +368,7 @@ def main() -> None:
         )
         luigi_result = luigi.build(
             [db_init],
-            worker_scheduler_factory=dokan.WorkerSchedulerFactory(),
+            worker_scheduler_factory=WorkerSchedulerFactory(),
             detailed_summary=True,
             workers=1,
             local_scheduler=True,
@@ -370,10 +376,13 @@ def main() -> None:
         )  # 'WARNING', 'INFO', 'DEBUG''
         if not luigi_result:
             sys.exit("DBInit failed")
-        nactive: int = 0
+        nactive_part: int = 0
+        nactive_job: int = 0
         with db_init.session as session:
-            nactive = session.query(Part).filter(Part.active.is_(True)).count()
-        console.print(f"active parts: {nactive}")
+            nactive_part = session.query(Part).filter(Part.active.is_(True)).count()
+            nactive_job = session.query(Job).filter(Job.status.in_(JobStatus.active_list())).count()
+        console.print(f"active parts: {nactive_part}")
+        # console.print(f"active jobs: {nactive_job}")
 
         # > register signal handlers
         def graceful_exit(sig, frame):
@@ -389,6 +398,22 @@ def main() -> None:
         # @ todo SIGUSR1 to trigger MergeAll?
 
         # @todo checks of the DB and ask for recovery mode?
+        if nactive_job > 0:
+            select_active_jobs = select(Job).where(Job.status.in_(JobStatus.active_list()))
+            console.print(f"there appear to be {nactive_job} active jobs in the database")
+            if Confirm.ask("attempt to recover/restart them?", default=True):
+                with db_init.session as session:
+                    for job in session.scalars(select_active_jobs):
+                        console.print(f" > {job!r}")
+            else:
+                if Confirm.ask("remove them for the database?", default=False):
+                    with db_init.session as session:
+                        for job in session.scalars(select_active_jobs):
+                            if job.rel_path is not None:
+                                shutil.rmtree(db_init._local(job.rel_path))
+                            session.delete(job)
+                        session.commit()
+
         # @todo skip warmup?
 
         # > actually submit the root task to run NNLOJET and spawn the monitor
@@ -399,10 +424,10 @@ def main() -> None:
             local_ncores: int = cpu_count
         luigi_result = luigi.build(
             [
-                db_init.clone(dokan.Entry),
-                db_init.clone(dokan.Monitor),
+                db_init.clone(Entry),
+                db_init.clone(Monitor),
             ],
-            worker_scheduler_factory=dokan.WorkerSchedulerFactory(
+            worker_scheduler_factory=WorkerSchedulerFactory(
                 # @todo properly set resources according to config
                 resources={
                     "local_ncores": local_ncores,
@@ -416,7 +441,7 @@ def main() -> None:
                 wait_interval=0.1,
             ),
             detailed_summary=True,
-            workers=min(cpu_count, nactive) + 1,
+            workers=min(cpu_count, nactive_part) + 1,
             local_scheduler=True,
             log_level="WARNING",
         )  # 'WARNING', 'INFO', 'DEBUG''
