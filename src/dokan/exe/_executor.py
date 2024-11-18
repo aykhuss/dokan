@@ -12,10 +12,10 @@ from pathlib import Path
 
 import luigi
 
+from .._types import GenericPath
 from ..nnlojet import parse_log_file
 from ._exe_config import ExecutionPolicy
 from ._exe_data import ExeData
-from .._types import GenericPath
 
 logger = logging.getLogger("luigi-interface")
 

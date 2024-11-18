@@ -7,8 +7,8 @@ import subprocess
 import time
 from pathlib import Path
 
-from .._executor import Executor
 from ..._types import GenericPath
+from .._executor import Executor
 
 logger = logging.getLogger("luigi-interface")
 
