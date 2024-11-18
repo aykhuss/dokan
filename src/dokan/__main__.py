@@ -142,21 +142,25 @@ def main() -> None:
             config.set_path(os.path.relpath(runcard.data["run_name"]))
         console.print(f"run folder: [italic]{(config.path).absolute()}[/italic]")
 
-        bibout, bibtex = make_bib(runcard.data["process_name"], config.path)
-        console.print(f"process: \"[bold]{runcard.data['process_name']}[/bold]\"")
-        console.print(f"bibliography: [italic]{bibout.relative_to(config.path)}[/italic]")
-        # console.print(f" - {bibtex.relative_to(config.path)}")
-        # with open(bibout, "r") as bib:
-        #     syntx = Syntax(bib.read(), "bibtex")
-        #     console.print(syntx)
-        with open(bibtex, "r") as bib:
-            syntx = Syntax(bib.read(), "tex", word_wrap=True)
-            console.print(syntx)
-        console.print(
-            "When using results obtained with this software, you are required to cite the relevant references."
-        )
-        if not Confirm.ask("Please confirm that you agree to these terms"):
-            sys.exit("failed to agree with the terms of use")
+
+        try:
+            bibout, bibtex = make_bib(runcard.data["process_name"], config.path)
+            console.print(f"process: \"[bold]{runcard.data['process_name']}[/bold]\"")
+            console.print(f"bibliography: [italic]{bibout.relative_to(config.path)}[/italic]")
+            # console.print(f" - {bibtex.relative_to(config.path)}")
+            # with open(bibout, "r") as bib:
+            #     syntx = Syntax(bib.read(), "bibtex")
+            #     console.print(syntx)
+            with open(bibtex, "r") as bib:
+                syntx = Syntax(bib.read(), "tex", word_wrap=True)
+                console.print(syntx)
+            console.print(
+                "When using results obtained with this software, you are required to cite the relevant references."
+            )
+            if not Confirm.ask("Please confirm that you agree to these terms"):
+                sys.exit("failed to agree with the terms of use")
+        except Exception as e:
+            console.print(f"error encountered in wiritng bibliography files:\n{e}")
 
         config["exe"]["path"] = nnlojet_exe
         config["run"]["dokan_version"] = __version__
