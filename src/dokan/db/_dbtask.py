@@ -26,7 +26,8 @@ class DBTask(Task, metaclass=ABCMeta):
     # > threadsafety using resource = 1, where read/write needed
     resources = {"DBTask": 1}
     # > database queries should jump the scheduler queue?
-    # priority = 100
+
+    # priority = 1
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

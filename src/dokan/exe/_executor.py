@@ -23,6 +23,8 @@ logger = logging.getLogger("luigi-interface")
 class Executor(luigi.Task, metaclass=ABCMeta):
     path: str = luigi.Parameter()
 
+    priority = 100
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.exe_data: ExeData = ExeData(Path(self.path))

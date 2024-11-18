@@ -25,6 +25,8 @@ class DBMerge(DBTask, metaclass=ABCMeta):
     # @todo make common
     resources = {"DBMerge": 1}
 
+    priority = 10
+
     # @staticmethod
     # def clone_factory(orig: DBTask, id: int = 0):
     #     if id > 0:

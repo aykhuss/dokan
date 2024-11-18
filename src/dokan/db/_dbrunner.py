@@ -1,3 +1,11 @@
+"""dokan job runner
+
+defines the task to run NNLOJET jobs by spawning executors of the appropriate
+backend as specified by the job policy. It further is responsible to populate
+the database with the results of each execution (as executors are normal luigi
+tasks and, as such, do not have access to the dokan job database).
+"""
+
 import re
 import shutil
 from pathlib import Path
@@ -16,7 +24,8 @@ from ._sqla import Job
 class DBRunner(DBTask):
     # @todo make a list to accommodate batch jobs
     id: int = luigi.IntParameter()
-    # priority = 100
+
+    priority = 10
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
