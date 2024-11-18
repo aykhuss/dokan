@@ -92,6 +92,7 @@ _schema: dict = {
         "ncall_start": int,  # initial number of events (per iteration)
         "niter": int,  # number of iterations in a single job (>=2 for chi2dof)
         "penalty_wrt_warmup": float,  # factor that takes into account the slowdown from warmup -> production
+        "fac_merge_trigger": float,  # factor that triggers a merge if ((#done+#merged)/(#merged+1)) > fac_merge_trigger
     },
 }
 

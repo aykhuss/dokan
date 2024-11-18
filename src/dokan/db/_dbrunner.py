@@ -25,7 +25,7 @@ class DBRunner(DBTask):
     # @todo make a list to accommodate batch jobs
     id: int = luigi.IntParameter()
 
-    priority = 10
+    priority = 20
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

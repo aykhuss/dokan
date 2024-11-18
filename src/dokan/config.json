@@ -35,6 +35,7 @@
     "ncores": 1,
     "ncall_start": 100,
     "niter": 2,
-    "penalty_wrt_warmup": 0.1
+    "penalty_wrt_warmup": 0.1,
+    "fac_merge_trigger": 1.5
   }
 }

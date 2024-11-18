@@ -1,3 +1,9 @@
+"""dokan merge tasks
+
+defines tasks to merge individual NNLOJET results into a combined result.
+constitutes the dokan workflow implementation of `nnlojet-combine.py`
+"""
+
 import datetime
 import os
 import re
@@ -22,8 +28,7 @@ class DBMerge(DBTask, metaclass=ABCMeta):
     force: bool = luigi.BoolParameter(default=False)
 
     # > limit the resources on local cores
-    # @todo make common
-    resources = {"DBMerge": 1}
+    resources = {"local_ncores": 1}
 
     priority = 10
 
@@ -92,11 +97,16 @@ class MergePart(DBMerge):
             if self.force and c_done > 0:
                 return False
 
-            if float(c_done) / float(c_merged + 1) <= 1.0:  # @todo make config parameter?
+            if (
+                float(c_done + c_merged) / float(c_merged + 1)
+                <= self.config["production"]["fac_merge_trigger"]
+            ):
                 return True
         return False
 
     def run(self):
+        if self.complete():
+            return
         self.logger(f"MergePart::run[{self.part_id}]")
         with self.session as session:
             # > get the part and update timestamp to tag for 'MERGE'
