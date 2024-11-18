@@ -232,12 +232,15 @@ class MergeAll(DBMerge):
                     if in_file.exists():
                         in_files[obs].append(str(in_file.relative_to(self._path)))
                     else:
-                        raise FileNotFoundError(f"MergeAll: missing {in_file}")
+                        raise FileNotFoundError(f"MergeAll::run:  missing {in_file}")
 
             # > sum all parts
             for obs in self.config["run"]["histograms"]:
                 out_file: Path = self.fin_path / f"{obs}.dat"
                 nx: int = self.config["run"]["histograms"][obs]["nx"]
+                if len(in_files[obs]) == 0:
+                    self.logger(f"MergeAll::run:  no files for {obs}", level=LogLevel.ERROR)
+                    continue
                 hist = NNLOJETHistogram()
                 for in_file in in_files[obs]:
                     try:
@@ -246,5 +249,4 @@ class MergeAll(DBMerge):
                         self.logger(f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR)
                 hist.write_to_file(out_file)
 
-        self.debug("MergeAll: complete all")
-        # self.print_job()
+        self.debug("MergeAll::run:  complete all")
