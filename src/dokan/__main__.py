@@ -383,6 +383,9 @@ def main() -> None:
             nactive_job = session.query(Job).filter(Job.status.in_(JobStatus.active_list())).count()
         console.print(f"active parts: {nactive_part}")
         # console.print(f"active jobs: {nactive_job}")
+        if nactive_part == 0:
+            console.print("[red]calculation has no active part?![/red]")
+            sys.exit(0)
 
         # > register signal handlers
         def graceful_exit(sig, frame):
@@ -409,6 +412,7 @@ def main() -> None:
                 if Confirm.ask("remove them for the database?", default=False):
                     with db_init.session as session:
                         for job in session.scalars(select_active_jobs):
+                            console.print(f" > removing: {job!r}")
                             if job.rel_path is not None:
                                 shutil.rmtree(db_init._local(job.rel_path))
                             session.delete(job)
