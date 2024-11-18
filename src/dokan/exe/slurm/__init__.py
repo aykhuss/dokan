@@ -35,6 +35,15 @@ class SlurmExec(Executor):
         return [Path(__file__).parent.resolve() / "slurm.template"]
 
     def exe(self):
+        # > recovery mode
+        if (
+            "slurm_id" in self.exe_data["policy_settings"]
+            and self.exe_data["policy_settings"]["slurm_id"] > 0
+        ):
+            self._track_job()
+            return
+
+        # > populate the submission tempalte file
         slurm_settings: dict = {
             "exe": self.exe_data["exe"],
             "job_path": str(self.exe_data.path.absolute()),
@@ -53,6 +62,8 @@ class SlurmExec(Executor):
             f.write(string.Template(t.read()).substitute(slurm_settings))
 
         job_env = os.environ.copy()
+        job_env["OMP_NUM_THREADS"] = "{}".format(slurm_settings["ncores"])
+        job_env["OMP_STACKSIZE"] = "1024M"
 
         cluster_id: int = -1  # init failed state
         re_cluster_id = re.compile(r"Submitted batch job\s+(\d+).*", re.DOTALL)
@@ -90,16 +101,9 @@ class SlurmExec(Executor):
         nretry: int = self.exe_data["policy_settings"]["slurm_nretry"]
         retry_delay: float = self.exe_data["policy_settings"]["slurm_retry_delay"]
 
-        # match_job_id = re.compile(r"^{:d}".format(job_id))
-        # for i in range(10):
         while True:
             time.sleep(poll_time)
 
-            # squeue = subprocess.run(["squeue", "-nobatch", str(self.job_id)], capture_output = True, text = True)
-            # print(squeue)
-            # for line in squeue.stdout.splitlines():
-            #   if re.match(match_job_id, line):
-            #     print(line)
             for _ in range(nretry):
                 squeue = subprocess.run(
                     ["squeue", "-h", "--job", str(job_id)], capture_output=True, text=True
@@ -107,13 +111,8 @@ class SlurmExec(Executor):
                 if squeue.returncode == 0:
                     if squeue.stdout == "":
                         return  # job terminated: no longer in queue
-                    njobs = squeue.stdout.count("\n")
                     break
                 else:
                     logger.info(f"SlurmExec failed to query job {job_id}:")
                     logger.info(f"{squeue.stdout}\n{squeue.stderr}")
                     time.sleep(retry_delay)
-
-            if njobs == 0:
-                logger.warn(f"SlurmExec failed to query job {job_id} with njobs = {njobs}")
-                return

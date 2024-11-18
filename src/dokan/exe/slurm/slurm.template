@@ -1,6 +1,6 @@
 #!/bin/bash
 ############
-# Slurm submission template
+# Slurm template
 ############
 
 #SBATCH --array=1-${nseed}
