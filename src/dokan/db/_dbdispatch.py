@@ -131,7 +131,7 @@ class DBDispatch(DBTask):
             qbreak: bool = False  # control where we break out (to set self.part_id)
             while True:
                 if njobs_rem <= 0 or T_rem <= 0.0:
-                    return
+                    qbreak = True
 
                 self.part_id = 0  # reset in each loop set @ break
 
@@ -250,10 +250,9 @@ class DBDispatch(DBTask):
 
     def run(self):
         self.repopulate()
-
+        # > queue empty and no job added in `repopulate`: we're done
         if self.part_id <= 0:
-            # > should never get here
-            raise RuntimeError(f"DBDispatch::run: invalid part_id = {self.part_id}!")
+            return
 
         with self.session as session:
             # > get the queue
@@ -261,29 +260,42 @@ class DBDispatch(DBTask):
             if self.id == 0:
                 stmt = stmt.where(Job.part_id == self.part_id)
             # > compile batch in `id` order
-            job = session.scalars(stmt.order_by(Job.id.asc())).first()
-            if job:
-                # @todo set seeds here! (batch size rounding and ordering)
+            jobs: list[Job] = []
+            for job in session.scalars(stmt.order_by(Job.id.asc())):
+                jobs.append(job)
+                if len(jobs) >= self.config["run"]["jobs_batch_size"]:
+                    break
+
+            # > set seeds for the jobs to prepare for a dispatch
+            if jobs:
                 # > get last job that has a seed assigned to it
                 last_job = session.scalars(
                     select(Job)
-                    .where(Job.part_id == job.part_id)
-                    .where(Job.mode == job.mode)
+                    .where(Job.part_id == self.part_id)
+                    .where(Job.mode == jobs[0].mode)
                     .where(Job.seed.is_not(None))
                     .where(Job.seed > self.config["run"]["seed_offset"])
-                    # @todo not good enough, need a max to shield from anothe batch-jobstarting at larger value of seed?
+                    # @todo not good enough, need a max to shield from anothe batch-job starting at larger value of seed?
                     # determine upper bound by the max number of jobs? -> seems like a good idea
                     .order_by(Job.seed.desc())
                 ).first()
                 if last_job:
-                    # print(f"{self.id} last job:\n>  {last_job!r}")
+                    self.debug(
+                        f"DBDispatch[{self.id},{self._n}]::run:  "
+                        + f"{self.id} last job:  {last_job!r}"
+                    )
                     seed_start: int = last_job.seed + 1
                 else:
                     seed_start: int = self.config["run"]["seed_offset"] + 1
-                job.seed = seed_start
-                job.status = JobStatus.DISPATCHED
+
+                for iseed, job in enumerate(jobs, seed_start):
+                    job.seed = iseed
+                    job.status = JobStatus.DISPATCHED
                 session.commit()
-                # if self.id == 0:
-                #     self.decrease_running_resources({"DBDispatch": 1})
-                self.logger(f"DBDispatch[{self.id},{self._n}]::run:  submitting {job!r}")
-                yield self.clone(cls=DBRunner, id=job.id)
+
+                # > time to dispatch Runners
+                self.logger(
+                    f"DBDispatch[{self.id},{self._n}]::run:  "
+                    + f"submitting jobs for part_id = {self.part_id} with seed(s) [{jobs[0].seed},{jobs[-1].seed}]"
+                )
+                yield [self.clone(cls=DBRunner, id=job.id) for job in jobs]
