@@ -27,6 +27,10 @@ class DBDispatch(DBTask):
 
     # > mode and policy must be set already before dispatch!
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.part_id: int = 0  # set in `repoopulate`
+
     @property
     def resources(self):
         if self.id == 0:
@@ -57,6 +61,14 @@ class DBDispatch(DBTask):
             return True
 
     def repopulate(self):
+        if self.id > 0:
+            with self.session as session:
+                job: Job = session.get_one(Job, self.id)
+                self.part_id = job.part_id
+
+        if self.id < 0:
+            self.part_id = abs(self.id)
+
         if self.id != 0:
             return
 
@@ -69,6 +81,11 @@ class DBDispatch(DBTask):
             return
 
         with self.session as session:
+            self.debug(
+                f"DBDispatch[{self.id},{self._n}]::repopulate:  "
+                + f"njobs = {njobs_rem}, T = {T_rem}"
+            )
+
             # > queue up a new production job in the database and return job id's
             def queue_production(part_id: int, opt: dict) -> list[int]:
                 if opt["njobs"] <= 0:
@@ -99,11 +116,6 @@ class DBDispatch(DBTask):
                 session.commit()
                 return [job.id for job in jobs]
 
-            self.debug(
-                f"DBDispatch[{self.id},{self._n}]::repopulate:  "
-                + f"njobs = {njobs_rem}, T = {T_rem}"
-            )
-
             # > build up subquery to get Parts with job counts
             def job_count_subquery(js_list: list[JobStatus]):
                 return (
@@ -116,9 +128,12 @@ class DBDispatch(DBTask):
                 )
 
             # > populate until some termination condition is reached
+            qbreak: bool = False  # control where we break out (to set self.part_id)
             while True:
                 if njobs_rem <= 0 or T_rem <= 0.0:
                     return
+
+                self.part_id = 0  # reset in each loop set @ break
 
                 # > get counters for temrination conditions on #queued
                 job_count_queued = job_count_subquery([JobStatus.QUEUED])
@@ -141,7 +156,6 @@ class DBDispatch(DBTask):
                 )
 
                 # > termination condition based on #queued of individul jobs
-                qbreak: bool = False
                 for pt, nque, nact, nsuc in sorted_parts:
                     self.debug(f"  >> {pt!r} | {nque} | {nact} | {nsuc}")
                     if not nque:
@@ -155,8 +169,19 @@ class DBDispatch(DBTask):
                     if nque >= 2 * (nsuc + (nact - nque)):
                         qbreak = True
                     # @todo: more?
+                    # > found a part that should be dispatched:
+                    if qbreak:
+                        # > in case other contitions trigger:
+                        # >  pick part with largest # of queued jobs
+                        self.part_id = pt.id
+                        break
+
+                # > the sole location where we break out of the infinite loop
                 if qbreak:
-                    self.debug(f"DBDispatch[{self.id},{self._n}]::repopulate:  qbreak = {qbreak}")
+                    self.logger(
+                        f"DBDispatch[{self.id},{self._n}]::repopulate:  "
+                        + f"next in line is part_id = {self.part_id}"
+                    )
                     break
 
                 # > allocate & distribute time for next batch of jobs
@@ -174,18 +199,22 @@ class DBDispatch(DBTask):
                         f"DBDispatch[{self.id},{self._n}]::repopulate:  "
                         + f'rel_acc = {rel_acc} vs. {self.config["run"]["target_rel_acc"]}'
                     )
-                    break
+                    qbreak = True
+                    continue
 
                 # > make sure we stay within `njobs` resource limits
                 while (
                     tot_njobs := sum(opt["njobs"] for opt in opt_dist["part"].values())
                 ) > njobs_rem:
-                    min_njobs: int = min(
-                        opt["njobs"] for opt in opt_dist["part"].values() if opt["njobs"] > 0
+                    # > decrement in steps of min/2
+                    dec_njobs: int = (
+                        min(opt["njobs"] for opt in opt_dist["part"].values() if opt["njobs"] > 0)
+                        // 2
+                        + 1
                     )
                     for opt in opt_dist["part"].values():
                         if opt["njobs"] > 0:
-                            opt["njobs"] -= min_njobs
+                            opt["njobs"] -= dec_njobs
 
                 # > register (at least one) job(s)
                 tot_T: float = 0.0
@@ -216,16 +245,23 @@ class DBDispatch(DBTask):
                     opt_dist["tot_error_estimate_jobs"] / opt_dist["tot_result"]
                 )
                 if estimate_rel_acc <= self.config["run"]["target_rel_acc"]:
-                    break
+                    qbreak = True
+                    continue
 
     def run(self):
         self.repopulate()
 
+        if self.part_id <= 0:
+            # > should never get here
+            raise RuntimeError(f"DBDispatch::run: invalid part_id = {self.part_id}!")
+
         with self.session as session:
-            # > get the front of the queue
-            stmt = self.select_job.where(Job.status == JobStatus.QUEUED).order_by(Job.id.asc())
-            # @todo add batches
-            job = session.scalars(stmt).first()
+            # > get the queue
+            stmt = self.select_job.where(Job.status == JobStatus.QUEUED)
+            if self.id == 0:
+                stmt = stmt.where(Job.part_id == self.part_id)
+            # > compile batch in `id` order
+            job = session.scalars(stmt.order_by(Job.id.asc())).first()
             if job:
                 # @todo set seeds here! (batch size rounding and ordering)
                 # > get last job that has a seed assigned to it
