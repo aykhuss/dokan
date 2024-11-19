@@ -75,6 +75,7 @@ def main() -> None:
     parser_init.add_argument(
         "-o", "--output", dest="run_path", help="destination of the run directory"
     )
+    parser_init.add_argument("--no-lumi", action="store_true", help="skip the luminosity breakdown")
 
     # > subcommand: config
     parser_config = subparsers.add_parser("config", help="set defaults for the run configuration")
@@ -142,7 +143,6 @@ def main() -> None:
             config.set_path(os.path.relpath(runcard.data["run_name"]))
         console.print(f"run folder: [italic]{(config.path).absolute()}[/italic]")
 
-
         try:
             bibout, bibtex = make_bib(runcard.data["process_name"], config.path)
             console.print(f"process: \"[bold]{runcard.data['process_name']}[/bold]\"")
@@ -170,7 +170,9 @@ def main() -> None:
             config["run"]["histograms_single_file"] = runcard.data["histograms_single_file"]
         config["run"]["template"] = "template.run"
         config["process"]["name"] = runcard.data["process_name"]
-        config["process"]["channels"] = get_lumi(config["exe"]["path"], config["process"]["name"])
+        config["process"]["channels"] = get_lumi(
+            config["exe"]["path"], config["process"]["name"], use_default=args.no_lumi
+        )
         config.write()
         runcard.to_tempalte(Path(config["run"]["path"]) / config["run"]["template"])
 

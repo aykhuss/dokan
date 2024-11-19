@@ -9,8 +9,19 @@ import subprocess
 from ._types import GenericPath
 from .order import Order
 
+_default_chan_list: dict = {
+    "LO": {"string": "LO", "part": "LO", "part_num": 0, "order": 0},
+    "R": {"string": "R", "part": "R", "part_num": 0, "order": -1},
+    "V": {"string": "V", "part": "V", "part_num": 0, "order": -1},
+    "RR": {"string": "RR", "part": "RR", "part_num": 0, "order": -2, "region": "all"},
+    "RV": {"string": "RV", "part": "RV", "part_num": 0, "order": -2},
+    "VV": {"string": "VV", "part": "VV", "part_num": 0, "order": -2},
+}
+# @todo complete this list
+_proc_has_regions: list = ["1JET", "2JET", "JJ", "ZJ", "WPJ", "WMJ", "HJ", "GJ"]
 
-def get_lumi(exe: GenericPath, proc: str) -> dict:
+
+def get_lumi(exe: GenericPath, proc: str, use_default: bool = False) -> dict:
     """get channels for an NNLOJET process
 
     get the channels with the "part" & "lumi" information collected in groups
@@ -22,6 +33,9 @@ def get_lumi(exe: GenericPath, proc: str) -> dict:
         path to the NNLOJET executable
     proc : str
         NNLOJET process name
+    use_default : bool, optional
+        flag to force the default channel list without lumi breakdown
+        (the default is False, which parses NNLOJET lumi info)
 
     Returns
     -------
@@ -65,9 +79,23 @@ def get_lumi(exe: GenericPath, proc: str) -> dict:
         else:
             raise RuntimeError("couldn't parse channel line")
         chan_list[label] = chan
-    if not chan_list:
-        print(f"could not parse luminoisty channels from NNLOJET: \n{exe_out.stdout}")
-        raise RuntimeError("get_lumi: no luminosity channels parsed")
+    if use_default or not chan_list:
+        if not use_default and not chan_list:
+            print("could not parse luminoisty channels from NNLOJET")
+            # raise RuntimeError("get_lumi: no luminosity channels parsed")
+            print("defaulting to channels without luminosity breakdown")
+        chan_list = _default_chan_list
+        if proc.upper() in _proc_has_regions:
+            chan_RR = chan_list.pop("RR")
+            for region in ["a", "b"]:
+                chan_RRreg = chan_RR.copy()
+                chan_RRreg["region"] = "a"
+                chan_list[f"RR{region}"] = dict(chan_RRreg)
+        else:
+            chan_list["RR"].pop("region")
+        #@todo remove orders if non-existent?
+        # e.g. "ZJJ" has no NNLO, only NLO: chan_list.pop("RR") &RV & VV
+
     return chan_list
 
 
