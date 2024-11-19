@@ -10,12 +10,12 @@ from ._types import GenericPath
 from .order import Order
 
 _default_chan_list: dict = {
-    "LO": {"string": "LO", "part": "LO", "part_num": 0, "order": 0},
-    "R": {"string": "R", "part": "R", "part_num": 0, "order": -1},
-    "V": {"string": "V", "part": "V", "part_num": 0, "order": -1},
-    "RR": {"string": "RR", "part": "RR", "part_num": 0, "order": -2, "region": "all"},
-    "RV": {"string": "RV", "part": "RV", "part_num": 0, "order": -2},
-    "VV": {"string": "VV", "part": "VV", "part_num": 0, "order": -2},
+    "LO": {"string": "LO", "part": "LO", "part_num": 1, "order": 0},
+    "R": {"string": "R", "part": "R", "part_num": 1, "order": -1},
+    "V": {"string": "V", "part": "V", "part_num": 1, "order": -1},
+    "RR": {"string": "RR", "part": "RR", "part_num": 1, "order": -2, "region": "all"},
+    "RV": {"string": "RV", "part": "RV", "part_num": 1, "order": -2},
+    "VV": {"string": "VV", "part": "VV", "part_num": 1, "order": -2},
 }
 # @todo complete this list
 _proc_has_regions: list = ["1JET", "2JET", "JJ", "ZJ", "WPJ", "WMJ", "HJ", "GJ"]
