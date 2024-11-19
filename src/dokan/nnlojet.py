@@ -93,7 +93,7 @@ def get_lumi(exe: GenericPath, proc: str, use_default: bool = False) -> dict:
                 chan_list[f"RR{region}"] = dict(chan_RRreg)
         else:
             chan_list["RR"].pop("region")
-        #@todo remove orders if non-existent?
+        # @todo remove orders if non-existent?
         # e.g. "ZJJ" has no NNLO, only NLO: chan_list.pop("RR") &RV & VV
 
     return chan_list

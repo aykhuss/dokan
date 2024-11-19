@@ -100,6 +100,8 @@ class MergePart(DBMerge):
             if (
                 float(c_done + c_merged) / float(c_merged + 1)
                 <= self.config["production"]["fac_merge_trigger"]
+                if "fac_merge_trigger" in self.config["production"]
+                else 2.0
             ):
                 return True
         return False
