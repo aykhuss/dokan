@@ -66,7 +66,7 @@ class DBRunner(DBTask):
                 # > add policy settings
                 exe_data["policy_settings"] = {"max_runtime": self.config["run"]["job_max_runtime"]}
                 for k, v in self.config["exe"]["policy_settings"].items():
-                    if k == f"{str(exe_data["policy"]).lower()}_template":
+                    if k == f"{str(exe_data['policy']).lower()}_template":
                         exe_data["policy_settings"][k] = str(self._local(v).absolute())
                     else:
                         exe_data["policy_settings"][k] = v
