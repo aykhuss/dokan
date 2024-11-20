@@ -51,14 +51,28 @@ class Final(DBTask):
                 self.error = float(line.split()[1])
                 break
         rel_acc: float = abs(self.error / self.result)
-        _console.print(
-            f"[red]cross = {self.result} +/- {self.error} [{100.*rel_acc}%][/red]",
-        )
+        _console.print(f"\n[blue]cross = {self.result} +/- {self.error}[/blue]")
+        if rel_acc <= self.config["run"]["target_rel_acc"] * (1.05):
+            _console.print(
+                f"[green]reached rel. acc. {rel_acc*1e2:.3}%[/green] "
+                + f"(requested: {self.config["run"]["target_rel_acc"]*1e2:.3}%)"
+            )
+        else:
+            _console.print(
+                f"[red]reached rel. acc. {rel_acc*1e2:.3}%[/red] "
+                + f"(requested: {self.config["run"]["target_rel_acc"]*1e2:.3}%)"
+            )
 
-        # # > use distributed time to determine the final accuracy
-        # opt_dist = self.distribute_time(1.0)
-        # rel_acc: float = abs(opt_dist["tot_error"] / opt_dist["tot_result"])
-        # _console.print(f"{opt_dist}")
-        # _console.print(
-        #     f"[red]cross = {opt_dist['tot_result']} +/- {opt_dist['tot_error']} [{100.*rel_acc}%][/red]"
-        # )
+            # > use `distribute_time` to determine time estimate to reach desired accuracy
+            opt_dist = self.distribute_time(0.0)
+            rel_acc: float = abs(opt_dist["tot_error"] / opt_dist["tot_result"])
+            # _console.print(f"{opt_dist}")
+            # _console.print(
+            #     f"[red]cross = {opt_dist['tot_result']} +/- {opt_dist['tot_error']} [{100.*rel_acc}%][/red]"
+            # )
+            njobs_target: int = (
+                round(opt_dist["T_target"] / self.config["run"]["job_max_runtime"]) + 1
+            )
+            _console.print(
+                f"still need about [bold]{njobs_target}[/bold] jobs [dim](run time: {self.config["run"]["job_max_runtime"]}s)[/dim] to reach desired target accuracy."
+            )

@@ -237,6 +237,11 @@ class DBTask(Task, metaclass=ABCMeta):
             result["tot_error"] = math.sqrt(result["tot_error"])
             result["tot_error_estimate_opt"] = math.sqrt(result["tot_error_estimate_opt"])
 
+            # > use E-L formula to compute a time estimate (beyond T)
+            # > needed to achieve the desired accuracy
+            target_abs_acc: float = self.config["run"]["target_rel_acc"] * result["tot_result"]
+            result["T_target"] = max(0.0, (accum_err_sqrtT / target_abs_acc) ** 2 - accum_T)
+
             # > split up into jobs
             # (T_max_job, T_job, njobs, ntot_job)
             result["tot_error_estimate_jobs"] = 0.0

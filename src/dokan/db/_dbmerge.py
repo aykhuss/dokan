@@ -109,7 +109,7 @@ class MergePart(DBMerge):
     def run(self):
         if self.complete():
             return
-        self.logger(f"MergePart::run[{self.part_id}]")
+        self.debug(f"MergePart::run[{self.part_id}]")
         with self.session as session:
             # > get the part and update timestamp to tag for 'MERGE'
             pt: Part = session.get_one(Part, self.part_id)
