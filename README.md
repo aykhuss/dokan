@@ -27,7 +27,7 @@ todo: publish on pypi
 
 To install the development version, first clone this repository
 ```shell
-git clone git@github.com:aykhuss/dokan.git
+git clone https://github.com/aykhuss/dokan.git
 cd dokan
 ```
 You can either install the tool using `pip` or `uv`.
