@@ -31,11 +31,11 @@ class Monitor(DBTask):
         with self.log_session as log_session:
             last_log = log_session.scalars(select(Log).order_by(Log.id.desc())).first()
             if last_log:
-                print(f"Monitor::init last log: {last_log!r}")
+                print(f"Monitor::init:  last log: {last_log!r}")
                 self._log_id = last_log.id
                 # > last run was successful: reset log table.
-                if last_log.level in [LogLevel.SIG_COMP, LogLevel.SIG_TERM]:
-                    print("Monitor::init clearing old logs...")
+                if last_log.level in [LogLevel.SIG_COMP]:
+                    print("Monitor::init:  clearing old logs...")
                     for log in log_session.scalars(select(Log)):
                         log_session.delete(log)
                     log_session.commit()
@@ -151,7 +151,7 @@ class Monitor(DBTask):
     def run(self):
         if not self.config["ui"]["monitor"]:
             return
-        self.logger("Monitor: switching on the job status board...")
+        self.logger("Monitor::run:  switching on the job status board...")
         with Live(self.generate_table(), auto_refresh=False) as live:
             while True:
                 live.update(self.generate_table(), refresh=True)
@@ -167,7 +167,7 @@ class Monitor(DBTask):
                         live.console.print(
                             f"[dim][{dt_str}][/dim]({LogLevel(log.level)!r}): {log.message}"
                         )
-                        if log.level == LogLevel.SIG_COMP:
+                        if log.level in [LogLevel.SIG_COMP, LogLevel.SIG_TERM]:
                             return
                         # time.sleep(0.01)
 

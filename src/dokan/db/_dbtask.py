@@ -81,17 +81,28 @@ class DBTask(Task, metaclass=ABCMeta):
                 print(job)
 
     def logger(self, message: str, level: LogLevel = LogLevel.INFO) -> None:
+        # > negative values are signals: always store in databese (workflow relies on this)
+        if level < 0:
+            with self.log_session as log_session:
+                log_session.add(Log(level=level, timestamp=time.time(), message=message))
+                log_session.commit()
+        # > pass through log level & all signales
         if level >= 0 and level < self.config["ui"]["log_level"]:
-            # > negative values are signals: always pass through
             return
+        # > print out
         if not self.config["ui"]["monitor"]:
             dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            _console.print(f"[dim][{dt_str}][/dim]({level!r}): {message}")
+            _console.print(f"(c)[dim][{dt_str}][/dim]({level!r}): {message}")
             return
         # > general case: monitor is ON: store messages in DB
         with self.log_session as log_session:
-            log_session.add(Log(level=level, timestamp=time.time(), message=message))
-            log_session.commit()
+            last_log = log_session.scalars(select(Log).order_by(Log.id.desc())).first()
+            if last_log and last_log.level in [LogLevel.SIG_COMP]:
+                dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                _console.print(f"(c)[dim][{dt_str}][/dim]({level!r}): {message}")
+            elif level >= 0:
+                log_session.add(Log(level=level, timestamp=time.time(), message=message))
+                log_session.commit()
 
     def debug(self, message: str) -> None:
         self.logger(message, LogLevel.DEBUG)
@@ -291,7 +302,7 @@ class DBInit(DBTask):
                 print(f"DBInit::init last log: {last_log!r}")
                 self._log_id = last_log.id
                 # > last run was successful: reset log table.
-                if last_log.level == LogLevel.SIG_TERM:
+                if last_log.level in [LogLevel.SIG_COMP]:
                     print("Monitor::init clearing old logs...")
                     for log in log_session.scalars(select(Log)):
                         log_session.delete(log)

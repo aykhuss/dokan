@@ -399,7 +399,7 @@ def main() -> None:
                 f"received signal: {signal.Signals(sig).name}; let me attempt to exit gracefully...",
                 level=LogLevel.SIG_TERM,
             )
-            time.sleep(2)
+            time.sleep(1.5)
             sys.exit(0)
 
         signal.signal(signal.SIGINT, graceful_exit)
