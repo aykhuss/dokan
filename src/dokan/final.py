@@ -55,12 +55,12 @@ class Final(DBTask):
         if rel_acc <= self.config["run"]["target_rel_acc"] * (1.05):
             _console.print(
                 f"[green]reached rel. acc. {rel_acc*1e2:.3}%[/green] "
-                + f"(requested: {self.config["run"]["target_rel_acc"]*1e2:.3}%)"
+                + f"(requested: {self.config['run']['target_rel_acc']*1e2:.3}%)"
             )
         else:
             _console.print(
                 f"[red]reached rel. acc. {rel_acc*1e2:.3}%[/red] "
-                + f"(requested: {self.config["run"]["target_rel_acc"]*1e2:.3}%)"
+                + f"(requested: {self.config['run']['target_rel_acc']*1e2:.3}%)"
             )
 
             # > use `distribute_time` to determine time estimate to reach desired accuracy
@@ -74,5 +74,5 @@ class Final(DBTask):
                 round(opt_dist["T_target"] / self.config["run"]["job_max_runtime"]) + 1
             )
             _console.print(
-                f"still need about [bold]{njobs_target}[/bold] jobs [dim](run time: {self.config["run"]["job_max_runtime"]}s)[/dim] to reach desired target accuracy."
+                f"still need about [bold]{njobs_target}[/bold] jobs [dim](run time: {self.config['run']['job_max_runtime']}s)[/dim] to reach desired target accuracy."
             )
