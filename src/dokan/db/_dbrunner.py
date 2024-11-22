@@ -22,49 +22,76 @@ from ._sqla import Job
 
 
 class DBRunner(DBTask):
-    # @todo make a list to accommodate batch jobs
-    id: int = luigi.IntParameter()
-    # ids: list[int] = luigi.ListParameter()
-    # part_id: int = luigi.IntParameter()
+    _file_run: str = "job.run"
+
+    ids: list[int] = luigi.ListParameter()
+    part_id: int = luigi.IntParameter()
 
     priority = 20
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # @todo find the part id & check they are the same for all in the batch
-        # @todo check that the seeds are sequential
-        # > preliminarily implement part_id
         with self.session as session:
-            job: Job = session.get_one(Job, self.id)
-            self.part_id: int = job.part_id
-            self.mode: ExecutionMode = ExecutionMode(job.mode)
+            jobs: list[Job] = []
+            for job_id in self.ids:
+                jobs.append(session.get_one(Job, job_id))
+            assert all(j.part_id == self.part_id for j in jobs)
+            self.mode: ExecutionMode = ExecutionMode(jobs[0].mode)
+            assert all(j.mode == self.mode for j in jobs)
+            self.policy: ExecutionPolicy = ExecutionPolicy(jobs[0].policy)
+            assert all(j.policy == self.policy for j in jobs)
+            # > sequential seed range
+            seeds: list[int] = sorted(j.seed for j in jobs if j.seed is not None)
+            assert len(seeds) == len(jobs)
+            min_seed: int = min(seeds)
+            max_seed: int = max(seeds)
+            assert len(jobs) == (max_seed - min_seed + 1)
+            # > assemble job path
+            self.part_name: str = jobs[0].part.name
+            self.job_path: Path = self._path.joinpath(
+                "raw",
+                str(self.mode),
+                self.part_name,
+                (f"s{min_seed}" if min_seed == max_seed else f"s{min_seed}-{max_seed}"),
+            )
+            # > ncall & niter can be saved in different `repopulate` steps
+            # > we can override with the largest number(?)
+            self.ncall: int = max(j.ncall for j in jobs)
+            self.niter: int = max(j.niter for j in jobs)
+            assert all(j.niter == self.niter for j in jobs)
+            if (self.niter * self.ncall) == 0:
+                raise RuntimeError(f"job {jobs[0].id} has ntot={self.ncall}×{self.niter}==0")
+            if not all(j.ncall == self.ncall for j in jobs):
+                for j in jobs:
+                    j.ncall = self.ncall
+                session.commit()
 
     def complete(self) -> bool:
         with self.session as session:
-            job: Job = session.get_one(Job, self.id)
-            # @todo add classmethod JobStatus to query properties
-            return job.status in JobStatus.terminated_list()
+            for job_id in self.ids:
+                if session.get_one(Job, job_id).status not in JobStatus.terminated_list():
+                    return False
+        return True
 
     def run(self):
-        self.logger(f"DBRunner::run id = {self.id}, part_id = {self.part_id}")
+        self.logger(f"DBRunner::run  part_id = {self.part_id}, ids = {self.ids}")
+
+        exe_data = ExeData(self.job_path)
+
         with self.session as session:
-            db_job: Job = session.get_one(Job, self.id)
-            # @todo mode, policy, channel string, etc all should be extracted here for the
-            # entire batch before (maybe a dict?)
-            # alterantively check for a exe path that is set?
-            if db_job.status == JobStatus.DISPATCHED:
-                # > assemble job path
-                job_path: Path = self._path.joinpath(
-                    "raw",
-                    str(ExecutionMode(db_job.mode)),
-                    db_job.part.name,
-                    f"s{db_job.seed}",
-                )
-                # > create a ExeData tmp state and populate
-                exe_data = ExeData(job_path)
+            db_jobs: list[Job] = []
+            for job_id in self.ids:
+                db_jobs.append(session.get_one(Job, job_id))
+
+            job_status: JobStatus = JobStatus(db_jobs[0].status)
+            if job_status in JobStatus.active_list():
+                assert all(j.status == job_status for j in db_jobs)
+
+            if job_status == JobStatus.DISPATCHED and not exe_data.is_final:
+                # > populate ExeData wil all necessary information for the Executor
                 exe_data["exe"] = self.config["exe"]["path"]
-                exe_data["mode"] = ExecutionMode(db_job.mode)
-                exe_data["policy"] = ExecutionPolicy(db_job.policy)
+                exe_data["mode"] = self.mode
+                exe_data["policy"] = self.policy
                 # > add policy settings
                 exe_data["policy_settings"] = {"max_runtime": self.config["run"]["job_max_runtime"]}
                 for k, v in self.config["exe"]["policy_settings"].items():
@@ -72,95 +99,87 @@ class DBRunner(DBTask):
                         exe_data["policy_settings"][k] = str(self._local(v).absolute())
                     else:
                         exe_data["policy_settings"][k] = v
-                if (db_job.ncall * db_job.niter) == 0:
-                    raise RuntimeError(f"job {db_job.id} has ntot={db_job.ncall}×{db_job.niter}=0")
-                exe_data["ncall"] = db_job.ncall
-                exe_data["niter"] = db_job.niter
+                exe_data["ncall"] = self.ncall
+                exe_data["niter"] = self.niter
                 # > create the runcard
-                run_file: Path = job_path / "job.run"
+                run_file: Path = self.job_path / DBRunner._file_run
                 template = RuncardTemplate(self._local(self.config["run"]["template"]))
                 channel_region: str = ""
-                if db_job.part.region:
-                    channel_region: str = f"region = {db_job.part.region}"
+                if db_jobs[0].part.region:
+                    channel_region: str = f"region = {db_jobs[0].part.region}"
                 template.fill(
                     run_file,
-                    sweep=f"{exe_data['mode']!s} = {exe_data['ncall']}[{exe_data['niter']}]",
+                    sweep=f"{self.mode!s} = {self.ncall}[{self.niter}]",
                     run="",
-                    channels=db_job.part.string,
+                    channels=db_jobs[0].part.string,
                     channels_region=channel_region,
                     toplevel="",
                 )
-                exe_data["input_files"] = ["job.run"]  # ensure it's always at the front
-                # > get last warmup to copy grid files
-                last_warm = session.scalars(
+                exe_data["input_files"] = [DBRunner._file_run]
+                # > get last warmup (LW)
+                LW = session.scalars(
                     select(Job)
-                    .where(Job.part_id == db_job.part_id)
+                    .where(Job.part_id == self.part_id)
                     .where(Job.mode == ExecutionMode.WARMUP)
                     .where(Job.status == JobStatus.DONE)
                     .order_by(Job.id.desc())
                 ).first()
-                if not last_warm and db_job.mode == ExecutionMode.PRODUCTION:
-                    raise RuntimeError(f"no warmup found for production job {db_job.part.name}")
-
-                if last_warm:
-                    if not last_warm.rel_path:
-                        raise RuntimeError(f"last warmup {last_warm.id} has no path")
-                    last_warm_path: Path = self._local(last_warm.rel_path)
-                    last_warm_data: ExeData = ExeData(last_warm_path)
-                    if not last_warm_data.is_final:
-                        raise RuntimeError(f"last warmup {last_warm.id} is not final")
-                    for wfile in last_warm_data["output_files"]:
-                        # @todo always skip log (& dat) files
-                        # @todo if warmup copy over also txt files
-                        # @todo for production, only take the weights (skip txt)
+                if not LW and self.mode == ExecutionMode.PRODUCTION:
+                    raise RuntimeError(f"no warmup found for production job {self.part_name}")
+                # > copy grid files
+                if LW:
+                    if not LW.rel_path:
+                        raise RuntimeError(f"last warmup {LW.id} has no path")
+                    LW_path: Path = self._local(LW.rel_path)
+                    LW_data: ExeData = ExeData(LW_path)
+                    if not LW_data.is_final:
+                        raise RuntimeError(f"last warmup {LW.id} is not final")
+                    for wfile in LW_data["output_files"]:
                         # > skip "*.s<seed>.*" files & job files
                         if re.match(r"^.*\.s[0-9]+\.[^0-9.]+$", wfile):
                             continue
                         if re.match(r"^job.*$", wfile):
                             continue
-                        shutil.copyfile(last_warm_path / wfile, job_path / wfile)
+                        if self.mode == ExecutionMode.PRODUCTION and re.match(r"^.*\.txt$", wfile):
+                            continue
+                        shutil.copyfile(LW_path / wfile, self.job_path / wfile)
                         exe_data["input_files"].append(wfile)
-                # @ todo FIRST put the runcard
-                exe_data["jobs"] = {}
-                exe_data["jobs"][db_job.id] = {
-                    "seed": db_job.seed,
-                }
                 exe_data["output_files"] = []
-                # save to tmp file (this also updates the timestamp!)
+                # > populate jobs datastructure
+                exe_data["jobs"] = {}
+                for db_job in db_jobs:
+                    exe_data["jobs"][db_job.id] = {"seed": db_job.seed}
+                # >  save to tmp file (this also updates the timestamp!)
                 exe_data.write()
                 # > commit update
-                db_job.rel_path = str(job_path.relative_to(self._path))
-                db_job.status = JobStatus.RUNNING
+                for db_job in db_jobs:
+                    db_job.rel_path = str(self.job_path.relative_to(self._path))
+                    db_job.status = JobStatus.RUNNING
                 session.commit()
-            # self.logger(f"DBRunner[{self.id}]: checking {db_job.rel_path}")
-            yield Executor.factory(
-                policy=ExecutionPolicy(db_job.policy),
-                path=str(self._local(db_job.rel_path).absolute()),
-            )
+            # > END IF DISPATCHED
+
+            yield Executor.factory(policy=self.policy, path=str(self.job_path.absolute()))
+
             # > parse the retun data
-            exe_data = ExeData(self._local(db_job.rel_path))
             if not exe_data.is_final:
-                raise RuntimeError(f"{db_job.id} is not final?!\n{exe_data.path}\n{exe_data.data}")
-            if "result" in exe_data["jobs"][db_job.id]:
-                db_job.result = exe_data["jobs"][db_job.id]["result"]
-                db_job.error = exe_data["jobs"][db_job.id]["error"]
-                db_job.chi2dof = exe_data["jobs"][db_job.id]["chi2dof"]
-                db_job.elapsed_time = exe_data["jobs"][db_job.id]["elapsed_time"]
-                db_job.status = JobStatus.DONE
-            else:
-                db_job.status = JobStatus.FAILED
+                raise RuntimeError(f"{self.ids} not final?!\n{self.job_path}\n{exe_data.data}")
+            for db_job in db_jobs:
+                if "result" in exe_data["jobs"][db_job.id]:
+                    db_job.result = exe_data["jobs"][db_job.id]["result"]
+                    db_job.error = exe_data["jobs"][db_job.id]["error"]
+                    db_job.chi2dof = exe_data["jobs"][db_job.id]["chi2dof"]
+                    db_job.elapsed_time = exe_data["jobs"][db_job.id]["elapsed_time"]
+                    db_job.status = JobStatus.DONE
+                else:
+                    db_job.status = JobStatus.FAILED
             session.commit()
 
         # > see if a re-merge is possible
         if self.mode == ExecutionMode.PRODUCTION:
             mrg_part = self.clone(MergePart, force=False, part_id=self.part_id)
             if mrg_part.complete():
-                self.debug(
-                    f"DBRunner::run id = {self.id}, part_id = {self.part_id} > MergePart complete"
-                )
+                self.debug(f"DBRunner::run:  part_id = {self.part_id} > MergePart complete")
                 return
             else:
-                self.logger(
-                    f"DBRunner::run id = {self.id}, part_id = {self.part_id} > yield MergePart"
-                )
+                self.logger(f"DBRunner::run:  part_id = {self.part_id} > yield MergePart")
                 yield mrg_part

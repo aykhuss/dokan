@@ -49,7 +49,6 @@ _schema: dict = {
     "ncall": int,
     "niter": int,
     # ---
-    # now a property! "timestamp": float,  # updated on each write/finalize
     "input_files": [str],  # first entry must be runcard?
     "output_files": [str],
     "jobs": {

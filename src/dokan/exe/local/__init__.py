@@ -26,12 +26,12 @@ class LocalExec(Executor):
 
     local_ncores: int = luigi.OptionalIntParameter(default=1)
 
-    @property
-    def resources(self):
-        return {
-            "local_ncores": self.local_ncores,
-            "jobs_concurrent": self.local_ncores,
-        }
+    # @property
+    # def resources(self):
+    #     return {
+    #         "local_ncores": self.local_ncores,
+    #         "jobs_concurrent": self.local_ncores,
+    #     }
 
 
 class BatchLocalExec(LocalExec):
@@ -57,6 +57,14 @@ class SingleLocalExec(LocalExec):
     """
 
     job_id: int = luigi.IntParameter()
+
+    resources = {"local_ncores": 1, "jobs_concurrent": 1}
+    # @property
+    # def resources(self):
+    #     return {
+    #         "local_ncores": self.local_ncores,
+    #         "jobs_concurrent": self.local_ncores,
+    #     }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
