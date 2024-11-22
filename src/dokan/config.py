@@ -86,6 +86,7 @@ _schema: dict = {
         "max_increment_steps": int,  # up to how many rounds of warmups we want to run
         "fac_increment": float,  # the factor by which we increment the statistics each round
         "max_chi2dof": float,
+        "max_err_rel_var": float,
         "scaling_window": float,
     },
     "production": {

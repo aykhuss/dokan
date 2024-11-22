@@ -30,6 +30,7 @@
     "max_increment_steps": 7,
     "fac_increment": 4.0,
     "max_chi2dof": 1.5,
+    "max_err_rel_var": 0.4,
     "scaling_window": 0.4
   },
   "production": {

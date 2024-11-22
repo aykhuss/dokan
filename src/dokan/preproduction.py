@@ -8,12 +8,14 @@ from .db import DBTask, Job, JobStatus
 from .db._dbdispatch import DBDispatch
 from .db._loglevel import LogLevel
 from .exe import ExecutionMode
+from .exe._exe_data import ExeData
 
 
 class WarmupFlag(IntFlag):
     # > auto -> integers of: 2^n starting with 1
     RELACC = auto()
     CHI2DOF = auto()
+    CONST_ERR = auto()
     GRID = auto()
     SCALING = auto()
     MIN_INCREMENT = auto()  ##
@@ -25,6 +27,8 @@ class WarmupFlag(IntFlag):
         ret: str = ""
         if WarmupFlag.RELACC in flags:
             ret += " [RELACC] "
+        if WarmupFlag.CONST_ERR in flags:
+            ret += " [CONST_ERR] "
         if WarmupFlag.CHI2DOF in flags:
             ret += " [CHI2DOF] "
         if WarmupFlag.GRID in flags:
@@ -149,6 +153,16 @@ class PreProduction(DBTask):
                 wflag |= WarmupFlag.RELACC
             if LW.chi2dof < self.config["warmup"]["max_chi2dof"]:
                 wflag |= WarmupFlag.CHI2DOF
+            # > QC measures that require the ExeData information
+            exe_data: ExeData = ExeData(self._local(LW.rel_path))
+            job_data: dict = exe_data["jobs"][LW.id]
+            err_list: list[float] = [it["error"] for it in job_data["iterations"]]
+            err_mean: float = sum(err_list) / len(err_list)
+            err_stdv: float = math.sqrt(
+                sum((err - err_mean) ** 2 for err in err_list) / len(err_list)
+            )
+            if err_stdv / err_mean < self.config["warmup"]["max_err_rel_var"]:
+                wflag |= WarmupFlag.CONST_ERR
             # @todo check iterations.txt <-> WarmupFlag.GRID
             if True:
                 wflag |= WarmupFlag.GRID
@@ -180,12 +194,17 @@ class PreProduction(DBTask):
                 wflag |= WarmupFlag.SCALING
 
             # > already reached accuracy and can trust it (chi2dof)
-            if WarmupFlag.RELACC in wflag and WarmupFlag.CHI2DOF in wflag:
+            if (
+                WarmupFlag.RELACC in wflag
+                and WarmupFlag.CHI2DOF in wflag
+                and WarmupFlag.CONST_ERR in wflag
+            ):
                 return -int(wflag)
 
             # > warmup has converged
             if (
                 WarmupFlag.CHI2DOF in wflag
+                and WarmupFlag.CONST_ERR in wflag
                 and WarmupFlag.GRID in wflag
                 and WarmupFlag.SCALING in wflag
             ):
