@@ -296,6 +296,8 @@ class DBDispatch(DBTask):
                 # > time to dispatch Runners
                 self.logger(
                     f"DBDispatch[{self.id},{self._n}]::run:  "
-                    + f"submitting jobs for part_id = {self.part_id} with seed(s) [{jobs[0].seed},{jobs[-1].seed}]"
+                    + f"submitting jobs for part_id = {self.part_id} with seed(s): "
+                    + (f" {jobs[0].seed}-{jobs[-1].seed}" if len(jobs) > 1 else f" {jobs[0].seed}")
                 )
                 yield [self.clone(cls=DBRunner, id=job.id) for job in jobs]
+                # yield self.clone(cls=DBRunner, ids=[job.id for job in jobs], part_id=self.part_id)

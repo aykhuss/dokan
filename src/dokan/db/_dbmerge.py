@@ -5,6 +5,7 @@ constitutes the dokan workflow implementation of `nnlojet-combine.py`
 """
 
 import datetime
+import math
 import os
 import re
 import time
@@ -109,7 +110,7 @@ class MergePart(DBMerge):
     def run(self):
         if self.complete():
             return
-        self.debug(f"MergePart::run[{self.part_id}]")
+        self.debug(f"MergePart::run[{self.part_id}]  force = {self.force}")
         with self.session as session:
             # > get the part and update timestamp to tag for 'MERGE'
             pt: Part = session.get_one(Part, self.part_id)
@@ -145,6 +146,8 @@ class MergePart(DBMerge):
                 job.status = JobStatus.MERGED
 
             # > merge all histograms
+            # > keep track of all cross section estimates (also from distributions)
+            cross_list: list[tuple[float, float]] = []
             for obs in self.config["run"]["histograms"]:
                 out_file: Path = mrg_path / f"{obs}.dat"
                 nx: int = self.config["run"]["histograms"][obs]["nx"]
@@ -159,14 +162,71 @@ class MergePart(DBMerge):
                 hist = container.merge(weighted=True)
                 hist.write_to_file(out_file)
 
-                if obs == "cross":
+                # > register cross section numbers
+                if "cumulant" in self.config["run"]["histograms"][obs]:
+                    continue  # @todo ?
+
+                res, err = 0.0, 0.0
+                nx: int = self.config["run"]["histograms"][obs]["nx"]
+                if nx == 0:
                     with open(out_file, "rt") as cross:
                         for line in cross:
                             if line.startswith("#"):
                                 continue
-                            pt.result = float(line.split()[0])
-                            pt.error = float(line.split()[1])
+                            col: list[float] = [float(c) for c in line.split()]
+                            res = col[0]
+                            err = col[1] ** 2
                             break
+                elif nx == 3:
+                    with open(out_file, "rt") as diff:
+                        for line in diff:
+                            if line.startswith("#overflow"):
+                                scol: list[str] = line.split()
+                                res += float(scol[3])
+                                err += float(scol[4]) ** 2
+                            if line.startswith("#"):
+                                continue
+                            col: list[float] = [float(c) for c in line.split()]
+                            res += (col[2] - col[0]) * col[3]
+                            # > this is formally not the correct way to compute the error
+                            # > but serves as a conservative error for optimizing on histograms
+                            err += ((col[2] - col[0]) * col[4]) ** 2
+                else:
+                    raise ValueError(f"MergePart::run[{self.part_id}]:  unexpected nx = {nx}")
+                err = math.sqrt(err)
+
+                if obs == "cross":
+                    pt.result = res
+                    pt.error = err
+
+                self.debug(f"MergePart::run[{self.part_id}]:  {obs:>15}[{nx}]:  {res} +/- {err}")
+                cross_list.append((res, err))
+
+                # # > override error if larger from bin sums (correaltions with counter-events)
+                # if err > pt.error:
+                #     pt.error = err
+
+            opt_target: str = (
+                self.config["run"]["opt_target"]
+                if "opt_target" in self.config["run"]
+                else "cross_hist"  # default
+            )
+
+            # > this is an upper bound on the XS error derived from any histogram
+            # > ("+ pt.error" accounts for the worst case with histogram selectors)
+            max_err: float = pt.error + max(e for _, e in cross_list)
+            if opt_target == "cross":
+                pass  # keep cross error for optimisation
+            elif opt_target == "cross_hist":
+                # > since we took the worst case for max_err, let's take a geometric mean
+                # pt.error = (pt.error + max_err) / 2.0
+                pt.error = math.sqrt(pt.error * max_err)
+            elif opt_target == "hist":
+                pt.error = max_err
+            else:
+                raise ValueError(
+                    f"MergePart::run[{self.part_id}]:  unknown opt_target {opt_target}"
+                )
 
             session.commit()
 
@@ -223,7 +283,7 @@ class MergeAll(DBMerge):
             return True
 
     def run(self):
-        self.logger("MergeAll::run")
+        self.logger(f"MergeAll::run:  force = {self.force}")
         mrg_parent: Path = self._path.joinpath("result", "part")
 
         with self.session as session:

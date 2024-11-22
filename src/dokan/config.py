@@ -52,6 +52,7 @@ _schema: dict = {
         "histograms": {str: {"nx": int, "cumulant": int, "grid": str}},  # list of all histograms
         "histograms_single_file": str,  # name in case we concatenate all histograms to a single file
         "order": Order,  # what order to compute (LO, NLO, NNLO)
+        "opt_target": str,  # the target we wish to optimise: ["cross"|"cross_hist"|"hist"]
         "target_rel_acc": float,  # target relative accuracy
         "job_max_runtime": float,  # maximum runtime (in sec) for a single NNLOJET run
         "job_fill_max_runtime": bool,  # if we want to exhause the maximum runtime

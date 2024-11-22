@@ -24,6 +24,8 @@ from ._sqla import Job
 class DBRunner(DBTask):
     # @todo make a list to accommodate batch jobs
     id: int = luigi.IntParameter()
+    # ids: list[int] = luigi.ListParameter()
+    # part_id: int = luigi.IntParameter()
 
     priority = 20
 
@@ -153,7 +155,7 @@ class DBRunner(DBTask):
         if self.mode == ExecutionMode.PRODUCTION:
             mrg_part = self.clone(MergePart, force=False, part_id=self.part_id)
             if mrg_part.complete():
-                self.logger(
+                self.debug(
                     f"DBRunner::run id = {self.id}, part_id = {self.part_id} > MergePart complete"
                 )
                 return

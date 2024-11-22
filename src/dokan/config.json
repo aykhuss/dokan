@@ -6,6 +6,7 @@
   "run": {
     "order": 2,
     "histograms": {},
+    "opt_target": "cross_hist",
     "target_rel_acc": 0.01,
     "job_max_runtime": 3600,
     "job_fill_max_runtime": true,
