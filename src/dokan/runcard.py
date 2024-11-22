@@ -139,8 +139,10 @@ class Runcard:
                         if opt := re.match(r".*\bgrid\s*=\s*([^\s!]+)\b", ln, re.IGNORECASE):
                             options["grid"] = opt.group(1)
                         # > save histogram & option
-                        if rnm := re.match(r"^\s*(?:[^\s!]+)\s*>\s*([^\s!]+)\b", ln, re.IGNORECASE):
-                            runcard_data["histograms"][rnm.group(1)] = options
+                        if rnm := re.match(r"^\s*([^\s!]+)\s*>\s*([^\s!]+)\b", ln, re.IGNORECASE):
+                            if rnm.group(1) == "cross":
+                                options["nx"] = 0
+                            runcard_data["histograms"][rnm.group(2)] = options
                         elif obs := re.match(r"^\s*([^\s!]+)\b", ln, re.IGNORECASE):
                             runcard_data["histograms"][obs.group(1)] = options
                         else:
