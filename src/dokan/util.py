@@ -87,6 +87,26 @@ def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:
     return False
 
 
+def fill_missing(data, defaults) -> None:
+    """fill in missing keys in `data` by copying entries from `defaults`
+
+    Parameters
+    ----------
+    data :
+        datastructure with potentialy missing entries
+    defaults :
+        default values to populate `data` with
+    """
+
+    # > only deal with nested-dict parts for now
+    if isinstance(data, dict) and isinstance(defaults, dict):
+        for key, val in defaults.items():
+            if key not in data:
+                data[key] = val
+            else:
+                fill_missing(data[key], val)
+
+
 def parse_time_interval(interval: str) -> float:
     """convert a time interval string to seconds
 

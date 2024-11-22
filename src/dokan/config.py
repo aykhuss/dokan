@@ -19,7 +19,7 @@ from ._types import GenericPath
 from .db._loglevel import LogLevel
 from .exe import ExecutionPolicy
 from .order import Order
-from .util import validate_schema
+from .util import fill_missing, validate_schema
 
 _default_config: Path = Path(__file__).parent.resolve() / "config.json"
 
@@ -122,6 +122,8 @@ class Config(UserDict):
                 self.set_path(path, load=False)
         else:
             self.load(default_ok)
+        # > ensure that missing entries are always filled with defaults
+        self.fill_defaults()
 
     def is_valid(self, convert_to_type: bool = False) -> bool:
         if not validate_schema(self.data, _schema, convert_to_type):
@@ -174,6 +176,11 @@ class Config(UserDict):
             self.load_defaults()
         if not self.is_valid(convert_to_type=True):
             raise RuntimeError("ExeData load encountered conflict with schema")
+
+    def fill_defaults(self):
+        with open(_default_config, "rt") as tmp:
+            defaults = json.load(tmp)
+            fill_missing(self.data, defaults)
 
     def write(self) -> None:
         if not self.path:
