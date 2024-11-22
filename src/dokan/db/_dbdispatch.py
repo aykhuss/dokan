@@ -178,10 +178,11 @@ class DBDispatch(DBTask):
 
                 # > the sole location where we break out of the infinite loop
                 if qbreak:
-                    self.logger(
-                        f"DBDispatch[{self.id},{self._n}]::repopulate:  "
-                        + f"next in line is part_id = {self.part_id}"
-                    )
+                    if self.part_id > 0:
+                        self.logger(
+                            f"DBDispatch[{self.id},{self._n}]::repopulate:  "
+                            + f"next in line is part_id = {self.part_id}"
+                        )
                     break
 
                 # > allocate & distribute time for next batch of jobs
