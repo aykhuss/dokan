@@ -89,7 +89,7 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         self.exe()
 
         # > collect files that were generated/modified in this execution
-        # > some file systems have delays: add delays & re-tries
+        # > some file systems have delays: add delays & re-tries to be safe
         fs_max_retry: int = 10
         fs_delay: float = 1.0  # seconds
         for _ in range(fs_max_retry):

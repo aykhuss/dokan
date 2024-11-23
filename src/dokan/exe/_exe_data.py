@@ -96,8 +96,8 @@ class ExeData(UserDict):
             self.path.mkdir(parents=True)
         if not self.path.is_dir():
             raise ValueError(f"{path} is not a folder")
-        self.file_tmp: Path = self.path / self._file_tmp
-        self.file_fin: Path = self.path / self._file_fin
+        self.file_tmp: Path = self.path / ExeData._file_tmp
+        self.file_fin: Path = self.path / ExeData._file_fin
         # > load in order of precedence & set mutable state
         self.load(expect_tmp)
 

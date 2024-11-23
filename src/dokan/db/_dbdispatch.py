@@ -280,7 +280,7 @@ class DBDispatch(DBTask):
                     # determine upper bound by the max number of jobs? -> seems like a good idea
                     .order_by(Job.seed.desc())
                 ).first()
-                if last_job:
+                if last_job and last_job.seed:
                     self.debug(
                         f"DBDispatch[{self.id},{self._n}]::run:  "
                         + f"{self.id} last job:  {last_job!r}"

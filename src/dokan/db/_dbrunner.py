@@ -54,17 +54,13 @@ class DBRunner(DBTask):
                 self.part_name,
                 (f"s{min_seed}" if min_seed == max_seed else f"s{min_seed}-{max_seed}"),
             )
-            # > ncall & niter can be saved in different `repopulate` steps
-            # > we can override with the largest number(?)
-            self.ncall: int = max(j.ncall for j in jobs)
-            self.niter: int = max(j.niter for j in jobs)
+            # > same dispatch -> same statistics
+            self.ncall: int = jobs[0].ncall
+            self.niter: int = jobs[0].niter
+            assert all(j.ncall == self.ncall for j in jobs)
             assert all(j.niter == self.niter for j in jobs)
             if (self.niter * self.ncall) == 0:
                 raise RuntimeError(f"job {jobs[0].id} has ntot={self.ncall}×{self.niter}==0")
-            if not all(j.ncall == self.ncall for j in jobs):
-                for j in jobs:
-                    j.ncall = self.ncall
-                session.commit()
 
     def complete(self) -> bool:
         with self.session as session:
@@ -79,6 +75,7 @@ class DBRunner(DBTask):
         exe_data = ExeData(self.job_path)
 
         with self.session as session:
+            # > DBDispatch takes care to stay within batch size
             db_jobs: list[Job] = []
             for job_id in self.ids:
                 db_jobs.append(session.get_one(Job, job_id))
@@ -158,12 +155,15 @@ class DBRunner(DBTask):
                 session.commit()
             # > END IF DISPATCHED
 
+            # get this from exe_data, only one for the batch? param: in_path?
+            # jus write a separate DBRecover task just taking a path and be done with it
+            # or yield here the DB recover task
             yield Executor.factory(policy=self.policy, path=str(self.job_path.absolute()))
 
             # > parse the retun data
             if not exe_data.is_final:
                 raise RuntimeError(f"{self.ids} not final?!\n{self.job_path}\n{exe_data.data}")
-            for db_job in db_jobs:
+            for db_job in db_jobs:  # loop exe data jobs keys
                 if "result" in exe_data["jobs"][db_job.id]:
                     db_job.result = exe_data["jobs"][db_job.id]["result"]
                     db_job.error = exe_data["jobs"][db_job.id]["error"]
