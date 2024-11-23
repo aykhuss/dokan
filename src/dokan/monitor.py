@@ -62,6 +62,9 @@ class Monitor(DBTask):
         for pt_name, icol in self._map_col.items():
             self._data[0][icol] = pt_name
 
+        self.cross_line: str = "[blue]cross = ... (waiting for first update) [/blue]"
+        self.cross_time: float = time.time()
+
     def job_summary(self, pt: Part) -> str:
         display_mode: ExecutionMode = (
             ExecutionMode.WARMUP
@@ -135,7 +138,8 @@ class Monitor(DBTask):
             box=box.ROUNDED,
             safe_box=False,
             # @todo actually put in the numbrs & # of remaining jobs & current estimate for error
-            title=f"[{dt_str}]\n[dim]legend:[/dim] [yellow][b]A[/b]ctive[/yellow] [green][b]D[/b]one[/green] [red][b]F[/b]ailed[/red]",
+            title=f"[{dt_str}] {self.cross_line} (updated {datetime.timedelta(seconds=int(time.time()-self.cross_time))!s} ago)\n"
+            + "[dim]legend:[/dim] [yellow][b]A[/b]ctive[/yellow] [green][b]D[/b]one[/green] [red][b]F[/b]ailed[/red]",
             title_justify="left",
             title_style=Style(bold=False, italic=False),
         )
@@ -161,6 +165,10 @@ class Monitor(DBTask):
                         select(Log).where(Log.id > self._log_id).order_by(Log.id.asc())
                     ):
                         self._log_id = log.id  # save last id
+                        if log.level == LogLevel.SIG_UPDXS:
+                            self.cross_line = log.message
+                            self.cross_time = log.timestamp
+                            continue
                         dt_str: str = datetime.datetime.fromtimestamp(log.timestamp).strftime(
                             "%Y-%m-%d %H:%M:%S"
                         )

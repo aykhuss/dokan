@@ -11,7 +11,8 @@ from enum import IntEnum, unique
 class LogLevel(IntEnum):
     """possible log levels (c.f. logging module)"""
 
-    SIG_TERM = -2  # signal to terminate the monitor
+    SIG_TERM = -10  # signal to terminate the monitor
+    SIG_UPDXS = -2  # signal to send an updated XS number
     SIG_COMP = -1  # signal to indicate successful completion
     NOTSET = 0
     DEBUG = 10

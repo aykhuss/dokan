@@ -310,5 +310,17 @@ class MergeAll(DBMerge):
                     except ValueError as e:
                         self.logger(f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR)
                 hist.write_to_file(out_file)
-
-        self.debug("MergeAll::run:  complete all")
+                if obs == "cross":
+                    with open(out_file, "rt") as cross:
+                        for line in cross:
+                            if line.startswith("#"):
+                                continue
+                            col: list[float] = [float(c) for c in line.split()]
+                            res: float = col[0]
+                            err: float = col[1]
+                            rel: float = abs(err / res) if res != 0.0 else float("inf")
+                            self.logger(
+                                f"[blue]cross = {res} +/- {err} [{rel*1e2:.3}%][/blue]",
+                                level=LogLevel.SIG_UPDXS,
+                            )
+                            break
