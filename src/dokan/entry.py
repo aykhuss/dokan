@@ -1,9 +1,11 @@
 import time
 
+import luigi
 from sqlalchemy import select
 
 from .db import DBTask, MergeAll, Part
 from .db._dbdispatch import DBDispatch
+from .db._dbresurrect import DBResurrect
 from .db._loglevel import LogLevel
 from .db._sqla import Log
 from .final import Final
@@ -11,6 +13,8 @@ from .preproduction import PreProduction
 
 
 class Entry(DBTask):
+    resurrect: list = luigi.ListParameter(default=[])
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.debug(f"Entry::init {time.ctime(self.run_tag)}")
@@ -50,8 +54,12 @@ class Entry(DBTask):
         self.logger("Entry: complete MergeAll -> dispatch")
         # self.print_job()
         n_dispatch: int = max(len(preprods), self.config["run"]["jobs_max_concurrent"])
-        dispatch: list[DBDispatch] = [self.clone(DBDispatch, id=0, _n=n) for n in range(n_dispatch)]
+        dispatch: list[luigi.Task] = [self.clone(DBDispatch, id=0, _n=n) for n in range(n_dispatch)]
         dispatch[0].repopulate()
+        if self.resurrect:
+            dispatch = [
+                self.clone(DBResurrect, run_tag=r[0], rel_path=r[1]) for r in self.resurrect
+            ] + dispatch
         yield dispatch
         self.logger("Entry: complete dispatch -> run Final")
         yield self.clone(Final)

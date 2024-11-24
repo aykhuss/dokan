@@ -21,7 +21,8 @@ from dokan.db._jobstatus import JobStatus
 from .__about__ import __version__
 from .bib import make_bib
 from .config import Config
-from .db._dbresurrect import DBResurrect
+
+# from .db._dbresurrect import DBResurrect
 from .db._dbtask import DBInit
 from .db._loglevel import LogLevel
 from .db._sqla import Job, Part
@@ -408,7 +409,7 @@ def main() -> None:
         # @ todo SIGUSR1 to trigger MergeAll?
 
         # @todo checks of the DB and ask for recovery mode?
-        resurrects: list[DBResurrect] = []
+        resurrect: list[tuple[float, str]] = []
         if nactive_job > 0:
             select_active_jobs = select(Job).where(Job.status.in_(JobStatus.active_list()))
             console.print(f"there appear to be {nactive_job} active jobs in the database")
@@ -425,16 +426,19 @@ def main() -> None:
                             session.delete(job)
                         elif job.status == JobStatus.RUNNING:
                             console.print(f" > resurrect: {job!r}")
-                            if all(
-                                dbr.rel_path != job.rel_path
-                                for dbr in resurrects
-                                if dbr.run_tag == job.run_tag
-                            ):
-                                resurrects.append(
-                                    db_init.clone(
-                                        DBResurrect, run_tag=job.run_tag, rel_path=job.rel_path
-                                    )
-                                )
+                            if all(r[1] != job.rel_path for r in resurrect if r[0] == job.run_tag):
+                                if job.rel_path:
+                                    resurrect.append((job.run_tag, job.rel_path))
+                            # if all(
+                            #     dbr.rel_path != job.rel_path
+                            #     for dbr in resurrect
+                            #     if dbr.run_tag == job.run_tag
+                            # ):
+                            #     resurrect.append(
+                            #         db_init.clone(
+                            #             DBResurrect, run_tag=job.run_tag, rel_path=job.rel_path
+                            #         )
+                            #     )
                         else:
                             raise RuntimeError(f"unexpected job status in recovery: {job.status}")
                     session.commit()
@@ -458,9 +462,9 @@ def main() -> None:
             local_ncores: int = cpu_count
         luigi_result = luigi.build(
             [
-                db_init.clone(Entry),
+                db_init.clone(Entry, resurrect=resurrect),
                 db_init.clone(Monitor),
-                *resurrects,
+                # *resurrects,
             ],
             worker_scheduler_factory=WorkerSchedulerFactory(
                 # @todo properly set resources according to config
