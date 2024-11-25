@@ -60,6 +60,7 @@ class Entry(DBTask):
             dispatch = [
                 self.clone(DBResurrect, run_tag=r[0], rel_path=r[1]) for r in self.resurrect
             ] + dispatch
+        self.logger("Entry: yield dispatch")
         yield dispatch
         self.logger("Entry: complete dispatch -> run Final")
         yield self.clone(Final)
