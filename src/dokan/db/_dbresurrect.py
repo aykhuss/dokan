@@ -43,7 +43,7 @@ class DBResurrect(DBTask):
         return True
 
     def run(self):
-        self.logger(f"DBResurrect::run:  rel_path = {self.rel_path}, run_id = {self.run_id}")
+        self.logger(f"DBResurrect::run:  rel_path = {self.rel_path}, run_tag = {self.run_tag}")
 
         # > need to re-load as state can be cached & not reflect the result
         self.exe_data = ExeData(self._local(self.rel_path))

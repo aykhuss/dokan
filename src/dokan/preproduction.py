@@ -47,6 +47,8 @@ class WarmupFlag(IntFlag):
 class PreProduction(DBTask):
     part_id: int = luigi.IntParameter()
 
+    priority = 150
+
     @property
     def resources(self):
         # > each part can only have one active pre-production

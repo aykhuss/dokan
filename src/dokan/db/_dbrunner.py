@@ -27,7 +27,7 @@ class DBRunner(DBTask):
     ids: list[int] = luigi.ListParameter()
     part_id: int = luigi.IntParameter()
 
-    priority = 20
+    priority = 10
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

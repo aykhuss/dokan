@@ -28,10 +28,10 @@ class DBMerge(DBTask, metaclass=ABCMeta):
     # > flag to force a re-merge
     force: bool = luigi.BoolParameter(default=False)
 
+    priority = 20
+
     # > limit the resources on local cores
     resources = {"local_ncores": 1}
-
-    priority = 10
 
     # @staticmethod
     # def clone_factory(orig: DBTask, id: int = 0):
@@ -105,12 +105,17 @@ class MergePart(DBMerge):
                 else 2.0
             ):
                 return True
+
+        self.logger(
+            f"MergePart::complete[{self.part_id},{self.force}]:  "
+            + f"done {c_done}, merged {c_merged} => not yet complete",
+        )
         return False
 
     def run(self):
         if self.complete():
             return
-        self.debug(f"MergePart::run[{self.part_id}]  force = {self.force}")
+        self.debug(f"MergePart::run[{self.part_id},{self.force}]")
         with self.session as session:
             # > get the part and update timestamp to tag for 'MERGE'
             pt: Part = session.get_one(Part, self.part_id)
@@ -283,7 +288,7 @@ class MergeAll(DBMerge):
             return True
 
     def run(self):
-        self.logger(f"MergeAll::run:  force = {self.force}")
+        self.logger(f"MergeAll::run[{self.force}]")
         mrg_parent: Path = self._path.joinpath("result", "part")
 
         with self.session as session:
