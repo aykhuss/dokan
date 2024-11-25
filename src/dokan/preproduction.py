@@ -238,7 +238,6 @@ class PreProduction(DBTask):
             # > if there's one complete, we're not in pre-production stage!
             complete_production = session.scalars(
                 select(Job)
-                .where(Job.run_tag == self.run_tag)
                 .where(Job.part_id == self.part_id)
                 .where(Job.mode == ExecutionMode.PRODUCTION)
                 .where(Job.policy == self.config["exe"]["policy"])
