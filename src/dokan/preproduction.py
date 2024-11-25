@@ -234,6 +234,20 @@ class PreProduction(DBTask):
                 session.commit()
                 return new_production.id
 
+            # > complete production:
+            # > if there's one complete, we're not in pre-production stage!
+            complete_production = session.scalars(
+                select(Job)
+                .where(Job.run_tag == self.run_tag)
+                .where(Job.part_id == self.part_id)
+                .where(Job.mode == ExecutionMode.PRODUCTION)
+                .where(Job.policy == self.config["exe"]["policy"])
+                .where(Job.status.in_(JobStatus.success_list()))
+                .order_by(Job.id.asc())
+            ).first()
+            if complete_production:
+                return -1
+
             # > active production: return them in order
             # > since `complete` calls this routine, we need to anticipate
             # > calls before completion of active warmup jobs
