@@ -58,7 +58,7 @@ class DBDispatch(DBTask):
                 is not None
             ):
                 return False
-            return True
+        return True
 
     def repopulate(self):
         if self.id > 0:
@@ -72,19 +72,15 @@ class DBDispatch(DBTask):
         if self.id != 0:
             return
 
+        # > get the remaining resources but need to go into the loop
+        # > to get the correct state of self.part_id
         njobs_rem, T_rem = self.remainders()
-        if njobs_rem <= 0 or T_rem <= 0.0:
-            self.debug(
-                f"DBDispatch[{self.id},{self._n}]::repopulate: resources depleted:  "
-                + f"njobs = {njobs_rem}, T = {T_rem}"
-            )
-            return
 
         with self.session as session:
-            self.debug(
-                f"DBDispatch[{self.id},{self._n}]::repopulate:  "
-                + f"njobs = {njobs_rem}, T = {T_rem}"
-            )
+            # self.debug(
+            #     f"DBDispatch[{self.id},{self._n}]::repopulate:  "
+            #     + f"njobs = {njobs_rem}, T = {T_rem}"
+            # )
 
             # > queue up a new production job in the database and return job id's
             def queue_production(part_id: int, opt: dict) -> list[int]:
@@ -251,6 +247,7 @@ class DBDispatch(DBTask):
 
     def run(self):
         self.repopulate()
+        self.debug(f"DBDispatch[{self.id},{self._n}]::run:  " + f"part_id = {self.part_id}")
         # > queue empty and no job added in `repopulate`: we're done
         if self.part_id <= 0:
             return
