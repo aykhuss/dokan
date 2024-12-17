@@ -6,7 +6,7 @@ from abc import ABCMeta, abstractmethod
 import luigi
 from rich.console import Console
 from sqlalchemy import Engine, create_engine, select
-from sqlalchemy.orm import Session  # , scoped_session, sessionmaker
+from sqlalchemy.orm import Session, sessionmaker  # , scoped_session, sessionmaker
 
 from ..exe import ExecutionMode
 from ..order import Order
@@ -36,7 +36,7 @@ class DBTask(Task, metaclass=ABCMeta):
         self.logname: str = "sqlite:///" + str(self._local("log.sqlite").absolute())
 
     @property
-    def engine(self) -> Engine:
+    def db_engine(self) -> Engine:
         return create_engine(
             self.dbname,
             # + r"?uri=true&nolock=1"
@@ -46,21 +46,18 @@ class DBTask(Task, metaclass=ABCMeta):
         )
 
     @property
-    def session(self) -> Session:
-        return Session(self.engine)
-        # > scoped session needed for threadsafety
-        # Session = scoped_session(sessionmaker(self.engine))
-        # return Session()
-
-    @property
     def log_engine(self) -> Engine:
         return create_engine(
-            self.logname, connect_args={"check_same_thread": True, "timeout": 30.0}
+            self.logname,
+            # + r"?uri=true&nolock=1"
+            # + "?check_same_thread=false&timeout=30&nolock=1&uri=true",
+            connect_args={"check_same_thread": True, "timeout": 30.0},
+            # connect_args={"check_same_thread": False, "timeout": 60.0, "uri": True},
         )
 
     @property
-    def log_session(self) -> Session:
-        return Session(self.log_engine)
+    def session(self) -> Session:
+        return Session(binds={DokanDB: self.db_engine, DokanLog: self.log_engine})
 
     def output(self):
         # > DBTask has no output files but uses the DB itself to track the status
@@ -83,9 +80,9 @@ class DBTask(Task, metaclass=ABCMeta):
     def logger(self, message: str, level: LogLevel = LogLevel.INFO) -> None:
         # > negative values are signals: always store in databese (workflow relies on this)
         if level < 0:
-            with self.log_session as log_session:
-                log_session.add(Log(level=level, timestamp=time.time(), message=message))
-                log_session.commit()
+            with self.session as session:
+                session.add(Log(level=level, timestamp=time.time(), message=message))
+                session.commit()
         # > pass through log level & all signales
         if level >= 0 and level < self.config["ui"]["log_level"]:
             return
@@ -95,14 +92,14 @@ class DBTask(Task, metaclass=ABCMeta):
             _console.print(f"(c)[dim][{dt_str}][/dim]({level!r}): {message}")
             return
         # > general case: monitor is ON: store messages in DB
-        with self.log_session as log_session:
-            last_log = log_session.scalars(select(Log).order_by(Log.id.desc())).first()
+        with self.session as session:
+            last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
             if last_log and last_log.level in [LogLevel.SIG_COMP]:
                 dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 _console.print(f"(c)[dim][{dt_str}][/dim]({level!r}): {message}")
             elif level >= 0:
-                log_session.add(Log(level=level, timestamp=time.time(), message=message))
-                log_session.commit()
+                session.add(Log(level=level, timestamp=time.time(), message=message))
+                session.commit()
 
     def debug(self, message: str) -> None:
         self.logger(message, LogLevel.DEBUG)
@@ -299,19 +296,19 @@ class DBInit(DBTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        DokanDB.metadata.create_all(self.engine)
+        DokanDB.metadata.create_all(self.db_engine)
         DokanLog.metadata.create_all(self.log_engine)
-        with self.log_session as log_session:
-            last_log = log_session.scalars(select(Log).order_by(Log.id.desc())).first()
+        with self.session as session:
+            last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
             if last_log:
                 print(f"DBInit::init last log: {last_log!r}")
                 self._log_id = last_log.id
                 # > last run was successful: reset log table.
                 if last_log.level in [LogLevel.SIG_COMP]:
                     print("Monitor::init clearing old logs...")
-                    for log in log_session.scalars(select(Log)):
-                        log_session.delete(log)
-                    log_session.commit()
+                    for log in session.scalars(select(Log)):
+                        session.delete(log)
+                    session.commit()
 
     def complete(self) -> bool:
         with self.session as session:

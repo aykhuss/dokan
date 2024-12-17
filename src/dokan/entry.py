@@ -26,8 +26,8 @@ class Entry(DBTask):
         return []
 
     def complete(self) -> bool:
-        with self.log_session as log_session:
-            last_log = log_session.scalars(select(Log).order_by(Log.id.desc())).first()
+        with self.session as session:
+            last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
             if last_log and last_log.level in [LogLevel.SIG_COMP]:
                 return True
         return False

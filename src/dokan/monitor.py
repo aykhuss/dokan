@@ -28,17 +28,17 @@ class Monitor(DBTask):
         print(f"Monitor::init {time.ctime(self.run_tag)}")
 
         self._log_id: int = 0
-        with self.log_session as log_session:
-            last_log = log_session.scalars(select(Log).order_by(Log.id.desc())).first()
+        with self.session as session:
+            last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
             if last_log:
                 print(f"Monitor::init:  last log: {last_log!r}")
                 self._log_id = last_log.id
                 # > last run was successful: reset log table.
                 if last_log.level in [LogLevel.SIG_COMP]:
                     print("Monitor::init:  clearing old logs...")
-                    for log in log_session.scalars(select(Log)):
-                        log_session.delete(log)
-                    log_session.commit()
+                    for log in session.scalars(select(Log)):
+                        session.delete(log)
+                    session.commit()
 
         self._nchan: int = 0
         part_order: list[tuple[int, str]] = []
@@ -160,8 +160,8 @@ class Monitor(DBTask):
             while True:
                 live.update(self.generate_table(), refresh=True)
 
-                with self.log_session as log_session:
-                    for log in log_session.scalars(
+                with self.session as session:
+                    for log in session.scalars(
                         select(Log).where(Log.id > self._log_id).order_by(Log.id.asc())
                     ):
                         self._log_id = log.id  # save last id
