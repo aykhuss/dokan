@@ -70,11 +70,11 @@ class DBRunner(DBTask):
         return True
 
     def run(self):
-        self.logger(f"DBRunner::run  part_id = {self.part_id}, ids = {self.ids}")
-
         exe_data = ExeData(self.job_path)
 
         with self.session as session:
+            self.logger(session, f"DBRunner::run  part_id = {self.part_id}, ids = {self.ids}")
+
             # > DBDispatch takes care to stay within batch size
             db_jobs: list[Job] = []
             for job_id in self.ids:
@@ -174,12 +174,16 @@ class DBRunner(DBTask):
                     db_job.status = JobStatus.FAILED
             session.commit()
 
-        # > see if a re-merge is possible
-        if self.mode == ExecutionMode.PRODUCTION:
-            mrg_part = self.clone(MergePart, force=False, part_id=self.part_id)
-            if mrg_part.complete():
-                self.debug(f"DBRunner::run:  part_id = {self.part_id} > MergePart complete")
-                return
-            else:
-                self.logger(f"DBRunner::run:  part_id = {self.part_id} > yield MergePart")
-                yield mrg_part
+            # > see if a re-merge is possible
+            if self.mode == ExecutionMode.PRODUCTION:
+                mrg_part = self.clone(MergePart, force=False, part_id=self.part_id)
+                if mrg_part.complete():
+                    self.debug(
+                        session, f"DBRunner::run:  part_id = {self.part_id} > MergePart complete"
+                    )
+                    return
+                else:
+                    self.logger(
+                        session, f"DBRunner::run:  part_id = {self.part_id} > yield MergePart"
+                    )
+                    yield mrg_part

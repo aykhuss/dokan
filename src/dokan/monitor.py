@@ -13,6 +13,7 @@ from rich.live import Live
 from rich.style import Style
 from rich.table import Column, Table
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from .db import DBTask, Log, Part
 from .db._jobstatus import JobStatus
@@ -25,7 +26,7 @@ class Monitor(DBTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        print(f"Monitor::init {time.ctime(self.run_tag)}")
+        print(f"Monitor::init  {time.ctime(self.run_tag)}")
 
         self._log_id: int = 0
         with self.session as session:
@@ -110,13 +111,12 @@ class Monitor(DBTask):
             )
         return result
 
-    def generate_table(self) -> Table:
+    def generate_table(self, session: Session) -> Table:
         # > collect data from DB
-        with self.session as session:
-            for pt in session.scalars(select(Part).where(Part.active.is_(True))):
-                irow: int = pt.part_num
-                icol: int = self._map_col[pt.part]
-                self._data[irow][icol] = self.job_summary(pt)
+        for pt in session.scalars(select(Part).where(Part.active.is_(True))):
+            irow: int = pt.part_num
+            icol: int = self._map_col[pt.part]
+            self._data[irow][icol] = self.job_summary(pt)
 
         # > create the table structure
         dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -155,12 +155,14 @@ class Monitor(DBTask):
     def run(self):
         if not self.config["ui"]["monitor"]:
             return
-        self.logger("Monitor::run:  switching on the job status board...")
-        with Live(self.generate_table(), auto_refresh=False) as live:
-            while True:
-                live.update(self.generate_table(), refresh=True)
 
-                with self.session as session:
+        with self.session as session:
+            self.logger(session, "Monitor::run:  switching on the job status board...")
+
+            with Live(self.generate_table(session), auto_refresh=False) as live:
+                while True:
+                    live.update(self.generate_table(session), refresh=True)
+
                     for log in session.scalars(
                         select(Log).where(Log.id > self._log_id).order_by(Log.id.asc())
                     ):
@@ -179,4 +181,4 @@ class Monitor(DBTask):
                             return
                         # time.sleep(0.01)
 
-                time.sleep(1)
+                    time.sleep(1)

@@ -16,14 +16,13 @@ from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt, PromptBase
 from rich.syntax import Syntax
 from sqlalchemy import select
 
-from dokan.db._jobstatus import JobStatus
-
 from .__about__ import __version__
 from .bib import make_bib
 from .config import Config
 
 # from .db._dbresurrect import DBResurrect
 from .db._dbtask import DBInit
+from .db._jobstatus import JobStatus
 from .db._loglevel import LogLevel
 from .db._sqla import Job, Part
 from .entry import Entry
@@ -460,6 +459,7 @@ def main() -> None:
             local_ncores: int = config["run"]["jobs_max_concurrent"]
         else:
             local_ncores: int = cpu_count
+
         luigi_result = luigi.build(
             [
                 db_init.clone(Entry, resurrect=resurrect),

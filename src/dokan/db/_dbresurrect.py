@@ -24,7 +24,8 @@ class DBResurrect(DBTask):
         self.exe_data: ExeData = ExeData(self._local(self.rel_path))
 
     def requires(self):
-        self.debug(f"DBResurrect::requires:  rel_path = {self.rel_path}")
+        with self.session as session:
+            self.debug(session, f"DBResurrect::requires:  rel_path = {self.rel_path}")
         return [
             Executor.factory(
                 policy=self.exe_data["policy"],
@@ -33,25 +34,29 @@ class DBResurrect(DBTask):
         ]
 
     def complete(self) -> bool:
-        self.debug(f"DBResurrect::complete:  rel_path = {self.rel_path}")
         with self.session as session:
+            self.debug(session, f"DBResurrect::complete:  rel_path = {self.rel_path}")
             for job_id in self.exe_data["jobs"].keys():
                 if session.get_one(Job, job_id).status not in JobStatus.terminated_list():
-                    self.debug(f"DBResurrect::complete:  rel_path = {self.rel_path}: FALSE")
+                    self.debug(
+                        session, f"DBResurrect::complete:  rel_path = {self.rel_path}: FALSE"
+                    )
                     return False
-        self.debug(f"DBResurrect::complete:  rel_path = {self.rel_path}: TRUE")
+            self.debug(session, f"DBResurrect::complete:  rel_path = {self.rel_path}: TRUE")
         return True
 
     def run(self):
-        self.logger(f"DBResurrect::run:  rel_path = {self.rel_path}, run_tag = {self.run_tag}")
-
         # > need to re-load as state can be cached & not reflect the result
         self.exe_data = ExeData(self._local(self.rel_path))
 
         # > parse the Executor retun data
         if not self.exe_data.is_final:
             raise RuntimeError(f"{self.rel_path} not final?!\n{self.exe_data.data}")
+
         with self.session as session:
+            self.logger(
+                session, f"DBResurrect::run:  rel_path = {self.rel_path}, run_tag = {self.run_tag}"
+            )
             for job_id, job_entry in self.exe_data["jobs"].items():
                 db_job: Job = session.get_one(Job, job_id)
                 if "result" in job_entry:

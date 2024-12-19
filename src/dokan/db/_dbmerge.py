@@ -92,7 +92,8 @@ class MergePart(DBMerge):
                 return True
 
             self.debug(
-                f"MergePart::complete[{self.part_id},{self.force}]: done {c_done}, merged {c_merged}"
+                session,
+                f"MergePart::complete[{self.part_id},{self.force}]: done {c_done}, merged {c_merged}",
             )
 
             if self.force and c_done > 0:
@@ -107,6 +108,7 @@ class MergePart(DBMerge):
                 return True
 
         self.logger(
+            session,
             f"MergePart::complete[{self.part_id},{self.force}]:  "
             + f"done {c_done}, merged {c_merged} => not yet complete",
         )
@@ -115,8 +117,8 @@ class MergePart(DBMerge):
     def run(self):
         if self.complete():
             return
-        self.debug(f"MergePart::run[{self.part_id},{self.force}]")
         with self.session as session:
+            self.debug(session, f"MergePart::run[{self.part_id},{self.force}]")
             # > get the part and update timestamp to tag for 'MERGE'
             pt: Part = session.get_one(Part, self.part_id)
             pt.timestamp = time.time()
@@ -137,7 +139,7 @@ class MergePart(DBMerge):
             for job in session.scalars(self.select_job):
                 if not job.rel_path:
                     continue  # @todo raise warning in logger?
-                self.debug(f"MergePart::run[{self.part_id}] appending {job!r}")
+                self.debug(session, f"MergePart::run[{self.part_id}] appending {job!r}")
                 pt.Ttot += job.elapsed_time
                 pt.ntot += job.niter * job.ncall
                 job_path: Path = self._path / job.rel_path
@@ -161,7 +163,9 @@ class MergePart(DBMerge):
                     try:
                         container.append(NNLOJETHistogram(nx=nx, filename=self._path / in_file))
                     except ValueError as e:
-                        self.logger(f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR)
+                        self.logger(
+                            session, f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR
+                        )
                 container.mask_outliers(3.5, 0.01)
                 container.optimise_k(maxdev_unwgt=None, nsteps=3, maxdev_steps=0.5)
                 hist = container.merge(weighted=True)
@@ -204,7 +208,9 @@ class MergePart(DBMerge):
                     pt.result = res
                     pt.error = err
 
-                self.debug(f"MergePart::run[{self.part_id}]:  {obs:>15}[{nx}]:  {res} +/- {err}")
+                self.debug(
+                    session, f"MergePart::run[{self.part_id}]:  {obs:>15}[{nx}]:  {res} +/- {err}"
+                )
                 cross_list.append((res, err))
 
                 # # > override error if larger from bin sums (correaltions with counter-events)
@@ -260,8 +266,8 @@ class MergeAll(DBMerge):
 
     def requires(self):
         if self.force:
-            self.debug("MergeAll: requires parts...")
             with self.session as session:
+                self.debug(session, "MergeAll: requires parts...")
                 return [
                     self.clone(cls=MergePart, part_id=pt.id)
                     for pt in session.scalars(self.select_part)
@@ -273,25 +279,29 @@ class MergeAll(DBMerge):
         # > check input requirements
         if any(not mpt.complete() for mpt in self.requires()):
             return False
+
         # > check file modifiation time
         timestamp: float = -1.0
         for hist in os.scandir(self.fin_path):
             timestamp = max(timestamp, hist.stat().st_mtime)
         if self.run_tag > timestamp:
             return False
-        self.debug(f"MergeAll: files {datetime.datetime.fromtimestamp(timestamp)}")
+
         with self.session as session:
+            self.debug(session, f"MergeAll: files {datetime.datetime.fromtimestamp(timestamp)}")
             for pt in session.scalars(self.select_part):
-                self.debug(f"MergeAll: {pt.name} {datetime.datetime.fromtimestamp(pt.timestamp)}")
+                self.debug(
+                    session, f"MergeAll: {pt.name} {datetime.datetime.fromtimestamp(pt.timestamp)}"
+                )
                 if pt.timestamp > timestamp:
                     return False
             return True
 
     def run(self):
-        self.logger(f"MergeAll::run[{self.force}]")
-        mrg_parent: Path = self._path.joinpath("result", "part")
-
         with self.session as session:
+            self.logger(session, f"MergeAll::run[{self.force}]")
+            mrg_parent: Path = self._path.joinpath("result", "part")
+
             in_files = dict((obs, []) for obs in self.config["run"]["histograms"].keys())
             for pt in session.scalars(self.select_part):
                 for obs in self.config["run"]["histograms"]:
@@ -306,14 +316,18 @@ class MergeAll(DBMerge):
                 out_file: Path = self.fin_path / f"{obs}.dat"
                 nx: int = self.config["run"]["histograms"][obs]["nx"]
                 if len(in_files[obs]) == 0:
-                    self.logger(f"MergeAll::run:  no files for {obs}", level=LogLevel.ERROR)
+                    self.logger(
+                        session, f"MergeAll::run:  no files for {obs}", level=LogLevel.ERROR
+                    )
                     continue
                 hist = NNLOJETHistogram()
                 for in_file in in_files[obs]:
                     try:
                         hist = hist + NNLOJETHistogram(nx=nx, filename=self._path / in_file)
                     except ValueError as e:
-                        self.logger(f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR)
+                        self.logger(
+                            session, f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR
+                        )
                 hist.write_to_file(out_file)
                 if obs == "cross":
                     with open(out_file, "rt") as cross:
@@ -325,6 +339,7 @@ class MergeAll(DBMerge):
                             err: float = col[1]
                             rel: float = abs(err / res) if res != 0.0 else float("inf")
                             self.logger(
+                                session,
                                 f"[blue]cross = {res} +/- {err} [{rel*1e2:.3}%][/blue]",
                                 level=LogLevel.SIG_UPDXS,
                             )
