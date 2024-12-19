@@ -397,7 +397,8 @@ def main() -> None:
         # > register signal handlers
         def graceful_exit(sig, frame):
             with db_init.session as session:
-                db_init.logger(session,
+                db_init.logger(
+                    session,
                     f"received signal: {signal.Signals(sig).name}; let me attempt to exit gracefully...",
                     level=LogLevel.SIG_TERM,
                 )
