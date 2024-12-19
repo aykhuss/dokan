@@ -396,10 +396,11 @@ def main() -> None:
 
         # > register signal handlers
         def graceful_exit(sig, frame):
-            db_init.logger(
-                f"received signal: {signal.Signals(sig).name}; let me attempt to exit gracefully...",
-                level=LogLevel.SIG_TERM,
-            )
+            with db_init.session as session:
+                db_init.logger(session,
+                    f"received signal: {signal.Signals(sig).name}; let me attempt to exit gracefully...",
+                    level=LogLevel.SIG_TERM,
+                )
             time.sleep(1.5)
             sys.exit(0)
 

@@ -112,7 +112,7 @@ class DBTask(Task, metaclass=ABCMeta):
             session.commit()
 
     def debug(self, session: Session, message: str) -> None:
-        self.logger(message, session, LogLevel.DEBUG)
+        self.logger(session, message, LogLevel.DEBUG)
 
     def remainders(self, session: Session) -> tuple[int, float]:
         # > remaining resources available
