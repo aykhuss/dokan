@@ -99,24 +99,25 @@ class MergePart(DBMerge):
             if self.force and c_done > 0:
                 return False
 
-            if (
-                float(c_done + c_merged) / float(c_merged + 1)
-                <= self.config["production"]["fac_merge_trigger"]
+            if float(c_done + c_merged) / float(c_merged + 1) <= (
+                self.config["production"]["fac_merge_trigger"]
                 if "fac_merge_trigger" in self.config["production"]
                 else 2.0
             ):
                 return True
 
-        self.logger(
-            session,
-            f"MergePart::complete[{self.part_id},{self.force}]:  "
-            + f"done {c_done}, merged {c_merged} => not yet complete",
-        )
+            self.logger(
+                session,
+                f"MergePart::complete[{self.part_id},{self.force}]:  "
+                + f"done {c_done}, merged {c_merged} => not yet complete",
+            )
+
         return False
 
     def run(self):
         if self.complete():
             return
+
         with self.session as session:
             self.debug(session, f"MergePart::run[{self.part_id},{self.force}]")
             # > get the part and update timestamp to tag for 'MERGE'

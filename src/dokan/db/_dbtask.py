@@ -60,11 +60,11 @@ class DBTask(Task, metaclass=ABCMeta):
 
     @property
     def db_engine(self) -> Engine:
-        return create_engine(self.dbname + "?check_same_thread=true&timeout=60&uri=true")
+        return create_engine(self.dbname + "?check_same_thread=true&timeout=600&uri=true")
 
     @property
     def log_engine(self) -> Engine:
-        return create_engine(self.logname + "?check_same_thread=true&timeout=60&uri=true")
+        return create_engine(self.logname + "?check_same_thread=true&timeout=600&uri=true")
 
     @property
     def session(self) -> Session:
