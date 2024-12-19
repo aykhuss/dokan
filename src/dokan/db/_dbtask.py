@@ -53,18 +53,18 @@ class DBTask(Task, metaclass=ABCMeta):
         self.dbname: str = "sqlite:///" + str(self._local("db.sqlite").absolute())
         self.logname: str = "sqlite:///" + str(self._local("log.sqlite").absolute())
 
-    def clone(self, cls, **kwargs):
-        clone = super().clone(cls, **kwargs)
-        # clone.lock = self.lock
-        return clone
+    # def clone(self, cls, **kwargs):
+    #     clone = super().clone(cls, **kwargs)
+    #     # clone.lock = self.lock
+    #     return clone
 
     @property
     def db_engine(self) -> Engine:
-        return create_engine(self.dbname)
+        return create_engine(self.dbname + "?check_same_thread=true&timeout=60&uri=true")
 
     @property
     def log_engine(self) -> Engine:
-        return create_engine(self.logname)
+        return create_engine(self.logname + "?check_same_thread=true&timeout=60&uri=true")
 
     @property
     def session(self) -> Session:
