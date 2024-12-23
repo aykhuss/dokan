@@ -59,7 +59,7 @@ class Entry(DBTask):
             dispatch: list[luigi.Task] = [
                 self.clone(DBDispatch, id=0, _n=n) for n in range(n_dispatch)
             ]
-            dispatch[0].repopulate(session)
+            dispatch[0]._repopulate(session)
             if self.resurrect:
                 dispatch = [
                     self.clone(DBResurrect, run_tag=r[0], rel_path=r[1]) for r in self.resurrect
