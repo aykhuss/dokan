@@ -91,7 +91,7 @@ class MergePart(DBMerge):
                 # @todo raise error as we should never be in this situation?
                 return True
 
-            self.debug(
+            self._debug(
                 session,
                 f"MergePart::complete[{self.part_id},{self.force}]: done {c_done}, merged {c_merged}",
             )
@@ -106,7 +106,7 @@ class MergePart(DBMerge):
             ):
                 return True
 
-            self.logger(
+            self._logger(
                 session,
                 f"MergePart::complete[{self.part_id},{self.force}]:  "
                 + f"done {c_done}, merged {c_merged} => not yet complete",
@@ -119,7 +119,7 @@ class MergePart(DBMerge):
             return
 
         with self.session as session:
-            self.debug(session, f"MergePart::run[{self.part_id},{self.force}]")
+            self._debug(session, f"MergePart::run[{self.part_id},{self.force}]")
             # > get the part and update timestamp to tag for 'MERGE'
             pt: Part = session.get_one(Part, self.part_id)
             pt.timestamp = time.time()
@@ -140,7 +140,7 @@ class MergePart(DBMerge):
             for job in session.scalars(self.select_job):
                 if not job.rel_path:
                     continue  # @todo raise warning in logger?
-                self.debug(session, f"MergePart::run[{self.part_id}] appending {job!r}")
+                self._debug(session, f"MergePart::run[{self.part_id}] appending {job!r}")
                 pt.Ttot += job.elapsed_time
                 pt.ntot += job.niter * job.ncall
                 job_path: Path = self._path / job.rel_path
@@ -164,7 +164,7 @@ class MergePart(DBMerge):
                     try:
                         container.append(NNLOJETHistogram(nx=nx, filename=self._path / in_file))
                     except ValueError as e:
-                        self.logger(
+                        self._logger(
                             session, f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR
                         )
                 container.mask_outliers(3.5, 0.01)
@@ -209,7 +209,7 @@ class MergePart(DBMerge):
                     pt.result = res
                     pt.error = err
 
-                self.debug(
+                self._debug(
                     session, f"MergePart::run[{self.part_id}]:  {obs:>15}[{nx}]:  {res} +/- {err}"
                 )
                 cross_list.append((res, err))
@@ -268,7 +268,7 @@ class MergeAll(DBMerge):
     def requires(self):
         if self.force:
             with self.session as session:
-                self.debug(session, "MergeAll: requires parts...")
+                self._debug(session, "MergeAll: requires parts...")
                 return [
                     self.clone(cls=MergePart, part_id=pt.id)
                     for pt in session.scalars(self.select_part)
@@ -289,9 +289,9 @@ class MergeAll(DBMerge):
             return False
 
         with self.session as session:
-            self.debug(session, f"MergeAll: files {datetime.datetime.fromtimestamp(timestamp)}")
+            self._debug(session, f"MergeAll: files {datetime.datetime.fromtimestamp(timestamp)}")
             for pt in session.scalars(self.select_part):
-                self.debug(
+                self._debug(
                     session, f"MergeAll: {pt.name} {datetime.datetime.fromtimestamp(pt.timestamp)}"
                 )
                 if pt.timestamp > timestamp:
@@ -300,7 +300,7 @@ class MergeAll(DBMerge):
 
     def run(self):
         with self.session as session:
-            self.logger(session, f"MergeAll::run[{self.force}]")
+            self._logger(session, f"MergeAll::run[{self.force}]")
             mrg_parent: Path = self._path.joinpath("result", "part")
 
             in_files = dict((obs, []) for obs in self.config["run"]["histograms"].keys())
@@ -317,7 +317,7 @@ class MergeAll(DBMerge):
                 out_file: Path = self.fin_path / f"{obs}.dat"
                 nx: int = self.config["run"]["histograms"][obs]["nx"]
                 if len(in_files[obs]) == 0:
-                    self.logger(
+                    self._logger(
                         session, f"MergeAll::run:  no files for {obs}", level=LogLevel.ERROR
                     )
                     continue
@@ -326,7 +326,7 @@ class MergeAll(DBMerge):
                     try:
                         hist = hist + NNLOJETHistogram(nx=nx, filename=self._path / in_file)
                     except ValueError as e:
-                        self.logger(
+                        self._logger(
                             session, f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR
                         )
                 hist.write_to_file(out_file)
@@ -339,7 +339,7 @@ class MergeAll(DBMerge):
                             res: float = col[0]
                             err: float = col[1]
                             rel: float = abs(err / res) if res != 0.0 else float("inf")
-                            self.logger(
+                            self._logger(
                                 session,
                                 f"[blue]cross = {res} +/- {err} [{rel*1e2:.3}%][/blue]",
                                 level=LogLevel.SIG_UPDXS,

@@ -18,7 +18,7 @@ class Entry(DBTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         with self.session as session:
-            self.debug(session, f"Entry::init {time.ctime(self.run_tag)}")
+            self._debug(session, f"Entry::init {time.ctime(self.run_tag)}")
 
     def requires(self):
         return []
@@ -40,7 +40,7 @@ class Entry(DBTask):
         # > all pre-productions must complete before we can dispatch production jobs
         preprods: list[PreProduction] = []
         with self.session as session:
-            self.debug(session, "Entry::run")
+            self._debug(session, "Entry::run")
             for pt in session.scalars(select(Part).where(Part.active.is_(True))):
                 # self.debug(str(pt))
                 preprod = self.clone(
@@ -49,11 +49,11 @@ class Entry(DBTask):
                 )
                 preprods.append(preprod)
 
-            self.logger(session, "Entry: yield preprods")
+            self._logger(session, "Entry: yield preprods")
             yield preprods
-            self.logger(session, "Entry: complete preprods -> run MergeAll")
+            self._logger(session, "Entry: complete preprods -> run MergeAll")
             yield self.clone(MergeAll, force=True)
-            self.logger(session, "Entry: complete MergeAll -> dispatch")
+            self._logger(session, "Entry: complete MergeAll -> dispatch")
             # self.print_job()
             n_dispatch: int = max(len(preprods), self.config["run"]["jobs_max_concurrent"])
             dispatch: list[luigi.Task] = [
@@ -64,7 +64,7 @@ class Entry(DBTask):
                 dispatch = [
                     self.clone(DBResurrect, run_tag=r[0], rel_path=r[1]) for r in self.resurrect
                 ] + dispatch
-            self.logger(session, "Entry: yield dispatch")
+            self._logger(session, "Entry: yield dispatch")
             yield dispatch
-            self.logger(session, "Entry: complete dispatch -> run Final")
+            self._logger(session, "Entry: complete dispatch -> run Final")
             yield self.clone(Final)

@@ -3,8 +3,6 @@ import math
 import time
 from abc import ABCMeta, abstractmethod
 
-# from contextlib import contextmanager
-# from multiprocessing import Lock, RLock
 import luigi
 from rich.console import Console
 from sqlalchemy import Engine, create_engine, select
@@ -20,20 +18,6 @@ from ._sqla import DokanDB, DokanLog, Job, Log, Part
 _console = Console()
 
 
-# class LockedSession:
-#     def __init__(self, lock, Session) -> None:
-#         self.lock = lock
-#         self.Session = Session
-#
-#     def __enter__(self):
-#         self.lock.acquire()
-#         return self.Session.__enter__()
-#
-#     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-#         self.Session.__exit__(exc_type, exc_val, exc_tb)
-#         self.lock.release()
-
-
 class DBTask(Task, metaclass=ABCMeta):
     """the task class to interact with the database"""
 
@@ -47,31 +31,21 @@ class DBTask(Task, metaclass=ABCMeta):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # > a lock for safe database access
-        # self.lock = Lock()
         # @todo all DBTasks need to be started in the job root path: check?
         self.dbname: str = "sqlite:///" + str(self._local("db.sqlite").absolute())
         self.logname: str = "sqlite:///" + str(self._local("log.sqlite").absolute())
 
-    # def clone(self, cls, **kwargs):
-    #     clone = super().clone(cls, **kwargs)
-    #     # clone.lock = self.lock
-    #     return clone
-
-    @property
-    def db_engine(self) -> Engine:
-        return create_engine(self.dbname + "?check_same_thread=true&timeout=600&uri=true")
-
-    @property
-    def log_engine(self) -> Engine:
-        return create_engine(self.logname + "?check_same_thread=true&timeout=600&uri=true")
+    def _create_engine(self, name: str) -> Engine:
+        return create_engine(name + "?check_same_thread=true&timeout=600&uri=true")
 
     @property
     def session(self) -> Session:
-        return Session(binds={DokanDB: self.db_engine, DokanLog: self.log_engine})
-        # return LockedSession(
-        #     self.lock, Session(binds={DokanDB: self.db_engine, DokanLog: self.log_engine})
-        # )
+        return Session(
+            binds={
+                DokanDB: self._create_engine(self.dbname),
+                DokanLog: self._create_engine(self.logname),
+            }
+        )
 
     def output(self):
         # > DBTask has no output files but uses the DB itself to track the status
@@ -81,15 +55,15 @@ class DBTask(Task, metaclass=ABCMeta):
     def complete(self) -> bool:
         return False
 
-    def print_part(self, session: Session) -> None:
+    def _print_part(self, session: Session) -> None:
         for pt in session.scalars(select(Part)):
             print(pt)
 
-    def print_job(self, session: Session) -> None:
+    def _print_job(self, session: Session) -> None:
         for job in session.scalars(select(Job)):
             print(job)
 
-    def logger(self, session: Session, message: str, level: LogLevel = LogLevel.INFO) -> None:
+    def _logger(self, session: Session, message: str, level: LogLevel = LogLevel.INFO) -> None:
         # > negative values are signals: always store in databese (workflow relies on this)
         if level < 0:
             session.add(Log(level=level, timestamp=time.time(), message=message))
@@ -111,10 +85,10 @@ class DBTask(Task, metaclass=ABCMeta):
             session.add(Log(level=level, timestamp=time.time(), message=message))
             session.commit()
 
-    def debug(self, session: Session, message: str) -> None:
-        self.logger(session, message, LogLevel.DEBUG)
+    def _debug(self, session: Session, message: str) -> None:
+        self._logger(session, message, LogLevel.DEBUG)
 
-    def remainders(self, session: Session) -> tuple[int, float]:
+    def _remainders(self, session: Session) -> tuple[int, float]:
         # > remaining resources available
         query_alloc = (  # active contains time estimates
             session.query(Job)
@@ -133,7 +107,7 @@ class DBTask(Task, metaclass=ABCMeta):
         return njobs_rem, T_rem
 
     # @todo make return a UserDict class with a schema?
-    def distribute_time(self, session: Session, T: float) -> dict:
+    def _distribute_time(self, session: Session, T: float) -> dict:
         # > cache information for the E-L formula and populate
         # > accumulators for an estimate for time per event
         cache = {}
@@ -297,8 +271,8 @@ class DBInit(DBTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        DokanDB.metadata.create_all(self.db_engine)
-        DokanLog.metadata.create_all(self.log_engine)
+        DokanDB.metadata.create_all(self._create_engine(self.dbname))
+        DokanLog.metadata.create_all(self._create_engine(self.logname))
         with self.session as session:
             last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
             if last_log:
@@ -326,7 +300,7 @@ class DBInit(DBTask):
 
     def run(self) -> None:
         with self.session as session:
-            self.logger(session, f"DBInit::run order = {Order(self.order)!r}")
+            self._logger(session, f"DBInit::run order = {Order(self.order)!r}")
             for db_pt in session.scalars(select(Part)):
                 db_pt.active = False  # reset to be safe
             for pt in self.channels:

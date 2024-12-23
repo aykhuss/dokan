@@ -73,7 +73,7 @@ class DBRunner(DBTask):
         exe_data = ExeData(self.job_path)
 
         with self.session as session:
-            self.logger(session, f"DBRunner::run  part_id = {self.part_id}, ids = {self.ids}")
+            self._logger(session, f"DBRunner::run  part_id = {self.part_id}, ids = {self.ids}")
 
             # > DBDispatch takes care to stay within batch size
             db_jobs: list[Job] = []
@@ -178,12 +178,12 @@ class DBRunner(DBTask):
             if self.mode == ExecutionMode.PRODUCTION:
                 mrg_part = self.clone(MergePart, force=False, part_id=self.part_id)
                 if mrg_part.complete():
-                    self.debug(
+                    self._debug(
                         session, f"DBRunner::run:  part_id = {self.part_id} > MergePart complete"
                     )
                     return
                 else:
-                    self.logger(
+                    self._logger(
                         session, f"DBRunner::run:  part_id = {self.part_id} > yield MergePart"
                     )
                     yield mrg_part

@@ -58,14 +58,14 @@ class PreProduction(DBTask):
     def complete(self) -> bool:
         with self.session as session:
             # > check all warmup QC criteria
-            if self.append_warmup(session) > 0:
+            if self._append_warmup(session) > 0:
                 return False
             # > make sure, there's one pre-production ready
-            if self.append_production(session) > 0:
+            if self._append_production(session) > 0:
                 return False
         return True
 
-    def append_warmup(self, session: Session) -> int:
+    def _append_warmup(self, session: Session) -> int:
         # > keep track of flags that permit a "warmup done" state
         wflag: WarmupFlag = WarmupFlag(0)
 
@@ -213,7 +213,7 @@ class PreProduction(DBTask):
         # print(f"PreProduction: append {self.part_id}: {WarmupFlag.print_flags(WarmupFlag(wflag))}")
         return queue_warmup(NW_ncall, NW_niter)
 
-    def append_production(self, session: Session) -> int:
+    def _append_production(self, session: Session) -> int:
         # > queue up a new production job in the database and return job id
         def queue_production(ncall: int, niter: int) -> int:
             new_production = Job(
@@ -284,7 +284,7 @@ class PreProduction(DBTask):
             PP_ntot: int = (FPP.ncall * FPP.niter) // 2
             PP_ncall: int = PP_ntot // self.config["production"]["niter"]
             if PP_ncall < self.config["production"]["ncall_start"]:
-                self.logger(
+                self._logger(
                     session,
                     "pre-production failed after reaching minimum ncall",
                     level=LogLevel.WARN,
@@ -323,16 +323,16 @@ class PreProduction(DBTask):
 
     def run(self):
         with self.session as session:
-            self.logger(session, f"PreProduction::run[{self.part_id}]:")
-            if (job_id := self.append_warmup(session)) > 0:
-                self.logger(session, f"PreProduction::run[{self.part_id}]:  yield warmup {job_id}")
+            self._logger(session, f"PreProduction::run[{self.part_id}]:")
+            if (job_id := self._append_warmup(session)) > 0:
+                self._logger(session, f"PreProduction::run[{self.part_id}]:  yield warmup {job_id}")
                 yield self.clone(cls=DBDispatch, id=job_id)
-            self.logger(
+            self._logger(
                 session,
                 f"PreProduction::run[{self.part_id}]:  warmup done {self.part_id}: {WarmupFlag.print_flags(WarmupFlag(-job_id))}",
             )
-            if (job_id := self.append_production(session)) > 0:
-                self.logger(
+            if (job_id := self._append_production(session)) > 0:
+                self._logger(
                     session, f"PreProduction::run[{self.part_id}]:  yield pre-production {job_id}"
                 )
                 yield self.clone(cls=DBDispatch, id=job_id)

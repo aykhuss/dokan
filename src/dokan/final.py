@@ -15,7 +15,7 @@ class Final(DBTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         with self.session as session:
-            self.debug(session, f"Final::init {time.ctime(self.run_tag)}")
+            self._debug(session, f"Final::init {time.ctime(self.run_tag)}")
         self.result = float("nan")
         self.error = float("inf")
 
@@ -27,19 +27,19 @@ class Final(DBTask):
 
     def complete(self) -> bool:
         with self.session as session:
-            self.debug(session, "Final::complete")
+            self._debug(session, "Final::complete")
             last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
-            self.debug(session, f"Final::complete:  last_log = {last_log!r}")
+            self._debug(session, f"Final::complete:  last_log = {last_log!r}")
             if last_log and last_log.level in [LogLevel.SIG_COMP]:
                 return True
         return False
 
     def run(self):
         with self.session as session:
-            self.debug(session, "Final::run")
+            self._debug(session, "Final::run")
 
             # > shut down the monitor
-            self.logger(session, "shutting down monitor...", level=LogLevel.SIG_COMP)
+            self._logger(session, "shutting down monitor...", level=LogLevel.SIG_COMP)
             time.sleep(1.5)
 
             # > parse final cross section result
@@ -59,7 +59,7 @@ class Final(DBTask):
 
             # > use `distribute_time` to fetch optimization target
             # > & time estimate to reach desired accuracy
-            opt_dist = self.distribute_time(session, 0.0)
+            opt_dist = self._distribute_time(session, 0.0)
             # _console.print(f"{opt_dist}")
             opt_target: str = (
                 self.config["run"]["opt_target"]

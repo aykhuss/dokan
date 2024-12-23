@@ -61,7 +61,7 @@ class DBDispatch(DBTask):
                 return False
         return True
 
-    def repopulate(self, session: Session):
+    def _repopulate(self, session: Session):
         if self.id > 0:
             job: Job = session.get_one(Job, self.id)
             self.part_id = job.part_id
@@ -74,7 +74,7 @@ class DBDispatch(DBTask):
 
         # > get the remaining resources but need to go into the loop
         # > to get the correct state of self.part_id
-        njobs_rem, T_rem = self.remainders(session)
+        njobs_rem, T_rem = self._remainders(session)
 
         # self.debug(
         #     f"DBDispatch[{self.id},{self._n}]::repopulate:  "
@@ -88,7 +88,7 @@ class DBDispatch(DBTask):
             niter: int = self.config["production"]["niter"]
             ncall: int = opt["ntot_job"] // niter
             if ncall * niter == 0:
-                self.logger(
+                self._logger(
                     session, f"part {part_id} has ntot={opt['ntot_job']} -> 0 = {ncall} * {niter}"
                 )
                 # ncall = self.config["production"]["ncall_start"]
@@ -152,7 +152,7 @@ class DBDispatch(DBTask):
 
             # > termination condition based on #queued of individul jobs
             for pt, nque, nact, nsuc in sorted_parts:
-                self.debug(session, f"  >> {pt!r} | {nque} | {nact} | {nsuc}")
+                self._debug(session, f"  >> {pt!r} | {nque} | {nact} | {nsuc}")
                 if not nque:
                     continue
                 # > implement termination conditions
@@ -174,7 +174,7 @@ class DBDispatch(DBTask):
             # > the sole location where we break out of the infinite loop
             if qbreak:
                 if self.part_id > 0:
-                    self.logger(
+                    self._logger(
                         session,
                         f"DBDispatch[{self.id},{self._n}]::repopulate:  "
                         + f"next in line is part_id = {self.part_id}",
@@ -187,12 +187,12 @@ class DBDispatch(DBTask):
                 njobs_rem * self.config["run"]["job_max_runtime"],
                 T_rem,
             )
-            opt_dist: dict = self.distribute_time(session, T_next)
+            opt_dist: dict = self._distribute_time(session, T_next)
 
             # > interrupt when target accuracy reached
             rel_acc: float = abs(opt_dist["tot_error"] / opt_dist["tot_result"])
             if rel_acc <= self.config["run"]["target_rel_acc"]:
-                self.debug(
+                self._debug(
                     session,
                     f"DBDispatch[{self.id},{self._n}]::repopulate:  "
                     + f'rel_acc = {rel_acc} vs. {self.config["run"]["target_rel_acc"]}',
@@ -220,12 +220,12 @@ class DBDispatch(DBTask):
                     # > at least one job: pick largest T_opt one
                     opt["njobs"] = 1
                     tot_njobs = 1  # trigger only 1st iteration
-                self.debug(session, f"{part_id}: {opt}")
+                self._debug(session, f"{part_id}: {opt}")
                 if opt["njobs"] <= 0:
                     continue
                 # > regiser njobs new jobs with ncall,niter and time estime to DB
                 ids = queue_production(part_id, opt)
-                self.logger(
+                self._logger(
                     session,
                     f"DBDispatch[{self.id},{self._n}]::repopulate:  "
                     + f"part_id = {part_id}:  (#:{len(ids)}) {ids}",
@@ -246,8 +246,8 @@ class DBDispatch(DBTask):
 
     def run(self):
         with self.session as session:
-            self.repopulate(session)
-            self.debug(
+            self._repopulate(session)
+            self._debug(
                 session, f"DBDispatch[{self.id},{self._n}]::run:  " + f"part_id = {self.part_id}"
             )
 
@@ -280,7 +280,7 @@ class DBDispatch(DBTask):
                     .order_by(Job.seed.desc())
                 ).first()
                 if last_job and last_job.seed:
-                    self.debug(
+                    self._debug(
                         session,
                         f"DBDispatch[{self.id},{self._n}]::run:  "
                         + f"{self.id} last job:  {last_job!r}",
@@ -295,7 +295,7 @@ class DBDispatch(DBTask):
                 session.commit()
 
                 # > time to dispatch Runners
-                self.logger(
+                self._logger(
                     session,
                     f"DBDispatch[{self.id},{self._n}]::run:  "
                     + f"submitting jobs for part_id = {self.part_id} with seed(s): "

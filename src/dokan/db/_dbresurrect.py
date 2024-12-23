@@ -25,7 +25,7 @@ class DBResurrect(DBTask):
 
     def requires(self):
         with self.session as session:
-            self.debug(session, f"DBResurrect::requires:  rel_path = {self.rel_path}")
+            self._debug(session, f"DBResurrect::requires:  rel_path = {self.rel_path}")
         return [
             Executor.factory(
                 policy=self.exe_data["policy"],
@@ -35,14 +35,14 @@ class DBResurrect(DBTask):
 
     def complete(self) -> bool:
         with self.session as session:
-            self.debug(session, f"DBResurrect::complete:  rel_path = {self.rel_path}")
+            self._debug(session, f"DBResurrect::complete:  rel_path = {self.rel_path}")
             for job_id in self.exe_data["jobs"].keys():
                 if session.get_one(Job, job_id).status not in JobStatus.terminated_list():
-                    self.debug(
+                    self._debug(
                         session, f"DBResurrect::complete:  rel_path = {self.rel_path}: FALSE"
                     )
                     return False
-            self.debug(session, f"DBResurrect::complete:  rel_path = {self.rel_path}: TRUE")
+            self._debug(session, f"DBResurrect::complete:  rel_path = {self.rel_path}: TRUE")
         return True
 
     def run(self):
@@ -54,7 +54,7 @@ class DBResurrect(DBTask):
             raise RuntimeError(f"{self.rel_path} not final?!\n{self.exe_data.data}")
 
         with self.session as session:
-            self.logger(
+            self._logger(
                 session, f"DBResurrect::run:  rel_path = {self.rel_path}, run_tag = {self.run_tag}"
             )
             for job_id, job_entry in self.exe_data["jobs"].items():
