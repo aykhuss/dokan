@@ -138,7 +138,7 @@ class Monitor(DBTask):
             box=box.ROUNDED,
             safe_box=False,
             # @todo actually put in the numbrs & # of remaining jobs & current estimate for error
-            title=f"[{dt_str}]\n{self.cross_line}\n(updated {datetime.timedelta(seconds=int(time.time()-self.cross_time))!s} ago)\n"
+            title=f"[{dt_str}]\n{self.cross_line}\n(updated {datetime.timedelta(seconds=int(time.time() - self.cross_time))!s} ago)\n"
             + "[dim]legend:[/dim] [yellow][b]A[/b]ctive[/yellow] [green][b]D[/b]one[/green] [red][b]F[/b]ailed[/red]",
             title_justify="left",
             title_style=Style(bold=False, italic=False),
@@ -181,4 +181,4 @@ class Monitor(DBTask):
                             return
                         # time.sleep(0.01)
 
-                    time.sleep(1)
+                    time.sleep(0.5)

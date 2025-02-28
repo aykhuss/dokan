@@ -39,7 +39,7 @@ class DBDispatch(DBTask):
         else:
             return None
 
-    # priority = 10
+    priority = 5
 
     @property
     def select_job(self):
@@ -195,7 +195,7 @@ class DBDispatch(DBTask):
                 self._debug(
                     session,
                     f"DBDispatch[{self.id},{self._n}]::repopulate:  "
-                    + f'rel_acc = {rel_acc} vs. {self.config["run"]["target_rel_acc"]}',
+                    + f"rel_acc = {rel_acc} vs. {self.config['run']['target_rel_acc']}",
                 )
                 qbreak = True
                 continue

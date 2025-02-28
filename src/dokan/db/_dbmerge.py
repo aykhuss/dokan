@@ -167,8 +167,15 @@ class MergePart(DBMerge):
                         self._logger(
                             session, f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR
                         )
-                container.mask_outliers(3.5, 0.01)
-                container.optimise_k(maxdev_unwgt=None, nsteps=3, maxdev_steps=0.5)
+                container.mask_outliers(
+                    self.config["merge"]["trim_threshold"],
+                    self.config["merge"]["trim_max_fraction"],
+                )
+                container.optimise_k(
+                    maxdev_unwgt=None,
+                    nsteps=self.config["merge"]["k-scan_nsteps"],
+                    maxdev_steps=self.config["merge"]["k-scan_maxdev_steps"],
+                )
                 hist = container.merge(weighted=True)
                 hist.write_to_file(out_file)
 
@@ -341,7 +348,7 @@ class MergeAll(DBMerge):
                             rel: float = abs(err / res) if res != 0.0 else float("inf")
                             self._logger(
                                 session,
-                                f"[blue]cross = {res} +/- {err} [{rel*1e2:.3}%][/blue]",
+                                f"[blue]cross = {res} +/- {err} [{rel * 1e2:.3}%][/blue]",
                                 level=LogLevel.SIG_UPDXS,
                             )
                             break

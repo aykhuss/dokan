@@ -39,5 +39,11 @@
     "niter": 2,
     "penalty_wrt_warmup": 0.1,
     "fac_merge_trigger": 1.5
+  },
+  "merge": {
+    "trim_threshold": 3.5,
+    "trim_max_fraction": 0.01,
+    "k-scan_nsteps": 2,
+    "k-scan_maxdev_steps": 0.5
   }
 }

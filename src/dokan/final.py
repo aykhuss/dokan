@@ -54,7 +54,7 @@ class Final(DBTask):
                     break
             rel_acc: float = abs(self.error / self.result)
             _console.print(
-                f"\n[blue]cross = {self.result} +/- {self.error} [{rel_acc*1e2:.3}%][/blue]\n"
+                f"\n[blue]cross = {self.result} +/- {self.error} [{rel_acc * 1e2:.3}%][/blue]\n"
             )
 
             # > use `distribute_time` to fetch optimization target
@@ -72,13 +72,13 @@ class Final(DBTask):
             rel_acc: float = abs(opt_dist["tot_error"] / opt_dist["tot_result"])
             if rel_acc <= self.config["run"]["target_rel_acc"] * (1.05):
                 _console.print(
-                    f"[green]reached rel. acc. {rel_acc*1e2:.3}% on {opt_target}[/green] "
-                    + f"(requested: {self.config['run']['target_rel_acc']*1e2:.3}%)"
+                    f"[green]reached rel. acc. {rel_acc * 1e2:.3}% on {opt_target}[/green] "
+                    + f"(requested: {self.config['run']['target_rel_acc'] * 1e2:.3}%)"
                 )
             else:
                 _console.print(
-                    f"[red]reached rel. acc. {rel_acc*1e2:.3}% on {opt_target}[/red] "
-                    + f"(requested: {self.config['run']['target_rel_acc']*1e2:.3}%)"
+                    f"[red]reached rel. acc. {rel_acc * 1e2:.3}% on {opt_target}[/red] "
+                    + f"(requested: {self.config['run']['target_rel_acc'] * 1e2:.3}%)"
                 )
                 njobs_target: int = (
                     round(opt_dist["T_target"] / self.config["run"]["job_max_runtime"]) + 1

@@ -146,7 +146,7 @@ def main() -> None:
 
         try:
             bibout, bibtex = make_bib(runcard.data["process_name"], config.path)
-            console.print(f"process: \"[bold]{runcard.data['process_name']}[/bold]\"")
+            console.print(f'process: "[bold]{runcard.data["process_name"]}[/bold]"')
             console.print(f"bibliography: [italic]{bibout.relative_to(config.path)}[/italic]")
             # console.print(f" - {bibtex.relative_to(config.path)}")
             # with open(bibout, "r") as bib:
@@ -300,7 +300,7 @@ def main() -> None:
                 if new_poll_time > 10.0 and new_poll_time < max_runtime / 2:
                     break
                 console.print(
-                    f"please enter a positive value between [10, {max_runtime/2}] seconds"
+                    f"please enter a positive value between [10, {max_runtime / 2}] seconds"
                 )
             config["exe"]["policy_settings"][f"{cluster}_poll_time"] = new_poll_time
             console.print(

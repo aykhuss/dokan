@@ -96,7 +96,14 @@ _schema: dict = {
         "penalty_wrt_warmup": float,  # factor that takes into account the slowdown from warmup -> production
         "fac_merge_trigger": float,  # factor that triggers a merge if ((#done+#merged)/(#merged+1)) > fac_merge_trigger
     },
+    "merge": {
+        "trim_threshold": float,  # threshold to trim outliers
+        "trim_max_fraction": float,  # maximum fraction to trim (dynamically adjust threshod to satisfy)
+        "k-scan_nsteps": int,  # number of scan steps to consider for finding the plateau
+        "k-scan_maxdev_steps": float,  # maximum deviation to identify a plateau
+    },
 }
+
 
 
 class Config(UserDict):
