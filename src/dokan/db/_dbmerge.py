@@ -173,8 +173,8 @@ class MergePart(DBMerge):
                 )
                 container.optimise_k(
                     maxdev_unwgt=None,
-                    nsteps=self.config["merge"]["k-scan_nsteps"],
-                    maxdev_steps=self.config["merge"]["k-scan_maxdev_steps"],
+                    nsteps=self.config["merge"]["k_scan_nsteps"],
+                    maxdev_steps=self.config["merge"]["k_scan_maxdev_steps"],
                 )
                 hist = container.merge(weighted=True)
                 hist.write_to_file(out_file)

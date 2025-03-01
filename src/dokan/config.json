@@ -43,7 +43,7 @@
   "merge": {
     "trim_threshold": 3.5,
     "trim_max_fraction": 0.01,
-    "k-scan_nsteps": 2,
-    "k-scan_maxdev_steps": 0.5
+    "k_scan_nsteps": 2,
+    "k_scan_maxdev_steps": 0.5
   }
 }

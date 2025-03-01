@@ -42,6 +42,7 @@ _schema: dict = {
             "slurm_nretry": int,
             "slurm_retry_delay": float,
             "slurm_poll_time": float,
+            "slurm_njobs_per_node": int,
         },
     },
     "run": {
@@ -99,11 +100,10 @@ _schema: dict = {
     "merge": {
         "trim_threshold": float,  # threshold to trim outliers
         "trim_max_fraction": float,  # maximum fraction to trim (dynamically adjust threshod to satisfy)
-        "k-scan_nsteps": int,  # number of scan steps to consider for finding the plateau
-        "k-scan_maxdev_steps": float,  # maximum deviation to identify a plateau
+        "k_scan_nsteps": int,  # number of scan steps to consider for finding the plateau
+        "k_scan_maxdev_steps": float,  # maximum deviation to identify a plateau
     },
 }
-
 
 
 class Config(UserDict):

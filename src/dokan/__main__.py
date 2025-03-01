@@ -81,6 +81,8 @@ def main() -> None:
     # > subcommand: config
     parser_config = subparsers.add_parser("config", help="set defaults for the run configuration")
     parser_config.add_argument("run_path", metavar="RUN", help="run directory")
+    parser_config.add_argument("--merge", action="store_true", help="set default merge parameters")
+    parser_config.add_argument("--advanced", action="store_true", help="adcanced settings")
 
     # > subcommand: submit
     parser_submit = subparsers.add_parser("submit", help="submit a run")
@@ -182,6 +184,71 @@ def main() -> None:
         if args.action == "config":  # load!
             config = Config(path=args.run_path, default_ok=False)
 
+            # > advanced settings
+            if args.advanced:
+                while True:
+                    new_seed_offset: int = IntPrompt.ask(
+                        "seed offset", default=config["run"]["seed_offset"]
+                    )
+                    if new_seed_offset >= 0:
+                        break
+                    console.print("please enter a non-negative value")
+                config["run"]["seed_offset"] = new_seed_offset
+                console.print(f"[dim]seed_offset = {config['run']['seed_offset']!r}[/dim]")
+
+                # console.print(
+                #     "for further advanced settings edit the config.json manually & consult the documentation"
+                # )
+
+            # > merge settings
+            if args.merge:
+                while True:
+                    new_trim_threshold: float = FloatPrompt.ask(
+                        "trim threshold", default=config["merge"]["trim_threshold"]
+                    )
+                    if new_trim_threshold > 0.0:
+                        break
+                    console.print("please enter a positive value")
+                config["merge"]["trim_threshold"] = new_trim_threshold
+                console.print(f"[dim]trim_threshold = {config['merge']['trim_threshold']!r}[/dim]")
+
+                while True:
+                    new_trim_max_fraction: float = FloatPrompt.ask(
+                        "trim max fraction", default=config["merge"]["trim_max_fraction"]
+                    )
+                    if new_trim_max_fraction > 0.0 and new_trim_max_fraction < 1.0:
+                        break
+                    console.print("please enter a value between 0 and 1")
+                config["merge"]["trim_max_fraction"] = new_trim_max_fraction
+                console.print(
+                    f"[dim]trim_max_fraction = {config['merge']['trim_max_fraction']!r}[/dim]"
+                )
+
+                while True:
+                    new_k_scan_nsteps: int = IntPrompt.ask(
+                        "k-scan nsteps", default=config["merge"]["k_scan_nsteps"]
+                    )
+                    if new_k_scan_nsteps > 0:
+                        break
+                    console.print("please enter a positive value")
+                config["merge"]["k_scan_nsteps"] = new_k_scan_nsteps
+                console.print(f"[dim]k_scan_nsteps = {config['merge']['k_scan_nsteps']!r}[/dim]")
+
+                while True:
+                    new_k_scan_maxdev_steps: float = FloatPrompt.ask(
+                        "k-scan maxdev steps", default=config["merge"]["k_scan_maxdev_steps"]
+                    )
+                    if new_k_scan_maxdev_steps > 0.0:
+                        break
+                    console.print("please enter a positive value")
+                config["merge"]["k_scan_maxdev_steps"] = new_k_scan_maxdev_steps
+                console.print(
+                    f"[dim]k_scan_maxdev_steps = {config['merge']['k_scan_maxdev_steps']!r}[/dim]"
+                )
+
+            # > config with flags skip the default config options
+            return
+
         console.print(
             f"setting default values for the run configuration at [italic]{str(config.path.absolute())}[/italic]"
         )
@@ -271,16 +338,6 @@ def main() -> None:
             console.print("please enter a positive value")
         config["run"]["jobs_batch_size"] = new_jobs_batch_size
         console.print(f"[dim]jobs_batch_size = {config['run']['jobs_batch_size']!r}[/dim]")
-
-        while True:
-            new_seed_offset: int = IntPrompt.ask(
-                "seed offset", default=config["run"]["seed_offset"]
-            )
-            if new_seed_offset >= 0:
-                break
-            console.print("please enter a non-negative value")
-        config["run"]["seed_offset"] = new_seed_offset
-        console.print(f"[dim]seed_offset = {config['run']['seed_offset']!r}[/dim]")
 
         # @todo policy settings
 
