@@ -181,4 +181,4 @@ class Monitor(DBTask):
                             return
                         # time.sleep(0.01)
 
-                    time.sleep(0.5)
+                    time.sleep(1.0)

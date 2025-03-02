@@ -17,7 +17,9 @@ class WorkerSchedulerFactory:
         self.cache_task_completion = kwargs.pop("cache_task_completion", False)
         self.check_complete_on_run = kwargs.pop("check_complete_on_run", False)
         self.check_unfulfilled_deps = kwargs.pop("check_unfulfilled_deps", True)
-        self.wait_interval = kwargs.pop("wait_interval", 1.0)
+        self.wait_interval = kwargs.pop("wait_interval", 0.1)
+        self.wait_jitter = kwargs.pop("wait_jitter", 0.2)
+        self.ping_interval = kwargs.pop("ping_interval", 0.1)
         if kwargs:
             raise RuntimeError(f"WorkerSchedulerFactory: left-over options {kwargs}")
 
@@ -38,4 +40,6 @@ class WorkerSchedulerFactory:
             check_complete_on_run=self.check_complete_on_run,
             check_unfulfilled_deps=self.check_unfulfilled_deps,
             wait_interval=self.wait_interval,
+            wait_jitter=self.wait_jitter,
+            ping_interval=self.ping_interval,
         )
