@@ -28,7 +28,9 @@ class Final(DBTask):
     def complete(self) -> bool:
         with self.session as session:
             self._debug(session, "Final::complete")
-            last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
+            last_log = session.scalars(
+                select(Log).where(Log.level < 0).order_by(Log.id.desc())
+            ).first()
             self._debug(session, f"Final::complete:  last_log = {last_log!r}")
             if last_log and last_log.level in [LogLevel.SIG_COMP]:
                 return True
@@ -39,7 +41,7 @@ class Final(DBTask):
             self._debug(session, "Final::run")
 
             # > shut down the monitor
-            self._logger(session, "shutting down monitor...", level=LogLevel.SIG_COMP)
+            self._logger(session, "complete", level=LogLevel.SIG_COMP)
             time.sleep(1.5)
 
             # > parse final cross section result
@@ -54,7 +56,7 @@ class Final(DBTask):
                     break
             rel_acc: float = abs(self.error / self.result)
             _console.print(
-                f"\n[blue]cross = {self.result} +/- {self.error} [{rel_acc * 1e2:.3}%][/blue]\n"
+                f"\n[blue]cross = ({self.result} +/- {self.error}) fb  [{rel_acc * 1e2:.3}%][/blue]\n"
             )
 
             # > use `distribute_time` to fetch optimization target

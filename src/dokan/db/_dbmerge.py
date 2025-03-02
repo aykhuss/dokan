@@ -348,7 +348,7 @@ class MergeAll(DBMerge):
                             rel: float = abs(err / res) if res != 0.0 else float("inf")
                             self._logger(
                                 session,
-                                f"[blue]cross = ({res} +/- {err}) fb [{rel * 1e2:.3}%][/blue]",
+                                f"[blue]cross = ({res} +/- {err}) fb  [{rel * 1e2:.3}%][/blue]",
                                 level=LogLevel.SIG_UPDXS,
                             )
                             break

@@ -27,6 +27,7 @@ from .db._loglevel import LogLevel
 from .db._sqla import Job, Part
 from .entry import Entry
 from .exe import ExecutionPolicy, Executor
+from .final import Final
 from .monitor import Monitor
 from .nnlojet import get_lumi
 from .order import Order
@@ -111,6 +112,14 @@ def main() -> None:
     )
     parser_submit.add_argument("--jobs-batch-size", type=int, help="job batch size")
     parser_submit.add_argument("--seed-offset", type=int, help="seed offset")
+
+    # > subcommand: finalize
+    parser_finalize = subparsers.add_parser(
+        "finalize", help="merge completed jobs into a final result"
+    )
+    parser_finalize.add_argument("run_path", metavar="RUN", help="run directory")
+    # parser_finalize.add_argument("--merge", action="store_true", help="set default merge parameters")
+    # parser_finalize.add_argument("--advanced", action="store_true", help="adcanced settings")
 
     # > parse arguments
     args = parser.parse_args()
@@ -551,6 +560,40 @@ def main() -> None:
         # console.print(luigi_result.summary_text)
 
         # @todo give an estimate in case target accuracy not reached.
+
+    # >-----
+    if args.action == "finalize":
+        config = Config(path=args.run_path, default_ok=False)
+
+        # > CLI overrides
+        if nnlojet_exe is not None:
+            config["exe"]["path"] = nnlojet_exe
+
+        # > launch the finalization task
+        final = Final(
+            config=config,
+            run_tag=time.time(),
+        )
+        nactive_part: int = 0
+        with final.session as session:
+            nactive_part = session.query(Part).filter(Part.active.is_(True)).count()
+            final._logger(session, "finalize", level=LogLevel.SIG_FINI)
+
+        luigi_result = luigi.build(
+            [final],
+            worker_scheduler_factory=WorkerSchedulerFactory(
+                resources={
+                    "local_ncores": cpu_count,
+                    "DBTask": cpu_count + 1,
+                },
+            ),
+            detailed_summary=True,
+            workers=min(cpu_count, nactive_part) + 1,
+            local_scheduler=True,
+            log_level="WARNING",
+        )  # 'WARNING', 'INFO', 'DEBUG''
+        if not luigi_result:
+            sys.exit("Final failed")
 
 
 if __name__ == "__main__":
