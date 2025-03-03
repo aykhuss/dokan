@@ -8,7 +8,7 @@ from .db._dbdispatch import DBDispatch
 from .db._dbresurrect import DBResurrect
 from .db._loglevel import LogLevel
 from .db._sqla import Log
-from .final import Final
+from .finalize import Finalize
 from .preproduction import PreProduction
 
 
@@ -67,4 +67,4 @@ class Entry(DBTask):
             self._logger(session, "Entry: yield dispatch")
             yield dispatch
             self._logger(session, "Entry: complete dispatch -> run Final")
-            yield self.clone(Final)
+            yield self.clone(Finalize)

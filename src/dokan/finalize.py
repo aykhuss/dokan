@@ -11,7 +11,7 @@ from .db._sqla import Log
 _console = Console()
 
 
-class Final(DBTask):
+class Finalize(DBTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         with self.session as session:

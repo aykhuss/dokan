@@ -27,7 +27,7 @@ from .db._loglevel import LogLevel
 from .db._sqla import Job, Part
 from .entry import Entry
 from .exe import ExecutionPolicy, Executor
-from .final import Final
+from .finalize import Finalize
 from .monitor import Monitor
 from .nnlojet import get_lumi
 from .order import Order
@@ -570,7 +570,7 @@ def main() -> None:
             config["exe"]["path"] = nnlojet_exe
 
         # > launch the finalization task
-        final = Final(
+        final = Finalize(
             config=config,
             run_tag=time.time(),
         )
