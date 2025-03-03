@@ -18,7 +18,32 @@ _default_chan_list: dict = {
     "VV": {"string": "VV", "part": "VV", "part_num": 1, "order": -2},
 }
 # @todo complete this list
-_proc_has_regions: list = ["1JET", "2JET", "JJ", "ZJ", "WPJ", "WMJ", "HJ", "GJ"]
+_proc_has_regions: list = [
+    "EPEM",
+    "EEJJJ",
+    "DIS",
+    "EPLJJ",
+    "DISWP",
+    "EPNBJJ",
+    "DISWM",
+    "EPNJJ",
+    "1JET",
+    "1JETFC",
+    "2JET",
+    "2JETFC",
+    "JJ",
+    "ZJ",
+    "WPJ",
+    "WMJ",
+    "GJ",
+    "HJ",
+    "HTO2PJ",
+    "HTO2TAUJ",
+    "HTO2L1PJ",
+    "HTO4EJ",
+    "HTO2E2MUJ",
+    "HTO2L2NJ",
+]
 
 
 def get_lumi(exe: GenericPath, proc: str, use_default: bool = False) -> dict:
