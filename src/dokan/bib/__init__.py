@@ -237,7 +237,18 @@ procs = {
     },
 }
 
-simplify_names = {
+simplify_names: dict[str, str] = {
+    "EPEMJJ": "eeJJ",
+    "EPEM": "eeJJJ",
+    "DIS1j": "epLJ",
+    "DISWm1j": "epNJ",
+    "DISWp1j": "epNbJ",
+    "DIS": "epLJJ",
+    "DISWm": "epNJJ",
+    "DISWp": "epNbJJ",
+    "1jet": "JJ",
+    "2jet": "JJ",
+    "2jetfc": "JJ",
     "ZJJ": "ZJ",
     "ZJJJ": "ZJ",
     "WJJ": "WJ",
@@ -257,6 +268,26 @@ simplify_names = {
 }
 
 
+map_names: dict[str, str] = {
+    "Wp": "W",
+    "WpJ": "WJ",
+    "Wm": "W",
+    "WmJ": "WJ",
+    "HTO2P": "H2",
+    "HTO2TAU": "H2",
+    "HTO2PJ": "H2J",
+    "HTO2TAUJ": "H2J",
+    "HTO2L1P": "H3",
+    "HTO2L1PJ": "H3J",
+    "HTO4E": "H4",
+    "HTO2E2MU": "H4",
+    "HTO2L2N": "H4",
+    "HTO4EJ": "H4J",
+    "HTO2E2MUJ": "H4J",
+    "HTO2L2NJ": "H4J",
+}
+
+
 def make_bib(proc: str, destination: GenericPath) -> tuple[Path, Path]:
     dest_path: Path = Path(destination)
     if not dest_path.exists():
@@ -264,28 +295,38 @@ def make_bib(proc: str, destination: GenericPath) -> tuple[Path, Path]:
     if not dest_path.is_dir():
         raise ValueError(f"make_bib: {destination} is not a folder")
 
-    original_proc = proc
+    original_proc: str = proc
 
-    if proc in simplify_names:
-        proc = simplify_names[proc]
+    # > make everything case insensitive
+    upper_proc: str = proc.upper()
+    upper_simplify_names: dict[str, str] = {k.upper(): v.upper() for k, v in simplify_names.items()}
+    upper_map_names: dict[str, str] = {k.upper(): v.upper() for k, v in map_names.items()}
+    if upper_proc in upper_map_names:
+        upper_proc = upper_map_names[upper_proc]
+    if upper_proc in upper_simplify_names:
+        upper_proc = upper_simplify_names[upper_proc]
 
-    if proc not in procs:
-        raise ValueError(f"make_bib: cannot recognise process {proc}")
+    upper_procs = {k.upper(): v for k, v in procs.items()}
+
+    if upper_proc not in upper_procs:
+        raise ValueError(f"make_bib: cannot recognise process {original_proc} [{upper_proc}]")
+
+    entry = upper_procs[upper_proc]
 
     bibout: Path = dest_path / f"NNLOJET_references_{original_proc}.bib"
     bibtex: Path = dest_path / f"NNLOJET_references_{original_proc}.tex"
 
     with open(bibout, "w") as bib:
-        for type in procs[proc].keys():
-            for ref in procs[proc][type]:
+        for type in entry.keys():
+            for ref in entry[type]:
                 bib.write(references[ref])
 
     with open(bibtex, "w") as bib:
         bib.write("%%% Please cite:\n")
-        for type in procs[proc].keys():
-            if not procs[proc][type]:
+        for type in entry.keys():
+            if not entry[type]:
                 continue
             bib.write("\n%%% " + type + "\n")
-            bib.write("\\cite{" + ",".join(procs[proc][type]) + "}\n")
+            bib.write("\\cite{" + ",".join(entry[type]) + "}\n")
 
     return bibout, bibtex
