@@ -35,7 +35,7 @@ class Monitor(DBTask):
                 print(f"Monitor::init:  last log: {last_log!r}")
                 self._log_id = last_log.id
                 # > last run was successful: reset log table.
-                if last_log.level in [LogLevel.SIG_COMP]:
+                if last_log.level in [LogLevel.SIG_COMP, LogLevel.SIG_TERM]:
                     print("Monitor::init:  clearing old logs...")
                     for log in session.scalars(select(Log)):
                         session.delete(log)
