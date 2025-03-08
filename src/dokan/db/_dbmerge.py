@@ -264,9 +264,9 @@ class MergeAll(DBMerge):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # > output directory
-        self.fin_path: Path = self._path.joinpath("result", "final")
-        if not self.fin_path.exists():
-            self.fin_path.mkdir(parents=True)
+        self.mrg_path: Path = self._path.joinpath("result", "merge")
+        if not self.mrg_path.exists():
+            self.mrg_path.mkdir(parents=True)
 
     @property
     def select_part(self):
@@ -290,7 +290,7 @@ class MergeAll(DBMerge):
 
         # > check file modifiation time
         timestamp: float = -1.0
-        for hist in os.scandir(self.fin_path):
+        for hist in os.scandir(self.mrg_path):
             timestamp = max(timestamp, hist.stat().st_mtime)
         if self.run_tag > timestamp:
             return False
@@ -307,7 +307,7 @@ class MergeAll(DBMerge):
 
     def run(self):
         with self.session as session:
-            self._logger(session, f"MergeAll::run[{self.force}]")
+            self._logger(session, f"MergeAll::run[force={self.force}]")
             mrg_parent: Path = self._path.joinpath("result", "part")
 
             in_files = dict((obs, []) for obs in self.config["run"]["histograms"].keys())
@@ -321,7 +321,7 @@ class MergeAll(DBMerge):
 
             # > sum all parts
             for obs in self.config["run"]["histograms"]:
-                out_file: Path = self.fin_path / f"{obs}.dat"
+                out_file: Path = self.mrg_path / f"{obs}.dat"
                 nx: int = self.config["run"]["histograms"][obs]["nx"]
                 if len(in_files[obs]) == 0:
                     self._logger(

@@ -83,7 +83,7 @@ def main() -> None:
     parser_config = subparsers.add_parser("config", help="set defaults for the run configuration")
     parser_config.add_argument("run_path", metavar="RUN", help="run directory")
     parser_config.add_argument("--merge", action="store_true", help="set default merge parameters")
-    parser_config.add_argument("--advanced", action="store_true", help="adcanced settings")
+    parser_config.add_argument("--advanced", action="store_true", help="advanced settings")
 
     # > subcommand: submit
     parser_submit = subparsers.add_parser("submit", help="submit a run")
@@ -172,7 +172,7 @@ def main() -> None:
             if not Confirm.ask("Please confirm that you agree to these terms"):
                 sys.exit("failed to agree with the terms of use")
         except Exception as e:
-            console.print(f"error encountered in wiritng bibliography files:\n{e}")
+            console.print(f"error encountered in writing bibliography files:\n{e}")
 
         config["exe"]["path"] = nnlojet_exe
         config["run"]["dokan_version"] = __version__
@@ -211,6 +211,8 @@ def main() -> None:
 
             # > merge settings
             if args.merge:
+                # @todo if settings are changed, trigger a full re-merge?
+                # do by updating DB to re-set the merged counter to 0?
                 while True:
                     new_trim_threshold: float = FloatPrompt.ask(
                         "trim threshold", default=config["merge"]["trim_threshold"]
@@ -473,7 +475,7 @@ def main() -> None:
 
         signal.signal(signal.SIGINT, graceful_exit)
         signal.signal(signal.SIGTERM, graceful_exit)
-        # @ todo SIGUSR1 to trigger MergeAll?
+        # @todo SIGUSR1 to trigger MergeAll?
 
         # @todo checks of the DB and ask for recovery mode?
         resurrect: list[tuple[float, str]] = []
@@ -542,7 +544,7 @@ def main() -> None:
                     "DBTask": cpu_count + 1,
                     "DBDispatch": 1,
                 },
-                cache_task_completion=False,
+                cache_task_completion=False,  # needed for MergePart
                 check_complete_on_run=False,
                 check_unfulfilled_deps=True,
                 wait_interval=0.1,
@@ -568,6 +570,8 @@ def main() -> None:
         # > CLI overrides
         if nnlojet_exe is not None:
             config["exe"]["path"] = nnlojet_exe
+        # @todo overrides of merge parameters; want to make them permanend? -> use config.
+        # --> reconfiguring parameters should trigger a full re-merge?
 
         # > launch the finalization task
         final = Finalize(
@@ -583,9 +587,14 @@ def main() -> None:
             [final],
             worker_scheduler_factory=WorkerSchedulerFactory(
                 resources={
+                    # @todo allow `-j` flag for user to pick?
                     "local_ncores": cpu_count,
                     "DBTask": cpu_count + 1,
                 },
+                cache_task_completion=False,
+                check_complete_on_run=False,
+                check_unfulfilled_deps=True,
+                wait_interval=0.1,
             ),
             detailed_summary=True,
             workers=min(cpu_count, nactive_part) + 1,
