@@ -25,7 +25,7 @@ class Finalize(DBTask):
             self.fin_path.mkdir(parents=True)
 
         with self.session as session:
-            self._debug(session, f"Final::init {time.ctime(self.run_tag)}")
+            self._debug(session, f"Finalize::init {time.ctime(self.run_tag)}")
         self.result = float("nan")
         self.error = float("inf")
 
@@ -37,18 +37,18 @@ class Finalize(DBTask):
 
     def complete(self) -> bool:
         with self.session as session:
-            self._debug(session, "Final::complete")
+            self._debug(session, "Finalize::complete")
             last_log = session.scalars(
                 select(Log).where(Log.level < 0).order_by(Log.id.desc())
             ).first()
-            self._debug(session, f"Final::complete:  last_log = {last_log!r}")
+            self._debug(session, f"Finalize::complete:  last_log = {last_log!r}")
             if last_log and last_log.level in [LogLevel.SIG_COMP]:
                 return True
         return False
 
     def run(self):
         with self.session as session:
-            self._debug(session, "Final::run")
+            self._debug(session, "Finalize::run")
 
             # > create "final" files that merge parts into the different orders that are complete
             mrg_parent: Path = self._path.joinpath("result", "part")
@@ -63,7 +63,7 @@ class Finalize(DBTask):
 
                 if any(pt.ntot <= 0 for pt in matched_parts):
                     _console.print(
-                        f'[red]Final::run:  skipping "{out_order}" due to missing parts[/red]'
+                        f'[red]Finalize::run:  skipping "{out_order}" due to missing parts[/red]'
                     )
                     continue
 
