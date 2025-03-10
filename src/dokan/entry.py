@@ -2,13 +2,14 @@ import time
 
 import luigi
 from sqlalchemy import select
+from sqlalchemy.orm import merge_frozen_result
 
 from .db import DBTask, MergeAll, Part
 from .db._dbdispatch import DBDispatch
 from .db._dbresurrect import DBResurrect
 from .db._loglevel import LogLevel
 from .db._sqla import Log
-from .finalize import Finalize
+from .db._dbmerge import MergeFinal
 from .preproduction import PreProduction
 
 
@@ -51,7 +52,7 @@ class Entry(DBTask):
 
             self._logger(session, "Entry: yield preprods")
             yield preprods
-            self._logger(session, "Entry: complete preprods -> run MergeAll")
+            self._logger(session, "Entry: complete preprods -> MergeAll")
             yield self.clone(MergeAll, force=True)
             self._logger(session, "Entry: complete MergeAll -> dispatch")
             # self.print_job()
@@ -64,7 +65,7 @@ class Entry(DBTask):
                 dispatch = [
                     self.clone(DBResurrect, run_tag=r[0], rel_path=r[1]) for r in self.resurrect
                 ] + dispatch
-            self._logger(session, "Entry: yield dispatch")
+            self._debug(session, "Entry: yield dispatch")
             yield dispatch
-            self._logger(session, "Entry: complete dispatch -> run Final")
-            yield self.clone(Finalize)
+            self._logger(session, "Entry: complete dispatch -> MergeFinal")
+            yield self.clone(MergeFinal, force=True)

@@ -13,4 +13,5 @@ __all__ = [
     "DBMerge",
     "MergePart",
     "MergeAll",
+    "MergeFinal",
 ]

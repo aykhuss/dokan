@@ -21,13 +21,13 @@ from .bib import make_bib
 from .config import Config
 
 # from .db._dbresurrect import DBResurrect
+from .db._dbmerge import MergeFinal
 from .db._dbtask import DBInit
 from .db._jobstatus import JobStatus
 from .db._loglevel import LogLevel
 from .db._sqla import Job, Part
 from .entry import Entry
 from .exe import ExecutionPolicy, Executor
-from .finalize import Finalize
 from .monitor import Monitor
 from .nnlojet import get_lumi
 from .order import Order
@@ -574,17 +574,17 @@ def main() -> None:
         # --> reconfiguring parameters should trigger a full re-merge?
 
         # > launch the finalization task
-        final = Finalize(
+        mrg_final = MergeFinal(
             config=config,
             run_tag=time.time(),
         )
         nactive_part: int = 0
-        with final.session as session:
+        with mrg_final.session as session:
             nactive_part = session.query(Part).filter(Part.active.is_(True)).count()
-            final._logger(session, "finalize", level=LogLevel.SIG_FINI)
+            mrg_final._logger(session, "finalize", level=LogLevel.SIG_FINI)
 
         luigi_result = luigi.build(
-            [final],
+            [mrg_final],
             worker_scheduler_factory=WorkerSchedulerFactory(
                 resources={
                     # @todo allow `-j` flag for user to pick?
