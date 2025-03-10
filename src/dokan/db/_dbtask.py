@@ -55,6 +55,12 @@ class DBTask(Task, metaclass=ABCMeta):
     def complete(self) -> bool:
         return False
 
+    def _clear_log(self):
+        with self.session as session:
+            for log in session.scalars(select(Log)):
+                session.delete(log)
+            session.commit()
+
     def _print_part(self, session: Session) -> None:
         for pt in session.scalars(select(Part)):
             print(pt)
