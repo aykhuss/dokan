@@ -110,7 +110,6 @@ def main() -> None:
     parser_submit.add_argument(
         "--jobs-max-concurrent", type=int, help="maximum number of concurrently running jobs"
     )
-    parser_submit.add_argument("--jobs-batch-size", type=int, help="job batch size")
     parser_submit.add_argument("--seed-offset", type=int, help="seed offset")
 
     # > subcommand: finalize
@@ -340,16 +339,6 @@ def main() -> None:
         config["run"]["jobs_max_concurrent"] = new_jobs_max_concurrent
         console.print(f"[dim]jobs_max_concurrent = {config['run']['jobs_max_concurrent']!r}[/dim]")
 
-        while True:
-            new_jobs_batch_size: int = IntPrompt.ask(
-                "job batch size", default=config["run"]["jobs_batch_size"]
-            )
-            if new_jobs_batch_size > 0:
-                break
-            console.print("please enter a positive value")
-        config["run"]["jobs_batch_size"] = new_jobs_batch_size
-        console.print(f"[dim]jobs_batch_size = {config['run']['jobs_batch_size']!r}[/dim]")
-
         # @todo policy settings
 
         # > common cluster settings
@@ -428,8 +417,6 @@ def main() -> None:
             config["run"]["jobs_max_total"] = args.jobs_max_total
         if args.jobs_max_concurrent is not None:
             config["run"]["jobs_max_concurrent"] = args.jobs_max_concurrent
-        if args.jobs_batch_size is not None:
-            config["run"]["jobs_batch_size"] = args.jobs_batch_size
         if args.seed_offset is not None:
             config["run"]["seed_offset"] = args.seed_offset
 
@@ -523,24 +510,34 @@ def main() -> None:
 
         # @todo skip warmup?
 
-        # > actually submit the root task to run NNLOJET and spawn the monitor
-        console.print(f"CPU cores: {cpu_count}")
+        # > determine resources and dynamic job settings
+        jobs_max: int = min(config["run"]["jobs_max_concurrent"], config["run"]["jobs_max_total"])
+        console.print(f"# CPU cores: {cpu_count}")
         if config["exe"]["policy"] == ExecutionPolicy.LOCAL:
-            local_ncores: int = config["run"]["jobs_max_concurrent"]
+            local_ncores: int = jobs_max
         else:
             local_ncores: int = cpu_count
+        nworkers: int = max(cpu_count, nactive_part) + 1
+        config["run"]["jobs_max_batch_size"] = max(
+            2 * (jobs_max // nactive_part) + 1,
+            config["run"]["jobs_min_batch_size"],
+        )
+        console.print(f"# workers: {nworkers}")
+        console.print(f"# batch size: {config['run']['jobs_max_batch_size']}")
 
+        # > actually submit the root task to run NNLOJET and spawn the monitor
+        # > pass config since it changed w.r.t. db_init
         luigi_result = luigi.build(
             [
-                db_init.clone(Entry, resurrect=resurrect),
-                db_init.clone(Monitor),
+                db_init.clone(Entry, config=config, resurrect=resurrect),
+                db_init.clone(Monitor, config=config),
                 # *resurrects,
             ],
             worker_scheduler_factory=WorkerSchedulerFactory(
                 # @todo properly set resources according to config
                 resources={
                     "local_ncores": local_ncores,
-                    "jobs_concurrent": config["run"]["jobs_max_concurrent"],
+                    "jobs_concurrent": jobs_max,
                     "DBTask": cpu_count + 1,
                     "DBDispatch": 1,
                 },
@@ -550,7 +547,7 @@ def main() -> None:
                 wait_interval=0.1,
             ),
             detailed_summary=True,
-            workers=min(cpu_count, nactive_part) + 1,
+            workers=nworkers,
             local_scheduler=True,
             log_level="WARNING",
         )  # 'WARNING', 'INFO', 'DEBUG''

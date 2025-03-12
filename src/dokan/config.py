@@ -59,7 +59,8 @@ _schema: dict = {
         "job_fill_max_runtime": bool,  # if we want to exhause the maximum runtime
         "jobs_max_total": int,  # maximum number of total (production?) jobs
         "jobs_max_concurrent": int,  # maximum number of concurrent jobs
-        "jobs_batch_size": int,  # @todo: size of runs to batch
+        "jobs_max_batch_size": int,  # size of runs to batch into a single submission
+        "jobs_min_batch_size": int,  # the minimum batch size of a submission
         "seed_offset": int,  # seed number offset
         "timestamps": float,  # @todo list of timestamps when `run` was called
     },

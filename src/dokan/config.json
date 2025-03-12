@@ -12,7 +12,8 @@
     "job_fill_max_runtime": true,
     "jobs_max_total": 100,
     "jobs_max_concurrent": 10,
-    "jobs_batch_size": 1,
+    "jobs_max_batch_size": 1,
+    "jobs_min_batch_size": 1,
     "seed_offset": 0
   },
   "ui": {

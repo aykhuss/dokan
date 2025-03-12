@@ -2,14 +2,13 @@ import time
 
 import luigi
 from sqlalchemy import select
-from sqlalchemy.orm import merge_frozen_result
 
 from .db import DBTask, MergeAll, Part
 from .db._dbdispatch import DBDispatch
+from .db._dbmerge import MergeFinal
 from .db._dbresurrect import DBResurrect
 from .db._loglevel import LogLevel
 from .db._sqla import Log
-from .db._dbmerge import MergeFinal
 from .preproduction import PreProduction
 
 

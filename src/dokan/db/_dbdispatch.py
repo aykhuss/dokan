@@ -156,19 +156,29 @@ class DBDispatch(DBTask):
                 if not nque:
                     continue
                 # > implement termination conditions
-                if nque >= self.config["run"]["jobs_batch_size"]:
+                if nque >= self.config["run"]["jobs_max_batch_size"]:
+                    self._logger(
+                        session,
+                        f"$[1] {pt.id} has {nque} queued jobs: {self.config['run']['jobs_max_batch_size']}",
+                    )
                     qbreak = True
                 nsuc = nsuc if nsuc else 0
                 nact = nact if nact else 0
                 # > initially, we prefer to increment jobs by 2x
                 if nque >= 2 * (nsuc + (nact - nque)):
+                    self._logger(session, f"$[2] {pt.id} has {nque} queued jobs [{nsuc},{nact}]")
                     qbreak = True
                 # @todo: more?
+                # > reset break flag in case below min batch size
+                if nque < self.config["run"]["jobs_min_batch_size"]:
+                    self._logger(session, f"$[3] {pt.id} has {nque} queued jobs")
+                    qbreak = False
                 # > found a part that should be dispatched:
                 if qbreak:
-                    # > in case other contitions trigger:
+                    # > in case other conditions trigger:
                     # >  pick part with largest # of queued jobs
                     self.part_id = pt.id
+                    self._logger(session, f"$[4] {pt.id} has {nque} queued jobs: BREAK")
                     break
 
             # > the sole location where we break out of the infinite loop
@@ -183,13 +193,14 @@ class DBDispatch(DBTask):
 
             # > allocate & distribute time for next batch of jobs
             T_next: float = min(
-                self.config["run"]["jobs_batch_size"] * self.config["run"]["job_max_runtime"],
+                self.config["run"]["jobs_max_batch_size"] * self.config["run"]["job_max_runtime"],
                 njobs_rem * self.config["run"]["job_max_runtime"],
                 T_rem,
             )
             opt_dist: dict = self._distribute_time(session, T_next)
 
             # > interrupt when target accuracy reached
+            # @todo does not respect the optimization target yet?
             rel_acc: float = abs(opt_dist["tot_error"] / opt_dist["tot_result"])
             if rel_acc <= self.config["run"]["target_rel_acc"]:
                 self._debug(
@@ -260,11 +271,21 @@ class DBDispatch(DBTask):
             if self.id == 0:
                 stmt = stmt.where(Job.part_id == self.part_id)
             # > compile batch in `id` order
-            jobs: list[Job] = []
-            for job in session.scalars(stmt.order_by(Job.id.asc())):
-                jobs.append(job)
-                if len(jobs) >= self.config["run"]["jobs_batch_size"]:
-                    break
+            jobs: list[Job] = [*session.scalars(stmt.order_by(Job.id.asc())).all()]
+            if jobs:
+                # > most recent entry [-1] sets overall statistics
+                for j in jobs:
+                    j.ncall = jobs[-1].ncall
+                    j.niter = jobs[-1].niter
+                    j.elapsed_time = jobs[-1].elapsed_time
+                if (
+                    self.id == 0
+                ):  # only for production dispatch @todo think about warmup & pre-production
+                    # > try to exhaust the batch with multiples of the batch unit size
+                    nbatch_curr: int = min(len(jobs), self.config["run"]["jobs_max_batch_size"])
+                    nbatch_unit: int = self.config["run"]["jobs_min_batch_size"]
+                    nbatch: int = (nbatch_curr // nbatch_unit) * nbatch_unit
+                    jobs = jobs[:nbatch]
 
             # > set seeds for the jobs to prepare for a dispatch
             if jobs:
@@ -275,7 +296,7 @@ class DBDispatch(DBTask):
                     .where(Job.mode == jobs[0].mode)
                     .where(Job.seed.is_not(None))
                     .where(Job.seed > self.config["run"]["seed_offset"])
-                    # @todo not good enough, need a max to shield from anothe batch-job starting at larger value of seed?
+                    # @todo not good enough, need a max to shield from another batch-job starting at larger value of seed?
                     # determine upper bound by the max number of jobs? -> seems like a good idea
                     .order_by(Job.seed.desc())
                 ).first()
