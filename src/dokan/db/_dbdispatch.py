@@ -156,10 +156,10 @@ class DBDispatch(DBTask):
                 if not nque:
                     continue
                 # > implement termination conditions
-                if nque >= self.config["run"]["jobs_max_batch_size"]:
+                if nque >= self.config["run"]["jobs_batch_size"]:
                     self._logger(
                         session,
-                        f"$[1] {pt.id} has {nque} queued jobs: {self.config['run']['jobs_max_batch_size']}",
+                        f"$[1] {pt.id} has {nque} queued jobs: {self.config['run']['jobs_batch_size']}",
                     )
                     qbreak = True
                 nsuc = nsuc if nsuc else 0
@@ -170,7 +170,7 @@ class DBDispatch(DBTask):
                     qbreak = True
                 # @todo: more?
                 # > reset break flag in case below min batch size
-                if nque < self.config["run"]["jobs_min_batch_size"]:
+                if nque < self.config["run"]["jobs_batch_unit_size"]:
                     self._logger(session, f"$[3] {pt.id} has {nque} queued jobs")
                     qbreak = False
                 # > found a part that should be dispatched:
@@ -193,7 +193,7 @@ class DBDispatch(DBTask):
 
             # > allocate & distribute time for next batch of jobs
             T_next: float = min(
-                self.config["run"]["jobs_max_batch_size"] * self.config["run"]["job_max_runtime"],
+                self.config["run"]["jobs_batch_size"] * self.config["run"]["job_max_runtime"],
                 njobs_rem * self.config["run"]["job_max_runtime"],
                 T_rem,
             )
@@ -282,8 +282,8 @@ class DBDispatch(DBTask):
                     self.id == 0
                 ):  # only for production dispatch @todo think about warmup & pre-production
                     # > try to exhaust the batch with multiples of the batch unit size
-                    nbatch_curr: int = min(len(jobs), self.config["run"]["jobs_max_batch_size"])
-                    nbatch_unit: int = self.config["run"]["jobs_min_batch_size"]
+                    nbatch_curr: int = min(len(jobs), self.config["run"]["jobs_batch_size"])
+                    nbatch_unit: int = self.config["run"]["jobs_batch_unit_size"]
                     nbatch: int = (nbatch_curr // nbatch_unit) * nbatch_unit
                     jobs = jobs[:nbatch]
 

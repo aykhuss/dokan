@@ -518,12 +518,12 @@ def main() -> None:
         else:
             local_ncores: int = cpu_count
         nworkers: int = max(cpu_count, nactive_part) + 1
-        config["run"]["jobs_max_batch_size"] = max(
+        config["run"]["jobs_batch_size"] = max(
             2 * (jobs_max // nactive_part) + 1,
-            config["run"]["jobs_min_batch_size"],
+            config["run"]["jobs_batch_unit_size"],
         )
         console.print(f"# workers: {nworkers}")
-        console.print(f"# batch size: {config['run']['jobs_max_batch_size']}")
+        console.print(f"# batch size: {config['run']['jobs_batch_size']}")
 
         # > actually submit the root task to run NNLOJET and spawn the monitor
         # > pass config since it changed w.r.t. db_init
