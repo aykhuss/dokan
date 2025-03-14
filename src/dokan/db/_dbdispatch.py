@@ -257,10 +257,10 @@ class DBDispatch(DBTask):
 
     def run(self):
         with self.session as session:
-            self._repopulate(session)
             self._debug(
                 session, f"DBDispatch[{self.id},{self._n}]::run:  " + f"part_id = {self.part_id}"
             )
+            self._repopulate(session)
 
             # > queue empty and no job added in `repopulate`: we're done
             if self.part_id <= 0:

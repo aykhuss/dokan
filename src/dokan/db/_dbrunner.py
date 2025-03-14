@@ -85,7 +85,7 @@ class DBRunner(DBTask):
                 assert all(j.status == job_status for j in db_jobs)
 
             if job_status == JobStatus.DISPATCHED and not exe_data.is_final:
-                # > populate ExeData wil all necessary information for the Executor
+                # > populate ExeData with all necessary information for the Executor
                 exe_data["exe"] = self.config["exe"]["path"]
                 exe_data["mode"] = self.mode
                 exe_data["policy"] = self.policy
@@ -156,8 +156,12 @@ class DBRunner(DBTask):
             # > END IF DISPATCHED
 
             # get this from exe_data, only one for the batch? param: in_path?
-            # jus write a separate DBRecover task just taking a path and be done with it
+            # just write a separate DBRecover task just taking a path and be done with it
             # or yield here the DB recover task
+            self._debug(
+                session,
+                f"DBRunner::run:  part_id = {self.part_id} > yield Executor {exe_data['jobs']}",
+            )
             yield Executor.factory(policy=self.policy, path=str(self.job_path.absolute()))
 
             # > parse the retun data

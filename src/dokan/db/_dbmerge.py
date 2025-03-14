@@ -15,6 +15,7 @@ from pathlib import Path
 import luigi
 from sqlalchemy import func, select
 
+from .._types import GenericPath
 from ..combine import NNLOJETContainer, NNLOJETHistogram
 from ..exe._exe_config import ExecutionMode
 from ..exe._exe_data import ExeData
@@ -132,9 +133,12 @@ class MergePart(DBMerge):
                 mrg_path.mkdir(parents=True)
 
             # > populate a dictionary with all histogram files (reduces IO)
-            if "histograms_single_file" in self.config["run"]:  # @todo
-                raise NotImplementedError("MergePart: histograms_single_file")
-            in_files = dict((obs, []) for obs in self.config["run"]["histograms"].keys())
+            in_files: dict[str, list[GenericPath]] = dict()
+            single_file: str | None = self.config["run"].get("histograms_single_file", None)
+            if single_file:
+                in_files[single_file] = []  # all hist in single file
+            else:
+                in_files = dict((obs, []) for obs in self.config["run"]["histograms"].keys())
             # > collect histograms from all jobs
             pt.Ttot = 0.0
             pt.ntot = 0
@@ -153,6 +157,10 @@ class MergePart(DBMerge):
                                 str((job_path / out).relative_to(self._path))
                             )
                 job.status = JobStatus.MERGED
+            if single_file:
+                # > unroll the single histogram to all registered observables
+                singles: list[GenericPath] = in_files.pop(single_file)
+                in_files = dict((obs, singles) for obs in self.config["run"]["histograms"].keys())
 
             # > merge all histograms
             # > keep track of all cross section estimates (also from distributions)
@@ -161,9 +169,14 @@ class MergePart(DBMerge):
                 out_file: Path = mrg_path / f"{obs}.dat"
                 nx: int = self.config["run"]["histograms"][obs]["nx"]
                 container = NNLOJETContainer(size=len(in_files[obs]))
+                obs_name: str | None = obs if single_file else None
                 for in_file in in_files[obs]:
                     try:
-                        container.append(NNLOJETHistogram(nx=nx, filename=self._path / in_file))
+                        container.append(
+                            NNLOJETHistogram(
+                                nx=nx, filename=self._path / in_file, obs_name=obs_name
+                            )
+                        )
                     except ValueError as e:
                         self._logger(
                             session, f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR
