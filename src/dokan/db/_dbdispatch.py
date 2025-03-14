@@ -157,28 +157,21 @@ class DBDispatch(DBTask):
                     continue
                 # > implement termination conditions
                 if nque >= self.config["run"]["jobs_batch_size"]:
-                    self._logger(
-                        session,
-                        f"$[1] {pt.id} has {nque} queued jobs: {self.config['run']['jobs_batch_size']}",
-                    )
                     qbreak = True
                 nsuc = nsuc if nsuc else 0
                 nact = nact if nact else 0
                 # > initially, we prefer to increment jobs by 2x
                 if nque >= 2 * (nsuc + (nact - nque)):
-                    self._logger(session, f"$[2] {pt.id} has {nque} queued jobs [{nsuc},{nact}]")
                     qbreak = True
                 # @todo: more?
                 # > reset break flag in case below min batch size
                 if nque < self.config["run"]["jobs_batch_unit_size"]:
-                    self._logger(session, f"$[3] {pt.id} has {nque} queued jobs")
                     qbreak = False
                 # > found a part that should be dispatched:
                 if qbreak:
                     # > in case other conditions trigger:
                     # >  pick part with largest # of queued jobs
                     self.part_id = pt.id
-                    self._logger(session, f"$[4] {pt.id} has {nque} queued jobs: BREAK")
                     break
 
             # > the sole location where we break out of the infinite loop
