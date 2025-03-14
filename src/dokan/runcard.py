@@ -187,12 +187,12 @@ class Runcard:
             invalid syntax encountered in runcard.
         """
         kill_matches = [
-            # > kill symbol that will be inserted
-            re.compile(r"\s*${sweep}"),
-            re.compile(r"\s*${run}"),
-            re.compile(r"\s*${channels}"),
-            re.compile(r"\s*${channels_region}"),
-            re.compile(r"\s*${toplevel}"),
+            # > kill symbols that will be inserted
+            re.compile(r"\s*\${sweep}"),
+            re.compile(r"\s*\${run}"),
+            re.compile(r"\s*\${channels}"),
+            re.compile(r"\s*\${channels_region}"),
+            re.compile(r"\s*\${toplevel}"),
             # > kill symbols that will be replaced
             re.compile(r"\biseed\s*=\s*\d+\b", re.IGNORECASE),
             re.compile(r"\bwarmup\s*=\s*\d+\[(?:[^\]]+)\]", re.IGNORECASE),
