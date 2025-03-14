@@ -68,3 +68,5 @@ class Entry(DBTask):
             yield dispatch
             self._logger(session, "Entry: complete dispatch -> MergeFinal")
             yield self.clone(MergeFinal, force=True)
+            # > should already been triggered in MergeFinal but for good measure
+            self._logger(session, "Entry: complete", level=LogLevel.SIG_COMP)

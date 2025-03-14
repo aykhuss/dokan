@@ -85,6 +85,7 @@ class DBRunner(DBTask):
                 assert all(j.status == job_status for j in db_jobs)
 
             if job_status == JobStatus.DISPATCHED and not exe_data.is_final:
+                self._debug(session, f"DBRunner::run  part_id = {self.part_id} > prepare execution")
                 # > populate ExeData with all necessary information for the Executor
                 exe_data["exe"] = self.config["exe"]["path"]
                 exe_data["mode"] = self.mode
@@ -168,6 +169,8 @@ class DBRunner(DBTask):
             if not exe_data.is_final:
                 raise RuntimeError(f"{self.ids} not final?!\n{self.job_path}\n{exe_data.data}")
             for db_job in db_jobs:  # loop exe data jobs keys
+                if db_job.status in JobStatus.terminated_list():
+                    continue
                 if "result" in exe_data["jobs"][db_job.id]:
                     db_job.result = exe_data["jobs"][db_job.id]["result"]
                     db_job.error = exe_data["jobs"][db_job.id]["error"]

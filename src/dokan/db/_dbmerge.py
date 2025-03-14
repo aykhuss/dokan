@@ -90,6 +90,10 @@ class MergePart(DBMerge):
             c_merged = query_job.filter(Job.status == JobStatus.MERGED).count()
 
             if (c_done + c_merged) == 0:
+                self._debug(
+                    session,
+                    f"MergePart::complete[{self.part_id},{self.force}]: done {c_done}, merged {c_merged} => mark complete",
+                )
                 # @todo raise error as we should never be in this situation?
                 return True
 
@@ -99,6 +103,9 @@ class MergePart(DBMerge):
             )
 
             if self.force and c_done > 0:
+                return False
+
+            if c_merged == 0 and c_done > 0:
                 return False
 
             if float(c_done + c_merged) / float(c_merged + 1) <= (
@@ -118,6 +125,10 @@ class MergePart(DBMerge):
 
     def run(self):
         if self.complete():
+            with self.session as session:
+                self._debug(
+                    session, f"MergePart::run[{self.part_id},{self.force}]:  already complete"
+                )
             return
 
         with self.session as session:
