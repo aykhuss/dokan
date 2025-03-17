@@ -105,10 +105,12 @@ class MergePart(DBMerge):
             if self.force and c_done > 0:
                 return False
 
-            if c_merged == 0 and c_done > 0:
-                return False
+            # > this is incorrect, as we need to wait for *all* pre-productions to be complete
+            # > before we can merge. The merge is triggered manually in the `Entry` task
+            # if c_merged == 0 and c_done > 0:
+            #     return False
 
-            if float(c_done + c_merged) / float(c_merged + 1) <= (
+            if float(c_done + c_merged) / float(c_merged + 1) < (
                 self.config["production"]["fac_merge_trigger"]
                 if "fac_merge_trigger" in self.config["production"]
                 else 2.0
