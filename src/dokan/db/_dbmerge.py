@@ -490,7 +490,8 @@ class MergeFinal(DBMerge):
 
             # > use `distribute_time` to fetch optimization target
             # > & time estimate to reach desired accuracy
-            opt_dist = self._distribute_time(session, 0.0)
+            # > use small 1s value; a non-zero time to avoid division by zero
+            opt_dist = self._distribute_time(session, 1.0)
             # self._logger(session,f"{opt_dist}")
             opt_target: str = (
                 self.config["run"]["opt_target"]
