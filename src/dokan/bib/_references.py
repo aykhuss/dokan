@@ -1,6 +1,16 @@
 ### Big dictionary with all the references
 
 references = {
+    ######### NNLOJET CODE
+    "NNLOJET:2025xyz": """
+@unpublished{NNLOJET:2025xyz,
+    author = "Huss, A. and others",
+    collaboration = "NNLOJET",
+    title = "{NNLOJET: a parton-level event generator for jet cross sections at NNLO QCD accuracy}",
+    reportNumber = "CERN-TH-2025-012, IPPP/25/09, ZU-TH 11/25",
+    year = "2025"
+}
+""",
     ######### ANTEANNA SUBTRACTION
     "Gehrmann-DeRidder:2004ttg": """
 @article{Gehrmann-DeRidder:2004ttg,

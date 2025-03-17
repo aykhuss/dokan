@@ -313,6 +313,9 @@ def make_bib(proc: str, destination: GenericPath) -> tuple[Path, Path]:
 
     entry = upper_procs[upper_proc]
 
+    # > inject the NNLOJET code reference at the front
+    entry = {"NNLOJET": ["NNLOJET:2025xyz"]} | entry
+
     bibout: Path = dest_path / f"NNLOJET_references_{original_proc}.bib"
     bibtex: Path = dest_path / f"NNLOJET_references_{original_proc}.tex"
 
