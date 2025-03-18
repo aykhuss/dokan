@@ -261,11 +261,13 @@ class MergePart(DBMerge):
             # > this is an upper bound on the XS error derived from any histogram
             # > ("+ pt.error" accounts for the worst case with histogram selectors)
             max_err: float = pt.error + max(e for _, e in cross_list)
+            # > alternative: rescale relative errors to the same cross section
+            # max_err: float = pt.result * max(abs(e / r) for r, e in cross_list)
             if opt_target == "cross":
                 pass  # keep cross error for optimisation
             elif opt_target == "cross_hist":
-                # > since we took the worst case for max_err, let's take a geometric mean
                 # pt.error = (pt.error + max_err) / 2.0
+                # > since we took the worst case for max_err, let's take a geometric mean
                 pt.error = math.sqrt(pt.error * max_err)
             elif opt_target == "hist":
                 pt.error = max_err

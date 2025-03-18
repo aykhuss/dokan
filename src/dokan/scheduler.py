@@ -17,9 +17,10 @@ class WorkerSchedulerFactory:
         self.cache_task_completion = kwargs.pop("cache_task_completion", False)
         self.check_complete_on_run = kwargs.pop("check_complete_on_run", False)
         self.check_unfulfilled_deps = kwargs.pop("check_unfulfilled_deps", True)
-        self.wait_interval = kwargs.pop("wait_interval", 0.1)
-        self.wait_jitter = kwargs.pop("wait_jitter", 0.2)
-        self.ping_interval = kwargs.pop("ping_interval", 0.1)
+        self.wait_interval = kwargs.pop("wait_interval", 0.1)  # luigi default: 1.0
+        self.wait_jitter = kwargs.pop("wait_jitter", 0.5)  # luigi default: 5.0
+        self.ping_interval = kwargs.pop("ping_interval", 0.1)  # luigi default: 1.0
+
         if kwargs:
             raise RuntimeError(f"WorkerSchedulerFactory: left-over options {kwargs}")
 

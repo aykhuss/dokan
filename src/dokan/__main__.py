@@ -4,6 +4,7 @@
 import argparse
 import multiprocessing
 import os
+import resource
 import shutil
 import signal
 import sys
@@ -208,6 +209,9 @@ def main() -> None:
                 #     "for further advanced settings edit the config.json manually & consult the documentation"
                 # )
 
+                # > config with flags skip the default config options
+                return
+
             # > merge settings
             if args.merge:
                 # @todo if settings are changed, trigger a full re-merge?
@@ -256,8 +260,8 @@ def main() -> None:
                     f"[dim]k_scan_maxdev_steps = {config['merge']['k_scan_maxdev_steps']!r}[/dim]"
                 )
 
-            # > config with flags skip the default config options
-            return
+                # > config with flags skip the default config options
+                return
 
         console.print(
             f"setting default values for the run configuration at [italic]{str(config.path.absolute())}[/italic]"
@@ -510,6 +514,9 @@ def main() -> None:
 
         # @todo skip warmup?
 
+        # > increase limit on #files to accommodate potentially large #workers we spawn
+        resource.setrlimit(resource.RLIMIT_NOFILE, (10000, resource.RLIM_INFINITY))
+
         # > determine resources and dynamic job settings
         jobs_max: int = min(config["run"]["jobs_max_concurrent"], config["run"]["jobs_max_total"])
         console.print(f"# CPU cores: {cpu_count}")
@@ -538,7 +545,7 @@ def main() -> None:
                 resources={
                     "local_ncores": local_ncores,
                     "jobs_concurrent": jobs_max,
-                    "DBTask": cpu_count + 1,
+                    "DBTask": cpu_count + 2,
                     "DBDispatch": 1,
                 },
                 cache_task_completion=False,  # needed for MergePart
