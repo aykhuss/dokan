@@ -174,7 +174,8 @@ class DBRunner(DBTask):
                     continue
                 if "result" in exe_data["jobs"][db_job.id]:
                     if math.isnan(
-                        exe_data["jobs"][db_job.id]["result"] * exe_data["jobs"][db_job.id]["error"]
+                        float(exe_data["jobs"][db_job.id]["result"])
+                        * float(exe_data["jobs"][db_job.id]["error"])
                     ):
                         db_job.status = JobStatus.FAILED
                     else:
