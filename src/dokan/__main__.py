@@ -481,7 +481,7 @@ def main() -> None:
                             # > just delete, no advantage in restoring
                             # > (possible seed gaps from dispatched but ok)
                             console.print(f" > remove (never started): {job!r}")
-                            if job.rel_path is not None:
+                            if job.rel_path is not None and Path(job.rel_path).exists():
                                 shutil.rmtree(db_init._local(job.rel_path))
                             session.delete(job)
                         elif job.status == JobStatus.RUNNING:
