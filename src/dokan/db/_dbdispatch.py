@@ -86,7 +86,7 @@ class DBDispatch(DBTask):
             if opt["njobs"] <= 0:
                 return []
             niter: int = self.config["production"]["niter"]
-            ncall: int = opt["ntot_job"] // niter
+            ncall: int = (opt["ntot_job"] // niter) + 1
             if ncall * niter == 0:
                 self._logger(
                     session, f"part {part_id} has ntot={opt['ntot_job']} -> 0 = {ncall} * {niter}"

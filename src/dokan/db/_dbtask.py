@@ -239,8 +239,14 @@ class DBTask(Task, metaclass=ABCMeta):
                 ntot_job: int = int(T_max_job / ires["tau"])
             else:
                 if ires["T_opt"] > 0.0:
+                    ntot_min: int = (
+                        self.config["production"]["niter"]
+                        * self.config["production"]["ncall_start"]
+                    )
+                    ntot_max: int = int(T_max_job / ires["tau"])
                     njobs: int = int(ires["T_opt"] / T_max_job) + 1
                     ntot_job: int = int(ires["T_opt"] / float(njobs) / ires["tau"])
+                    ntot_job = min(ntot_max, max(ntot_min, ntot_job))
                 else:
                     njobs: int = 0
                     ntot_job: int = 0
