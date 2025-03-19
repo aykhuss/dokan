@@ -514,9 +514,6 @@ def main() -> None:
 
         # @todo skip warmup?
 
-        # > increase limit on #files to accommodate potentially large #workers we spawn
-        resource.setrlimit(resource.RLIMIT_NOFILE, (10000, resource.RLIM_INFINITY))
-
         # > determine resources and dynamic job settings
         jobs_max: int = min(config["run"]["jobs_max_concurrent"], config["run"]["jobs_max_total"])
         console.print(f"# CPU cores: {cpu_count}")
@@ -531,6 +528,12 @@ def main() -> None:
         )
         console.print(f"# workers: {nworkers}")
         console.print(f"# batch size: {config['run']['jobs_batch_size']}")
+
+        # > increase limit on #files to accommodate potentially large #workers we spawn
+        try:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (10 * nworkers, resource.RLIM_INFINITY))
+        except ValueError as err:
+            console.print("failed to increase RLIMIT_NOFILE: {err}")
 
         # > actually submit the root task to run NNLOJET and spawn the monitor
         # > pass config since it changed w.r.t. db_init
