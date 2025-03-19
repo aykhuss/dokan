@@ -6,6 +6,7 @@ the database with the results of each execution (as executors are normal luigi
 tasks and, as such, do not have access to the dokan job database).
 """
 
+import math
 import re
 import shutil
 from pathlib import Path
@@ -172,11 +173,16 @@ class DBRunner(DBTask):
                 if db_job.status in JobStatus.terminated_list():
                     continue
                 if "result" in exe_data["jobs"][db_job.id]:
-                    db_job.result = exe_data["jobs"][db_job.id]["result"]
-                    db_job.error = exe_data["jobs"][db_job.id]["error"]
-                    db_job.chi2dof = exe_data["jobs"][db_job.id]["chi2dof"]
-                    db_job.elapsed_time = exe_data["jobs"][db_job.id]["elapsed_time"]
-                    db_job.status = JobStatus.DONE
+                    if math.isnan(
+                        exe_data["jobs"][db_job.id]["result"] * exe_data["jobs"][db_job.id]["error"]
+                    ):
+                        db_job.status = JobStatus.FAILED
+                    else:
+                        db_job.result = exe_data["jobs"][db_job.id]["result"]
+                        db_job.error = exe_data["jobs"][db_job.id]["error"]
+                        db_job.chi2dof = exe_data["jobs"][db_job.id]["chi2dof"]
+                        db_job.elapsed_time = exe_data["jobs"][db_job.id]["elapsed_time"]
+                        db_job.status = JobStatus.DONE
                 else:
                     db_job.status = JobStatus.FAILED
             session.commit()
