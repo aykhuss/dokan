@@ -5,6 +5,8 @@ from an old run. A previous run might have been cancelled or failed due
 to the loss of a ssh connection.
 """
 
+import math
+
 import luigi
 
 from ..exe import Executor, ExeData
@@ -60,11 +62,14 @@ class DBResurrect(DBTask):
             for job_id, job_entry in self.exe_data["jobs"].items():
                 db_job: Job = session.get_one(Job, job_id)
                 if "result" in job_entry:
-                    db_job.result = job_entry["result"]
-                    db_job.error = job_entry["error"]
-                    db_job.chi2dof = job_entry["chi2dof"]
-                    db_job.elapsed_time = job_entry["elapsed_time"]
-                    db_job.status = JobStatus.DONE
+                    if math.isnan(float(job_entry["result"]) * float(job_entry["error"])):
+                        db_job.status = JobStatus.FAILED
+                    else:
+                        db_job.result = job_entry["result"]
+                        db_job.error = job_entry["error"]
+                        db_job.chi2dof = job_entry["chi2dof"]
+                        db_job.elapsed_time = job_entry["elapsed_time"]
+                        db_job.status = JobStatus.DONE
                 else:
                     db_job.status = JobStatus.FAILED
             session.commit()

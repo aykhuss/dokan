@@ -57,7 +57,7 @@ class Monitor(DBTask):
         self._data: list[list[str]] = [
             ["-" for _ in range(len(part_order) + 1)] for _ in range(self._nchan + 1)
         ]
-        self._data[0][0] = "#"
+        self._data[0][0] = "ch"
         for irow in range(1, len(self._data)):
             self._data[irow][0] = f"{irow}"
         for pt_name, icol in self._map_col.items():
