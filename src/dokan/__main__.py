@@ -507,7 +507,7 @@ def main() -> None:
                     with db_init.session as session:
                         for job in session.scalars(select_active_jobs):
                             console.print(f" > removing: {job!r}")
-                            if job.rel_path is not None:
+                            if job.rel_path is not None and Path(job.rel_path).exists():
                                 shutil.rmtree(db_init._local(job.rel_path))
                             session.delete(job)
                         session.commit()
@@ -533,7 +533,7 @@ def main() -> None:
         try:
             resource.setrlimit(resource.RLIMIT_NOFILE, (10 * nworkers, resource.RLIM_INFINITY))
         except ValueError as err:
-            console.print("failed to increase RLIMIT_NOFILE: {err}")
+            console.print(f"failed to increase RLIMIT_NOFILE: {err}")
 
         # > actually submit the root task to run NNLOJET and spawn the monitor
         # > pass config since it changed w.r.t. db_init
