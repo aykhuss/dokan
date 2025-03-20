@@ -32,14 +32,7 @@ class Monitor(DBTask):
         with self.session as session:
             last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
             if last_log:
-                print(f"Monitor::init:  last log: {last_log!r}")
                 self._log_id = last_log.id
-                # > last run was successful: reset log table.
-                if last_log.level in [LogLevel.SIG_COMP, LogLevel.SIG_TERM]:
-                    print("Monitor::init:  clearing old logs...")
-                    for log in session.scalars(select(Log)):
-                        session.delete(log)
-                    session.commit()
 
         self._nchan: int = 0
         part_order: list[tuple[int, str]] = []
@@ -57,7 +50,7 @@ class Monitor(DBTask):
         self._data: list[list[str]] = [
             ["-" for _ in range(len(part_order) + 1)] for _ in range(self._nchan + 1)
         ]
-        self._data[0][0] = "ch"
+        self._data[0][0] = "#"
         for irow in range(1, len(self._data)):
             self._data[irow][0] = f"{irow}"
         for pt_name, icol in self._map_col.items():
@@ -99,7 +92,7 @@ class Monitor(DBTask):
             result = f"[bold]{result}[/bold]"
         else:
             result = f"[dim]{result}[/dim]"
-        result += f" [yellow]A[dim][{n_running[1]}][/dim][/yellow]"
+        result += f" [yellow]A[dim][{n_running[0] + n_running[1]}][/dim][/yellow]"
         result += f" [green]D[dim][{n_success[0] + n_success[1]}][/dim][/green]"
         if any(n > 0 for n in n_failed):
             result += f" [red]F[dim][{n_failed[0] + n_failed[1]}][/dim][/red]"
@@ -118,7 +111,7 @@ class Monitor(DBTask):
             Column(
                 self._data[0][0],
                 style=Style(dim=True),
-                header_style=Style(bold=False, italic=True, dim=True),
+                header_style=Style(bold=False, italic=False, dim=True),
                 justify="center",
             ),
             *(

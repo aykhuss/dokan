@@ -12,6 +12,7 @@ class LogLevel(IntEnum):
     """possible log levels (c.f. logging module)"""
 
     SIG_TERM = -10  # signal to terminate the monitor
+    SIG_SUB = -4  # signal to indicate new submission
     SIG_FINI = -3  # signal to indicate finalize was triggered
     SIG_UPDXS = -2  # signal to send an updated XS number
     SIG_COMP = -1  # signal to indicate successful completion

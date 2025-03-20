@@ -26,7 +26,7 @@ from .db._dbmerge import MergeFinal
 from .db._dbtask import DBInit
 from .db._jobstatus import JobStatus
 from .db._loglevel import LogLevel
-from .db._sqla import Job, Part
+from .db._sqla import Job, Log, Part
 from .entry import Entry
 from .exe import ExecutionPolicy, Executor
 from .monitor import Monitor
@@ -447,6 +447,16 @@ def main() -> None:
         with db_init.session as session:
             nactive_part = session.query(Part).filter(Part.active.is_(True)).count()
             nactive_job = session.query(Job).filter(Job.status.in_(JobStatus.active_list())).count()
+            # > clear log(?), indicate new submission
+            last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
+            if last_log:
+                console.print(f"last log: {last_log!r}")
+                if Confirm.ask("clear log?", default=True):
+                    for log in session.scalars(select(Log)):
+                        session.delete(log)
+                    session.commit()
+            db_init._logger(session, "new submission", level=LogLevel.SIG_SUB)
+
         console.print(f"active parts: {nactive_part}")
         # console.print(f"active jobs: {nactive_job}")
         if nactive_part == 0:

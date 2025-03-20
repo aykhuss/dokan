@@ -285,17 +285,6 @@ class DBInit(DBTask):
         super().__init__(*args, **kwargs)
         DokanDB.metadata.create_all(self._create_engine(self.dbname))
         DokanLog.metadata.create_all(self._create_engine(self.logname))
-        with self.session as session:
-            last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
-            if last_log:
-                print(f"DBInit::init last log: {last_log!r}")
-                self._log_id = last_log.id
-                # > last run was successful: reset log table.
-                if last_log.level in [LogLevel.SIG_COMP]:
-                    print("Monitor::init clearing old logs...")
-                    for log in session.scalars(select(Log)):
-                        session.delete(log)
-                    session.commit()
 
     def complete(self) -> bool:
         with self.session as session:
