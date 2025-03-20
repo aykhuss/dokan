@@ -444,18 +444,20 @@ def main() -> None:
             sys.exit("DBInit failed")
         nactive_part: int = 0
         nactive_job: int = 0
+        nfailed_job: int = 0
         with db_init.session as session:
             nactive_part = session.query(Part).filter(Part.active.is_(True)).count()
             nactive_job = session.query(Job).filter(Job.status.in_(JobStatus.active_list())).count()
+            nfailed_job = session.query(Job).filter(Job.status.in_([JobStatus.FAILED])).count()
             # > clear log(?), indicate new submission
             last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
             if last_log:
                 console.print(f"last log: {last_log!r}")
-                if Confirm.ask("clear log?", default=True):
+                if last_log.level in [LogLevel.SIG_COMP] or Confirm.ask("clear log?", default=True):
                     for log in session.scalars(select(Log)):
                         session.delete(log)
                     session.commit()
-            db_init._logger(session, "new submission", level=LogLevel.SIG_SUB)
+            db_init._logger(session, "submit", level=LogLevel.SIG_SUB)
 
         console.print(f"active parts: {nactive_part}")
         # console.print(f"active jobs: {nactive_job}")
@@ -521,6 +523,19 @@ def main() -> None:
                                 shutil.rmtree(db_init._local(job.rel_path))
                             session.delete(job)
                         session.commit()
+
+        if nfailed_job > 0:
+            select_failed_jobs = select(Job).where(Job.status.in_([JobStatus.FAILED]))
+            console.print(f"there appear to be {nfailed_job} failed jobs in the database")
+            if Confirm.ask("remove them from the database?", default=True):
+                with db_init.session as session:
+                    for job in session.scalars(select_failed_jobs):
+                        console.print(f" > removing: {job!r}")
+                        if job.rel_path is not None and Path(job.rel_path).exists():
+                            shutil.rmtree(db_init._local(job.rel_path))
+                        session.delete(job)
+                    session.commit()
+
 
         # @todo skip warmup?
 
