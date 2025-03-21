@@ -481,7 +481,7 @@ def main() -> None:
             nonlocal graceful_exit_triggered
             if graceful_exit_triggered:
                 console.print("\n[magenta]" + random.choice(patience) + "[/magenta]")
-                return
+                sys.exit(0)
             graceful_exit_triggered = True
             console.print(f"\n[magenta]received signal: {signal.Signals(sig).name}[/magenta]")
             nonlocal db_init
