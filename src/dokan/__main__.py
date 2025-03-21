@@ -30,7 +30,7 @@ from .db._sqla import Job, Log, Part
 from .entry import Entry
 from .exe import ExecutionPolicy, Executor
 from .monitor import Monitor
-from .nnlojet import get_lumi
+from .nnlojet import get_lumi, check_PDF
 from .order import Order
 from .runcard import Runcard
 from .scheduler import WorkerSchedulerFactory
@@ -191,6 +191,9 @@ def main() -> None:
         config["process"]["channels"] = get_lumi(
             config["exe"]["path"], config["process"]["name"], use_default=args.no_lumi
         )
+        for PDF in runcard.data["PDFs"]:
+            check_PDF(config["exe"]["path"],PDF)
+
         config.write()
         runcard.to_tempalte(Path(config["run"]["path"]) / config["run"]["template"])
 
