@@ -536,7 +536,6 @@ def main() -> None:
                         session.delete(job)
                     session.commit()
 
-
         # @todo skip warmup?
 
         # > determine resources and dynamic job settings

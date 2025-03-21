@@ -152,10 +152,29 @@ class DBTask(Task, metaclass=ABCMeta):
                 cache[job.part_id]["Textra"] += job.elapsed_time
                 cache[job.part_id]["nextra"] += ntot
 
-        # > check every active part has an entry
+        # > check every active part has an entry; compute the minimum & average error
+        pt_min_error: float = 0.0
+        pt_avg_error: float = 0.0
         for pt in session.scalars(select(Part).where(Part.active.is_(True))):
             if pt.id not in cache:
                 raise RuntimeError(f"part {pt.id} not in cache?!")
+            if cache[pt.id]["error"] > 0.0:
+                if pt_min_error <= 0.0:
+                    pt_min_error = cache[pt.id]["error"]
+                else:
+                    pt_min_error = min(pt_min_error, cache[pt.id]["error"])
+            pt_avg_error += cache[pt.id]["result"]
+        pt_avg_error = (
+            self.config["run"]["target_rel_acc"] * pt_avg_error / math.sqrt(len(cache) + 1)
+        )
+        # > override errors so they are always non-zero; penalize pre-production only parts
+        # _console.print(cache)
+        for part_id, ic in cache.items():
+            if ic["error"] < pt_avg_error:
+                ic["error"] += pt_min_error
+            if ic["count"] <= 1:
+                ic["error"] += len(cache) * max(pt_avg_error, pt_min_error)
+        # _console.print(cache)
 
         # > actually compute estimate for time per event
         # > populate accumulators to evaluate the E-L optimization formula
@@ -301,7 +320,7 @@ class DBInit(DBTask):
 
     def run(self) -> None:
         with self.session as session:
-            self._logger(session, f"DBInit::run order = {Order(self.order)!r}")
+            # self._logger(session, f"DBInit::run order = {Order(self.order)!r}")
             for db_pt in session.scalars(select(Part)):
                 db_pt.active = False  # reset to be safe
             for pt in self.channels:
