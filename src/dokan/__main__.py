@@ -118,8 +118,14 @@ def main() -> None:
         "finalize", help="merge completed jobs into a final result"
     )
     parser_finalize.add_argument("run_path", metavar="RUN", help="run directory")
-    # parser_finalize.add_argument("--merge", action="store_true", help="set default merge parameters")
-    # parser_finalize.add_argument("--advanced", action="store_true", help="adcanced settings")
+    parser_finalize.add_argument("--trim-threshold", type=float, help="threshold to flag outliers")
+    parser_finalize.add_argument(
+        "--trim-max-fraction", type=float, help="maximum fraction allowed to trim away"
+    )
+    parser_finalize.add_argument("--k-scan-nsteps", type=int, help="number of steps in the k-scan")
+    parser_finalize.add_argument(
+        "--k-scan-maxdev-steps", type=float, help="maximum deviation between k-scan steps"
+    )
 
     # > parse arguments
     args = parser.parse_args()
@@ -598,14 +604,23 @@ def main() -> None:
     if args.action == "finalize":
         config = Config(path=args.run_path, default_ok=False)
 
-        # > CLI overrides
+        # > CLI overrides: persistent overwrite --> config
         if nnlojet_exe is not None:
             config["exe"]["path"] = nnlojet_exe
-        # @todo overrides of merge parameters; want to make them permanend? -> use config.
-        # --> reconfiguring parameters should trigger a full re-merge?
+        # > merge settings
+        if args.trim_threshold is not None:
+            config["merge"]["trim_threshold"] = args.trim_threshold
+        if args.trim_max_fraction is not None:
+            config["merge"]["trim_max_fraction"] = args.trim_max_fraction
+        if args.k_scan_nsteps is not None:
+            config["merge"]["k_scan_nsteps"] = args.k_scan_nsteps
+        if args.k_scan_maxdev_steps is not None:
+            config["merge"]["k_scan_maxdev_steps"] = args.k_scan_maxdev_steps
+        console.print(config["merge"])
 
         # > launch the finalization task
         mrg_final = MergeFinal(
+            reset_tag=time.time(),
             config=config,
             run_tag=time.time(),
         )

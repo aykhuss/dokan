@@ -27,8 +27,10 @@ from ._sqla import Job, Log, Part
 
 
 class DBMerge(DBTask, metaclass=ABCMeta):
-    # > flag to force a re-merge
+    # > flag to force a re-merge (if new jobs are in a `done` state but not yet `merged`)
     force: bool = luigi.BoolParameter(default=False)
+    # > tag to trigger a reset to initiate a re-merge from scratch (timestamp)
+    reset_tag: float = luigi.FloatParameter(default=-1.0)
 
     priority = 20
 
@@ -92,17 +94,21 @@ class MergePart(DBMerge):
             if (c_done + c_merged) == 0:
                 self._debug(
                     session,
-                    f"MergePart::complete[{self.part_id},{self.force}]: done {c_done}, merged {c_merged} => mark complete",
+                    f"MergePart::complete[{self.part_id},{self.force},{self.reset_tag}]: done {c_done}, merged {c_merged} => mark complete",
                 )
                 # @todo raise error as we should never be in this situation?
                 return True
 
             self._debug(
                 session,
-                f"MergePart::complete[{self.part_id},{self.force}]: done {c_done}, merged {c_merged}",
+                f"MergePart::complete[{self.part_id},{self.force},{self.reset_tag}]: done {c_done}, merged {c_merged}",
             )
 
             if self.force and c_done > 0:
+                return False
+
+            pt: Part = session.get_one(Part, self.part_id)
+            if pt.timestamp < self.reset_tag:
                 return False
 
             # > this is incorrect, as we need to wait for *all* pre-productions to be complete
@@ -119,7 +125,7 @@ class MergePart(DBMerge):
 
             self._logger(
                 session,
-                f"MergePart::complete[{self.part_id},{self.force}]:  "
+                f"MergePart::complete[{self.part_id},{self.force},{self.reset_tag}]:  "
                 + f"done {c_done}, merged {c_merged} => not yet complete",
             )
 
@@ -129,12 +135,13 @@ class MergePart(DBMerge):
         if self.complete():
             with self.session as session:
                 self._debug(
-                    session, f"MergePart::run[{self.part_id},{self.force}]:  already complete"
+                    session,
+                    f"MergePart::run[{self.part_id},{self.force},{self.reset_tag}]:  already complete",
                 )
             return
 
         with self.session as session:
-            self._debug(session, f"MergePart::run[{self.part_id},{self.force}]")
+            self._debug(session, f"MergePart::run[{self.part_id},{self.force},{self.reset_tag}]")
             # > get the part and update timestamp to tag for 'MERGE'
             pt: Part = session.get_one(Part, self.part_id)
             pt.timestamp = time.time()
@@ -292,6 +299,8 @@ class MergeAll(DBMerge):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        with self.session as session:
+            self._debug(session, f"MergeAll::init[force={self.force},reset_tag={self.reset_tag}]")
         # > output directory
         self.mrg_path: Path = self._path.joinpath("result", "merge")
         if not self.mrg_path.exists():
@@ -302,7 +311,7 @@ class MergeAll(DBMerge):
         return select(Part).where(Part.active.is_(True))
 
     def requires(self):
-        if self.force:
+        if self.force or self.reset_tag > 0.0:
             with self.session as session:
                 self._debug(session, "MergeAll: requires parts...")
                 return [
@@ -336,7 +345,7 @@ class MergeAll(DBMerge):
 
     def run(self):
         with self.session as session:
-            self._logger(session, f"MergeAll::run[force={self.force}]")
+            self._logger(session, f"MergeAll::run[force={self.force},reset_tag={self.reset_tag}]")
             mrg_parent: Path = self._path.joinpath("result", "part")
 
             in_files = dict((obs, []) for obs in self.config["run"]["histograms"].keys())
@@ -390,7 +399,7 @@ class MergeFinal(DBMerge):
         super().__init__(*args, **kwargs)
 
         with self.session as session:
-            self._debug(session, f"MergeFinal::init {time.ctime(self.run_tag)}")
+            self._debug(session, f"MergeFinal::init[force={self.force},reset_tag={self.reset_tag}]")
 
         # > output directory
         self.fin_path: Path = self._path.joinpath("result", "final")
@@ -401,22 +410,28 @@ class MergeFinal(DBMerge):
         self.error = float("inf")
 
     def requires(self):
+        with self.session as session:
+            self._debug(
+                session, "MergeFinal::requires[force={self.force},reset_tag={self.reset_tag}]"
+            )
         return [self.clone(MergeAll, force=True)]
 
     def complete(self) -> bool:
         with self.session as session:
-            self._debug(session, "MergeFinal::complete")
-            last_log = session.scalars(
+            self._debug(
+                session, "MergeFinal::complete[force={self.force},reset_tag={self.reset_tag}]"
+            )
+            last_sig = session.scalars(
                 select(Log).where(Log.level < 0).order_by(Log.id.desc())
             ).first()
-            self._debug(session, f"MergeFinal::complete:  last_log = {last_log!r}")
-            if last_log and last_log.level in [LogLevel.SIG_COMP]:
+            self._debug(session, f"MergeFinal::complete:  last_sig = {last_sig!r}")
+            if last_sig and last_sig.level in [LogLevel.SIG_COMP]:
                 return True
         return False
 
     def run(self):
         with self.session as session:
-            self._logger(session, f"MergeFinal::run[force={self.force}]")
+            self._logger(session, f"MergeFinal::run[force={self.force},reset_tag={self.reset_tag}]")
             mrg_parent: Path = self._path.joinpath("result", "part")
 
             # > create "final" files that merge parts into the different orders that are complete
