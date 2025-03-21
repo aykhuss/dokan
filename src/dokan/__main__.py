@@ -11,6 +11,8 @@ import sys
 import time
 from pathlib import Path
 
+import random
+
 import luigi
 from rich.console import Console
 from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt, PromptBase
@@ -34,7 +36,7 @@ from .nnlojet import get_lumi
 from .order import Order
 from .runcard import Runcard
 from .scheduler import WorkerSchedulerFactory
-from .util import parse_time_interval
+from .util import parse_time_interval, patience
 
 
 class TimeIntervalPrompt(PromptBase[float]):
@@ -472,14 +474,24 @@ def main() -> None:
             sys.exit(0)
 
         # > register signal handlers
+        graceful_exit_triggered: bool = False
+
         def graceful_exit(sig, frame):
+            console = Console()
+            nonlocal graceful_exit_triggered
+            if graceful_exit_triggered:
+                console.print("\n[magenta]" + random.choice(patience) + "[/magenta]")
+                return
+            graceful_exit_triggered = True
+            console.print(f"\n[magenta]received signal: {signal.Signals(sig).name}[/magenta]")
+            nonlocal db_init
             with db_init.session as session:
                 db_init._logger(
                     session,
                     f"received signal: {signal.Signals(sig).name}; let me attempt to exit gracefully...",
                     level=LogLevel.SIG_TERM,
                 )
-            time.sleep(1.5)
+            time.sleep(1.0)
             sys.exit(0)
 
         signal.signal(signal.SIGINT, graceful_exit)

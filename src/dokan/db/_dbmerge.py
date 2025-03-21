@@ -74,7 +74,7 @@ class MergePart(DBMerge):
             .where(Part.active.is_(True))
             .where(Job.mode == ExecutionMode.PRODUCTION)
             .where(Job.status.in_(JobStatus.success_list()))
-            .where(Job.timestamp < Part.timestamp)
+            # @todo: why did I have this? -> ".where(Job.timestamp < Part.timestamp)"
         )
 
     def complete(self) -> bool:

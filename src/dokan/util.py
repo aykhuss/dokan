@@ -134,3 +134,29 @@ def parse_time_interval(interval: str) -> float:
             )
         }
     ).total_seconds()
+
+
+patience: list[str] = [
+    "He that can have patience can have what he will.",
+    "Patience is the companion of wisdom.",
+    "The two most powerful warriors are patience and time.",
+    "Acquire a firm will and the utmost patience.",
+    "One moment of patience may ward off great disaster. One moment of impatience may ruin a whole life.",
+    "Patience is bitter, but its fruit is sweet.",
+    "Patience is a key element of success.",
+    "To lose patience is to lose the battle.",
+    "Patience and fortitude conquer all things.",
+    "Two things define you: your patience when you have nothing and your attitude when you have everything.",
+    "Learning patience can be a difficult experience, but once conquered, you will find life is easier.",
+    "Patience attracts happiness; it brings near that which is far.",
+    "Patience is the best remedy for every trouble.",
+    "A man who masters patience masters everything else.",
+    "Trees that are slow to grow bear the best fruit.",
+    "Patience is not the ability to wait, but the ability to keep a good attitude while waiting.",
+    "Patience and perseverance have a magical effect before which difficulties disappear and obstacles vanish.",
+    "Patience is the art of hoping.",
+    "The secret of patience is to do something else in the meantime.",
+    "Our patience will achieve more than our force.",
+    "One minute of patience, ten years of peace.",
+    "We could never learn to be brave and patient, if there were only joy in the world.",
+]
