@@ -473,30 +473,30 @@ def main() -> None:
             console.print("[red]calculation has no active part?![/red]")
             sys.exit(0)
 
-        # > register signal handlers
-        graceful_exit_triggered: bool = False
-
-        def graceful_exit(sig, frame):
-            console = Console()
-            nonlocal graceful_exit_triggered
-            if graceful_exit_triggered:
-                console.print("\n[magenta]" + random.choice(patience) + "[/magenta]")
-                sys.exit(0)
-            graceful_exit_triggered = True
-            console.print(f"\n[magenta]received signal: {signal.Signals(sig).name}[/magenta]")
-            nonlocal db_init
-            with db_init.session as session:
-                db_init._logger(
-                    session,
-                    f"received signal: {signal.Signals(sig).name}; let me attempt to exit gracefully...",
-                    level=LogLevel.SIG_TERM,
-                )
-            time.sleep(1.0)
-            sys.exit(0)
-
-        signal.signal(signal.SIGINT, graceful_exit)
-        signal.signal(signal.SIGTERM, graceful_exit)
-        # @todo SIGUSR1 to trigger MergeAll?
+        #        # > register signal handlers
+        #        graceful_exit_triggered: bool = False
+        #
+        #        def graceful_exit(sig, frame):
+        #            console = Console()
+        #            nonlocal graceful_exit_triggered
+        #            if graceful_exit_triggered:
+        #                console.print("\n[magenta]" + random.choice(patience) + "[/magenta]")
+        #                sys.exit(0)
+        #            graceful_exit_triggered = True
+        #            console.print(f"\n[magenta]received signal: {signal.Signals(sig).name}[/magenta]")
+        #            nonlocal db_init
+        #            with db_init.session as session:
+        #                db_init._logger(
+        #                    session,
+        #                    f"received signal: {signal.Signals(sig).name}; let me attempt to exit gracefully...",
+        #                    level=LogLevel.SIG_TERM,
+        #                )
+        #            time.sleep(2.0)  # twice the monitor refresh interval
+        #            sys.exit(0)
+        #
+        #        signal.signal(signal.SIGINT, graceful_exit)
+        #        signal.signal(signal.SIGTERM, graceful_exit)
+        #        # @todo SIGUSR1 to trigger MergeAll?
 
         # @todo checks of the DB and ask for recovery mode?
         resurrect: list[tuple[float, str]] = []

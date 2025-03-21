@@ -487,7 +487,7 @@ class MergeFinal(DBMerge):
 
             # > shut down the monitor
             self._logger(session, "complete", level=LogLevel.SIG_COMP)
-            time.sleep(1.5)
+            time.sleep(2.0)  # twice the monitor refresh interval
 
             # > parse merged cross section result
             mrg_all: MergeAll = self.requires()[0]

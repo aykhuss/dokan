@@ -3,7 +3,10 @@
 sub-class of a luigi Task to impose mandatory attributes to a workflow task.
 """
 
+import signal
+import sys
 from pathlib import Path
+from typing import NoReturn
 
 import luigi
 from luigi.parameter import ParameterVisibility
@@ -34,6 +37,9 @@ class Task(luigi.Task):
         super().__init__(*args, **kwargs)
         self._path: Path = Path(self.config["run"]["path"]).joinpath(*self.local_path)
         self._path.mkdir(parents=True, exist_ok=True)
+        # > signal handlers at the level of the workflow tasks
+        signal.signal(signal.SIGINT, self.graceful_exit)
+        signal.signal(signal.SIGTERM, self.graceful_exit)
 
     # @todo: maybe add a _post_init_ routine that can be overwritten on a task basis?
 
@@ -53,3 +59,6 @@ class Task(luigi.Task):
             resultant path relative to the task
         """
         return self._path.joinpath(*path)
+
+    def graceful_exit(self, sig, frame) -> NoReturn | None:
+        sys.exit(0)
