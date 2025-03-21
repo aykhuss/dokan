@@ -83,6 +83,7 @@ class DBDispatch(DBTask):
 
         # > queue up a new production job in the database and return job id's
         def queue_production(part_id: int, opt: dict) -> list[int]:
+            nonlocal session
             if opt["njobs"] <= 0:
                 return []
             niter: int = self.config["production"]["niter"]
@@ -113,6 +114,7 @@ class DBDispatch(DBTask):
 
         # > build up subquery to get Parts with job counts
         def job_count_subquery(js_list: list[JobStatus]):
+            nonlocal session
             return (
                 session.query(Job.part_id, func.count(Job.id).label("job_count"))
                 .filter(Job.run_tag == self.run_tag)

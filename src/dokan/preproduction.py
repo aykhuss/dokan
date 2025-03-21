@@ -83,6 +83,7 @@ class PreProduction(DBTask):
 
         # > queue up a new warmup job in the database and return job id
         def queue_warmup(ncall: int, niter: int) -> int:
+            nonlocal session
             new_warmup = Job(
                 run_tag=self.run_tag,
                 part_id=self.part_id,
@@ -216,6 +217,7 @@ class PreProduction(DBTask):
     def _append_production(self, session: Session) -> int:
         # > queue up a new production job in the database and return job id
         def queue_production(ncall: int, niter: int) -> int:
+            nonlocal session
             new_production = Job(
                 run_tag=self.run_tag,
                 part_id=self.part_id,
