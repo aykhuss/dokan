@@ -179,7 +179,7 @@ class Monitor(DBTask):
                         live.console.print(
                             f"[dim][{dt_str}][/dim]({LogLevel(log.level)!r}): {log.message}"
                         )
-                        if log.level in [LogLevel.SIG_COMP, LogLevel.SIG_TERM]:
+                        if log.level in [LogLevel.SIG_COMP]:
                             return
                         # time.sleep(0.01)
 

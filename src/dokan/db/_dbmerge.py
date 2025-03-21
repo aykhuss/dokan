@@ -348,14 +348,22 @@ class MergeAll(DBMerge):
             self._logger(session, f"MergeAll::run[force={self.force},reset_tag={self.reset_tag}]")
             mrg_parent: Path = self._path.joinpath("result", "part")
 
+            # > collect all input files
             in_files = dict((obs, []) for obs in self.config["run"]["histograms"].keys())
+            # > reconstruct optimisation target
+            opt_target: str = self.config["run"]["opt_target"]
+            opt_target_ref: float = 0.0
+            opt_target_rel: float = 0.0
             for pt in session.scalars(self.select_part):
+                opt_target_ref += pt.result
+                opt_target_rel += pt.error**2
                 for obs in self.config["run"]["histograms"]:
                     in_file: Path = mrg_parent / pt.name / f"{obs}.dat"
                     if in_file.exists():
                         in_files[obs].append(str(in_file.relative_to(self._path)))
                     else:
                         raise FileNotFoundError(f"MergeAll::run:  missing {in_file}")
+            opt_target_rel = math.sqrt(opt_target_rel) / opt_target_ref  # relative uncertainty
 
             # > sum all parts
             for obs in self.config["run"]["histograms"]:
@@ -386,7 +394,9 @@ class MergeAll(DBMerge):
                             rel: float = abs(err / res) if res != 0.0 else float("inf")
                             self._logger(
                                 session,
-                                f"[blue]cross = ({res} +/- {err}) fb  [{rel * 1e2:.3}%][/blue]",
+                                # f"[blue]cross = ({res} +/- {err}) fb  \[{rel * 1e2:.3}%][/blue]\n"
+                                f"[blue]cross = {res} fb[/blue]\n"
+                                + f"[magenta][dim]\"{opt_target}\" error:[/dim] {opt_target_rel * 1e2:.3}% (requested: {self.config['run']['target_rel_acc'] * 1e2:.3}%)[/magenta]",
                                 level=LogLevel.SIG_UPDXS,
                             )
                             break
