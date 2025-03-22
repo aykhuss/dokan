@@ -95,7 +95,7 @@ class PreProduction(DBTask):
                 niter=niter,
             )
             session.add(new_warmup)
-            session.commit()
+            self._safe_commit(session)
             return new_warmup.id
 
         # > active warmups: return them in order
@@ -229,7 +229,7 @@ class PreProduction(DBTask):
                 niter=niter,
             )
             session.add(new_production)
-            session.commit()
+            self._safe_commit(session)
             return new_production.id
 
         # > complete production:

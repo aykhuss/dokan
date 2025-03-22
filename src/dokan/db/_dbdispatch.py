@@ -109,7 +109,7 @@ class DBDispatch(DBTask):
                 for _ in range(opt["njobs"])
             ]
             session.add_all(jobs)
-            session.commit()
+            self._safe_commit(session)
             return [job.id for job in jobs]
 
         # > build up subquery to get Parts with job counts
@@ -239,7 +239,7 @@ class DBDispatch(DBTask):
                 tot_T += opt["njobs"] * opt["T_job"]
 
             # > commit & update remaining resources for next iteration
-            session.commit()
+            self._safe_commit(session)
             njobs_rem -= tot_njobs
             T_rem -= tot_T
 
@@ -308,7 +308,7 @@ class DBDispatch(DBTask):
                 for iseed, job in enumerate(jobs, seed_start):
                     job.seed = iseed
                     job.status = JobStatus.DISPATCHED
-                session.commit()
+                self._safe_commit(session)
 
                 # > time to dispatch Runners
                 self._logger(

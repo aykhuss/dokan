@@ -154,7 +154,7 @@ class DBRunner(DBTask):
                 for db_job in db_jobs:
                     db_job.rel_path = str(self.job_path.relative_to(self._path))
                     db_job.status = JobStatus.RUNNING
-                session.commit()
+                self._safe_commit(session)
             # > END IF DISPATCHED
 
             # get this from exe_data, only one for the batch? param: in_path?
@@ -172,7 +172,7 @@ class DBRunner(DBTask):
             for db_job in db_jobs:  # loop exe data jobs keys
                 if db_job.status in JobStatus.terminated_list():
                     continue
-                if "result" in exe_data["jobs"][db_job.id]:
+                if db_job.id in exe_data["jobs"] and "result" in exe_data["jobs"][db_job.id]:
                     if math.isnan(
                         float(exe_data["jobs"][db_job.id]["result"])
                         * float(exe_data["jobs"][db_job.id]["error"])
@@ -186,7 +186,7 @@ class DBRunner(DBTask):
                         db_job.status = JobStatus.DONE
                 else:
                     db_job.status = JobStatus.FAILED
-            session.commit()
+            self._safe_commit(session)
 
             # > see if a re-merge is possible
             if self.mode == ExecutionMode.PRODUCTION:

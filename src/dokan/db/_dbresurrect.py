@@ -72,6 +72,6 @@ class DBResurrect(DBTask):
                         db_job.status = JobStatus.DONE
                 else:
                     db_job.status = JobStatus.FAILED
-            session.commit()
+            self._safe_commit(session)
 
         # @todo add automatic re-merge trigger like in `DBRunner`?

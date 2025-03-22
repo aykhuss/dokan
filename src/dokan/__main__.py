@@ -6,12 +6,9 @@ import multiprocessing
 import os
 import resource
 import shutil
-import signal
 import sys
 import time
 from pathlib import Path
-
-import random
 
 import luigi
 from rich.console import Console
@@ -36,7 +33,7 @@ from .nnlojet import get_lumi
 from .order import Order
 from .runcard import Runcard
 from .scheduler import WorkerSchedulerFactory
-from .util import parse_time_interval, patience
+from .util import parse_time_interval
 
 
 class TimeIntervalPrompt(PromptBase[float]):
@@ -464,7 +461,7 @@ def main() -> None:
                 if last_log.level in [LogLevel.SIG_COMP] or Confirm.ask("clear log?", default=True):
                     for log in session.scalars(select(Log)):
                         session.delete(log)
-                    session.commit()
+                    db_init._safe_commit(session)
             db_init._logger(session, "submit", level=LogLevel.SIG_SUB)
 
         console.print(f"active parts: {nactive_part}")
@@ -531,7 +528,7 @@ def main() -> None:
                             #     )
                         else:
                             raise RuntimeError(f"unexpected job status in recovery: {job.status}")
-                    session.commit()
+                    db_init._safe_commit(session)
             else:
                 if Confirm.ask("remove them from the database?", default=False):
                     with db_init.session as session:
@@ -540,7 +537,7 @@ def main() -> None:
                             if job.rel_path is not None and Path(job.rel_path).exists():
                                 shutil.rmtree(db_init._local(job.rel_path))
                             session.delete(job)
-                        session.commit()
+                        db_init._safe_commit(session)
 
         if nfailed_job > 0:
             select_failed_jobs = select(Job).where(Job.status.in_([JobStatus.FAILED]))
@@ -552,7 +549,7 @@ def main() -> None:
                         if job.rel_path is not None and Path(job.rel_path).exists():
                             shutil.rmtree(db_init._local(job.rel_path))
                         session.delete(job)
-                    session.commit()
+                    db_init._safe_commit(session)
 
         # @todo skip warmup?
 

@@ -54,7 +54,7 @@ class DBMerge(DBTask, metaclass=ABCMeta):
     #         timestamp: float = time.time()
     #         for pt in session.scalars(self.select_part):
     #             pt.timestamp = timestamp
-    #         session.commit()
+    #         self._safe_commit(session)
 
 
 class MergePart(DBMerge):
@@ -145,7 +145,7 @@ class MergePart(DBMerge):
             # > get the part and update timestamp to tag for 'MERGE'
             pt: Part = session.get_one(Part, self.part_id)
             pt.timestamp = time.time()
-            session.commit()
+            self._safe_commit(session)
 
             # > output directory
             mrg_path: Path = self._path.joinpath("result", "part", pt.name)
@@ -283,7 +283,7 @@ class MergePart(DBMerge):
                     f"MergePart::run[{self.part_id}]:  unknown opt_target {opt_target}"
                 )
 
-            session.commit()
+            self._safe_commit(session)
 
             # @todo keep track of a "settings.json" for merge settings used?
             # with open(out_file, "w") as out:
@@ -391,12 +391,12 @@ class MergeAll(DBMerge):
                             col: list[float] = [float(c) for c in line.split()]
                             res: float = col[0]
                             err: float = col[1]
-                            rel: float = abs(err / res) if res != 0.0 else float("inf")
+                            # rel: float = abs(err / res) if res != 0.0 else float("inf")
                             self._logger(
                                 session,
                                 # f"[blue]cross = ({res} +/- {err}) fb  \[{rel * 1e2:.3}%][/blue]\n"
                                 f"[blue]cross = {res} fb[/blue]\n"
-                                + f"[magenta][dim]\"{opt_target}\" error:[/dim] {opt_target_rel * 1e2:.3}% (requested: {self.config['run']['target_rel_acc'] * 1e2:.3}%)[/magenta]",
+                                + f'[magenta][dim]"{opt_target}" error:[/dim] {opt_target_rel * 1e2:.3}% (requested: {self.config["run"]["target_rel_acc"] * 1e2:.3}%)[/magenta]',
                                 level=LogLevel.SIG_UPDXS,
                             )
                             break

@@ -47,6 +47,16 @@ class DBTask(Task, metaclass=ABCMeta):
             }
         )
 
+    def _safe_commit(self, session: Session) -> None:
+        for _ in range(10):  # maximum number of tries
+            try:
+                session.commit()
+                return
+            except Exception as e:
+                self._logger(session, f"DBTask::_safe_commit: {e!r}", LogLevel.ERROR)
+                time.sleep(1.0)  # time delay between retries
+        raise RuntimeError("DBTask::_safe_commit: ran out of retries")
+
     def output(self):
         # > DBTask has no output files but uses the DB itself to track the status
         return []
@@ -59,7 +69,7 @@ class DBTask(Task, metaclass=ABCMeta):
         with self.session as session:
             for log in session.scalars(select(Log)):
                 session.delete(log)
-            session.commit()
+            self._safe_commit(session)
 
     def _print_part(self, session: Session) -> None:
         for pt in session.scalars(select(Part)):
@@ -73,7 +83,7 @@ class DBTask(Task, metaclass=ABCMeta):
         # > negative values are signals: always store in databese (workflow relies on this)
         if level < 0:
             session.add(Log(level=level, timestamp=time.time(), message=message))
-            session.commit()
+            self._safe_commit(session)
         # > pass through log level & all signales
         if level >= 0 and level < self.config["ui"]["log_level"]:
             return
@@ -89,7 +99,7 @@ class DBTask(Task, metaclass=ABCMeta):
             _console.print(f"(c)[dim][{dt_str}][/dim]({level!r}): {message}")
         elif level >= 0:
             session.add(Log(level=level, timestamp=time.time(), message=message))
-            session.commit()
+            self._safe_commit(session)
 
     def _debug(self, session: Session, message: str) -> None:
         self._logger(session, message, LogLevel.DEBUG)
@@ -332,5 +342,5 @@ class DBInit(DBTask):
                     )
                 for db_pt in session.scalars(stmt):
                     db_pt.active = Order(db_pt.order).is_in(Order(self.order))
-            session.commit()
+            self._safe_commit(session)
         # self.print_part()
