@@ -59,19 +59,6 @@ class Monitor(DBTask):
         self.cross_line: str = "[blue]cross = ... (waiting for first update) [/blue]"
         self.cross_time: float = time.time()
 
-        #     # > for the kill signal handler
-        #     self._shutdown: bool = False
-        #     signal.signal(signal.SIGUSR1, self.graceful_exit)
-
-        # def graceful_exit(self, sig, frame) -> NoReturn | None:
-        #     with self.session as session:
-        #         self._logger(
-        #             session,
-        #             f"received signal: {signal.Signals(sig).name}; shutting down the monitor...",
-        #             level=LogLevel.SIG_TERM,
-        #         )
-        #     self._shutdown = True
-
     def job_summary(self, pt: Part) -> str:
         display_mode: ExecutionMode = (
             ExecutionMode.WARMUP
@@ -178,13 +165,7 @@ class Monitor(DBTask):
                             f"[dim][{dt_str}][/dim]({LogLevel(log.level)!r}): {log.message}"
                         )
                         if log.level in [LogLevel.SIG_COMP, LogLevel.SIG_TERM]:
-                            # self._shutdown = True
                             return
                         # time.sleep(0.01)
-
-                    # if self._shutdown:
-                    #     live.console.print("Monitor::run:  shutting down...")
-                    #     live.update(self._generate_table(session), refresh=True)
-                    #     break
 
                     time.sleep(1.0)

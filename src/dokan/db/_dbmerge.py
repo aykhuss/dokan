@@ -396,7 +396,7 @@ class MergeAll(DBMerge):
                                 session,
                                 # f"[blue]cross = ({res} +/- {err}) fb  \[{rel * 1e2:.3}%][/blue]\n"
                                 f"[blue]cross = {res} fb[/blue]\n"
-                                + f'[magenta][dim]current "{opt_target}" error:[/dim]'
+                                + f'[magenta][dim]current "{opt_target}" error:[/dim]\n'
                                 + f"{opt_target_rel * 1e2:.3}% (requested: {self.config['run']['target_rel_acc'] * 1e2:.3}%)[/magenta]",
                                 level=LogLevel.SIG_UPDXS,
                             )
