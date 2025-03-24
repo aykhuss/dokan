@@ -77,6 +77,7 @@ class Runcard:
         * process_name
         * job_name
         * histograms
+        * PDF(s)
 
         Parameters
         ----------
@@ -91,6 +92,7 @@ class Runcard:
         runcard_data = {}
         runcard_data["histograms"] = {}
         runcard_data["histograms"]["cross"] = {"nx": 0}
+        runcard_data["PDFs"] = []
         with open(runcard, "r") as f:
             blk_flag: RuncardBlockFlag = RuncardBlockFlag(0)
             for ln in f:
@@ -117,6 +119,9 @@ class Runcard:
                 # > run_name
                 if run := re.match(r"^\s*RUN\s+([^\s!]+)\b", ln, re.IGNORECASE):
                     runcard_data["run_name"] = run.group(1)
+
+                if pdf := re.match(r"^\s*PDF[12]*\s+=\s+([^\s![]+)\b", ln, re.IGNORECASE):
+                    runcard_data["PDFs"].append(pdf.group(1))
 
                 # > parse histogram entries
                 if sgl := re.match(r"^\s*HISTOGRAMS\s*>\s*([^\s!]+)\b", ln, re.IGNORECASE):
@@ -158,6 +163,8 @@ class Runcard:
             raise RuntimeError(f"{runcard}: could not find RUN block")
         if "process_name" not in runcard_data:
             raise RuntimeError(f"{runcard}: could not find PROCESS block")
+        if not runcard_data["PDFs"]:
+            raise RuntimeError(f"{runcard}: could not find any PDF set")
         # > observable names with a dot can conflict with how we parse files later
         if any(obs.find(".") != -1 for obs in runcard_data["histograms"].keys()):
             raise RuntimeError(f"{runcard}: observable names with '.' are not supported")
