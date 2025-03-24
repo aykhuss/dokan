@@ -45,42 +45,36 @@ _proc_has_regions: list = [
     "HTO2L2NJ",
 ]
 
-def check_PDF(exe: GenericPath, proc: str):
-    """get channels for an NNLOJET process
 
-    get the channels with the "part" & "lumi" information collected in groups
-    that correspond to independent PDF luminosities of the process.
+def check_PDF(exe: GenericPath, PDF: str) -> bool:
+    """check if NNLOJET can find the PDF set
+
+    use NNLOJET compiled with LHAPDF to init a PDF set and use the error
+    return code to determine if the PDF set was available.
 
     Parameters
     ----------
     exe : GenericPath
         path to the NNLOJET executable
-    proc : str
-        NNLOJET process name
-    use_default : bool, optional
-        flag to force the default channel list without lumi breakdown
-        (the default is False, which parses NNLOJET lumi info)
+    PDF : str
+        LHAPDF PDF set name
 
     Returns
     -------
-    dict
-        channel/luminosity information following the structure:
-        label = "RRa_42" -> {
-          "part" : "RR", ["region" : "a"]
-          "part_num" : 42,
-          "string" : "1 2 3 ... ! channel: ...",
-          "order" : Order.NNLO_ONLY,
-        }
-
-    Raises
-    ------
-    RuntimeError
-        encountered parsing error of the -listobs output
+    bool
+        True is PDF set could be loaded successfully, False otherwise
     """
     try:
-        subprocess.run([exe, "--checkPDF", proc], capture_output=True, check=True)
-    except:
-        raise RuntimeError(f"check_PDF: LHAPDF set not installed? {proc}")
+        exe_out = subprocess.run(
+            [exe, "--checkpdf", PDF], capture_output=True, text=True, check=True
+        )
+    except subprocess.CalledProcessError:
+        return False
+    if exe_out.returncode != 0:
+        return False
+    else:
+        return True
+
 
 def get_lumi(exe: GenericPath, proc: str, use_default: bool = False) -> dict:
     """get channels for an NNLOJET process

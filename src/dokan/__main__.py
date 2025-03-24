@@ -196,7 +196,8 @@ def main() -> None:
             config["exe"]["path"], config["process"]["name"], use_default=args.no_lumi
         )
         for PDF in runcard.data["PDFs"]:
-            check_PDF(config["exe"]["path"],PDF)
+            if not check_PDF(config["exe"]["path"], PDF):
+                raise RuntimeError(f'PDF set: "{PDF}" not found')
 
         config.write()
         runcard.to_tempalte(Path(config["run"]["path"]) / config["run"]["template"])
