@@ -113,6 +113,8 @@ def get_lumi(exe: GenericPath, proc: str, use_default: bool = False) -> dict:
         raise RuntimeError(f"get_lumi: failed calling NNLOJET: {exe_out.stderr}")
     chan_list = dict()
     for line in exe_out.stdout.splitlines():
+        if re.search(r"unknown process", line):
+            raise RuntimeError("NNLOJET: " + line)
         if not re.search(r" ! channel: ", line):
             continue
         label = None
