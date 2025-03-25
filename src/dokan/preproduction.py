@@ -153,7 +153,9 @@ class PreProduction(DBTask):
         # ):
         #     raise RuntimeError(f"missing data in {LW!r}")
         LW_ntot: int = LW.ncall * LW.niter
-        if abs(LW.error / LW.result) <= self.config["run"]["target_rel_acc"]:
+        if LW.result == 0.0 and LW.error == 0.0:
+            wflag |= WarmupFlag.RELACC
+        elif abs(LW.error / LW.result) <= self.config["run"]["target_rel_acc"]:
             wflag |= WarmupFlag.RELACC
         if LW.chi2dof < self.config["warmup"]["max_chi2dof"]:
             wflag |= WarmupFlag.CHI2DOF
@@ -163,7 +165,7 @@ class PreProduction(DBTask):
         err_list: list[float] = [it["error"] for it in job_data["iterations"]]
         err_mean: float = sum(err_list) / len(err_list)
         err_stdv: float = math.sqrt(sum((err - err_mean) ** 2 for err in err_list) / len(err_list))
-        if err_stdv / err_mean < self.config["warmup"]["max_err_rel_var"]:
+        if err_mean == 0.0 or err_stdv / err_mean < self.config["warmup"]["max_err_rel_var"]:
             wflag |= WarmupFlag.CONST_ERR
         # @todo check iterations.txt <-> WarmupFlag.GRID
         if True:
@@ -188,7 +190,9 @@ class PreProduction(DBTask):
         # > next-to-last warmup (NLW)
         NLW: Job = past_warmups[1]
         NLW_ntot: int = NLW.ncall * NLW.niter
-        scaling: float = (LW.error / NLW.error) * math.sqrt(float(LW_ntot) / float(NLW_ntot))
+        scaling: float = 1.0
+        if NLW.error != 0.0:
+            scaling: float = (LW.error / NLW.error) * math.sqrt(float(LW_ntot) / float(NLW_ntot))
 
         if abs(scaling - 1.0) <= self.config["warmup"]["scaling_window"]:
             wflag |= WarmupFlag.SCALING
@@ -310,13 +314,14 @@ class PreProduction(DBTask):
             raise RuntimeError(f"pre-production: no warmup found for {self.part_id}")
         LW_ntot: int = LW.ncall * LW.niter
 
-        PP_ntot_run: int = LW_ntot * int(
+        PP_ntot: int = LW_ntot * int(
             penalty * self.config["run"]["job_max_runtime"] / LW.elapsed_time
         )
-        PP_ntot_acc: int = LW_ntot * int(
-            (LW.error / LW.result / self.config["run"]["target_rel_acc"]) ** 2
-        )
-        PP_ntot: int = min(PP_ntot_run, PP_ntot_acc)
+        if LW.result != 0.0 and LW.error != 0.0:
+            PP_ntot_acc: int = LW_ntot * int(
+                (LW.error / LW.result / self.config["run"]["target_rel_acc"]) ** 2
+            )
+            PP_ntot = min(PP_ntot, PP_ntot_acc)
         PP_ncall: int = PP_ntot // self.config["production"]["niter"]
         if PP_ncall < self.config["production"]["ncall_start"]:
             PP_ncall = self.config["production"]["ncall_start"]

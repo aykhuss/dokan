@@ -175,15 +175,15 @@ class DBTask(Task, metaclass=ABCMeta):
                     pt_min_error = min(pt_min_error, cache[pt.id]["error"])
             pt_avg_error += cache[pt.id]["result"]
         pt_avg_error = (
-            self.config["run"]["target_rel_acc"] * pt_avg_error / math.sqrt(len(cache) + 1)
+            self.config["run"]["target_rel_acc"] * pt_avg_error / math.sqrt(len(cache) + 1.0)
         )
         # > override errors so they are always non-zero; penalize pre-production only parts
         # _console.print(cache)
         for part_id, ic in cache.items():
-            if ic["error"] < pt_avg_error:
-                ic["error"] += pt_min_error
+            if ic["error"] < min(pt_avg_error, pt_min_error):
+                ic["error"] += 1e-2 * min(pt_avg_error, pt_min_error)
             if ic["count"] <= 1:
-                ic["error"] += len(cache) * max(pt_avg_error, pt_min_error)
+                ic["error"] += max(pt_avg_error, pt_min_error)
         # _console.print(cache)
 
         # > actually compute estimate for time per event
