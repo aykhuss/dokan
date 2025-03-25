@@ -2,11 +2,11 @@
 
 # from luigi.execution_summary import LuigiRunResult
 import argparse
-import atexit
 import multiprocessing
 import os
 import resource
 import shutil
+import signal
 import sys
 import time
 from pathlib import Path
@@ -36,9 +36,13 @@ from .runcard import Runcard
 from .scheduler import WorkerSchedulerFactory
 from .util import parse_time_interval
 
-# > this is a patch to ensure cursor is restored after
-# > uncontrolled exit of an active rich.live monitor
-atexit.register(lambda: print("\x1b[?25h"))
+
+def reset_and_exit(sig, frame) -> None:
+    print("\x1b[?25h", end="", flush=True)
+    sys.exit(f"\ncaught signal: \"{signal.Signals(sig).name}\", exiting")
+
+
+signal.signal(signal.SIGINT, reset_and_exit)
 
 
 class TimeIntervalPrompt(PromptBase[float]):
