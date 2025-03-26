@@ -87,6 +87,14 @@ nnlojet-run submit example_run_Z_8TeV --job-max-runtime 1h30m --jobs-max-total 1
 ```
 
 
+## Shell completion
+Auto-completion for the `nnlojet-run` command is available for bash. It can be enabled, by running
+```shell
+source path/to/dokan/share/completion.sh
+```
+To enable completion on startup, put this line in `~/.bashrc`.
+
+
 ## License
 
 `dokan` is distributed under the terms of the [GPL-3.0](https://spdx.org/licenses/GPL-3.0-or-later.html) license.
