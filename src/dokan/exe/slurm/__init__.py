@@ -113,6 +113,8 @@ class SlurmExec(Executor):
                         return  # job terminated: no longer in queue
                     break
                 else:
+                    if re.search("Invalid job id specified", squeue.stderr):
+                        return  # job terminated and record no longer in scheduler
                     logger.info(f"SlurmExec failed to query job {job_id}:")
                     logger.info(f"{squeue.stdout}\n{squeue.stderr}")
                     time.sleep(retry_delay)
