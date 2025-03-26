@@ -4,8 +4,10 @@ helperfunctions to extract information from NNLOJET
 """
 
 import math
+import os
 import re
 import subprocess
+from pathlib import Path
 
 from ._types import GenericPath
 from .order import Order
@@ -45,6 +47,47 @@ _proc_has_regions: list = [
     "HTO2E2MUJ",
     "HTO2L2NJ",
 ]
+
+
+def dry_run(exe: GenericPath, tmp: GenericPath, runcard: GenericPath) -> dict:
+    # print(f"exe = {exe!r}, tmp = {tmp!r}, runcard = {runcard!r}")
+
+    # > extra output & error files
+    file_out: Path = Path(tmp) / "job.out"
+    file_err: Path = Path(tmp) / "job.err"
+
+    job_env = os.environ.copy()
+    job_env["OMP_NUM_THREADS"] = "1"
+    job_env["OMP_STACKSIZE"] = "1024M"
+
+    with open(file_out, "w") as of, open(file_err, "w") as ef:
+        _ = subprocess.run(
+            [
+                exe,
+                "-run",
+                str(Path(runcard).relative_to(tmp)),
+                "-iseed",
+                "42",
+            ],
+            env=job_env,
+            cwd=tmp,
+            stdout=of,
+            stderr=ef,
+            text=True,
+        )
+
+    # > returncode = 0 does not mean success
+    success: bool = False
+    with open(file_out, "r") as f:
+        for ln in f:
+            if re.search(r"Elapsed time", ln, re.IGNORECASE):
+                success = True
+
+    return {
+        "success": success,
+        "file_out": str(file_out.absolute()),
+        "file_err": str(file_err.absolute()),
+    }
 
 
 def check_PDF(exe: GenericPath, PDF: str) -> bool:

@@ -25,7 +25,7 @@ class RuncardTemplate:
     def fill_template(runcard: GenericPath, template: GenericPath, **kwargs):
         """create an NNLOJET runcard from a template.
 
-        parse the runcard and inject variables that can be ppopulated late.
+        parse the runcard and inject variables that can be populated later.
         * run
         * channels
         * channels_region

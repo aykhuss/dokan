@@ -120,8 +120,8 @@ class Config(UserDict):
         path = kwargs.pop("path", None)
         default_ok: bool = kwargs.pop("default_ok", True)
         super().__init__(*args, **kwargs)
-        self.path = None
-        self.file_cfg = None
+        self.path: Path = None
+        self.file_cfg: Path = None
         if path:
             if not default_ok:
                 self.set_path(path, load=True)
@@ -158,12 +158,12 @@ class Config(UserDict):
             raise ValueError(f"ExeData scheme forbids: {key} : {item}")
 
     def set_path(self, path: GenericPath, load: bool = False) -> None:
-        self.path: Path = Path(path)
+        self.path = Path(path)
         if not self.path.exists():
             self.path.mkdir(parents=True)
         if not self.path.is_dir():
             raise ValueError(f"{path} is not a folder")
-        self.file_cfg: Path = self.path / self._file_cfg
+        self.file_cfg = self.path / self._file_cfg
         if load:
             self.load(default_ok=False)
         self["run"]["path"] = str(self.path.absolute())
@@ -191,7 +191,7 @@ class Config(UserDict):
             fill_missing(self.data, defaults)
 
     def write(self) -> None:
-        if not self.path:
-            raise RuntimeError("Config: no path set!")
+        if not self.path or not self.file_cfg:
+            raise RuntimeError("Config: no path set?!")
         with open(self.file_cfg, "w") as cfg:
             json.dump(self.data, cfg, indent=2)

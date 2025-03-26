@@ -116,8 +116,9 @@ class MergePart(DBMerge):
             # if c_merged == 0 and c_done > 0:
             #     return False
 
-            if float(c_done + c_merged) / float(c_merged + 1) < (
-                self.config["production"]["fac_merge_trigger"]
+            if (
+                float(c_done + c_merged) / float(c_merged + 1)
+                < self.config["production"]["fac_merge_trigger"]
             ):
                 return True
 
@@ -257,15 +258,15 @@ class MergePart(DBMerge):
                 # if err > pt.error:
                 #     pt.error = err
 
-            opt_target: str = (
-                self.config["run"]["opt_target"]
-                if "opt_target" in self.config["run"]
-                else "cross_hist"  # default
-            )
+            opt_target: str = self.config["run"]["opt_target"]
 
             # > this is an upper bound on the XS error derived from any histogram
             # > ("+ pt.error" accounts for the worst case with histogram selectors)
-            max_err: float = pt.error + max(e for _, e in cross_list)
+            # max_err: float = pt.error + max(e for _, e in cross_list)
+            # > (approx. error beyond histogram selector linearly)
+            max_err: float = max(
+                e + (pt.error / pt.result) * abs(pt.result - r) for r, e in cross_list
+            )
             # > alternative: rescale relative errors to the same cross section
             # max_err: float = pt.result * max(abs(e / r) for r, e in cross_list)
             if opt_target == "cross":
@@ -519,11 +520,7 @@ class MergeFinal(DBMerge):
             # > use small 1s value; a non-zero time to avoid division by zero
             opt_dist = self._distribute_time(session, 1.0)
             # self._logger(session,f"{opt_dist}")
-            opt_target: str = (
-                self.config["run"]["opt_target"]
-                if "opt_target" in self.config["run"]
-                else "cross_hist"  # default
-            )
+            opt_target: str = self.config["run"]["opt_target"]
             self._logger(
                 session,
                 f'option "[bold]{opt_target}[/bold]" chosen to target optimization of rel. acc.',

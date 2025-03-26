@@ -30,16 +30,16 @@ from .db._sqla import Job, Log, Part
 from .entry import Entry
 from .exe import ExecutionPolicy, Executor
 from .monitor import Monitor
-from .nnlojet import get_lumi, check_PDF
+from .nnlojet import check_PDF, dry_run, get_lumi
 from .order import Order
-from .runcard import Runcard
+from .runcard import Runcard, RuncardTemplate
 from .scheduler import WorkerSchedulerFactory
 from .util import parse_time_interval
 
 
 def reset_and_exit(sig, frame) -> None:
     print("\x1b[?25h", end="", flush=True)
-    sys.exit(f"\ncaught signal: \"{signal.Signals(sig).name}\", exiting")
+    sys.exit(f'\ncaught signal: "{signal.Signals(sig).name}", exiting')
 
 
 signal.signal(signal.SIGINT, reset_and_exit)
@@ -169,6 +169,44 @@ def main() -> None:
             config.set_path(os.path.relpath(runcard.data["run_name"]))
         console.print(f"run folder: [italic]{(config.path).absolute()}[/italic]")
 
+        config["exe"]["path"] = nnlojet_exe
+        config["run"]["dokan_version"] = __version__
+        config["run"]["name"] = runcard.data["run_name"]
+        config["run"]["histograms"] = runcard.data["histograms"]
+        if "histograms_single_file" in runcard.data:
+            config["run"]["histograms_single_file"] = runcard.data["histograms_single_file"]
+        config["run"]["template"] = "template.run"
+        config["process"]["name"] = runcard.data["process_name"]
+        # @ todo inject epem channels here
+        config["process"]["channels"] = get_lumi(
+            config["exe"]["path"], config["process"]["name"], use_default=args.no_lumi
+        )
+        for PDF in runcard.data["PDFs"]:
+            if not check_PDF(config["exe"]["path"], PDF):
+                raise RuntimeError(f'PDF set: "{PDF}" not found')
+        config.write()
+        runcard.to_tempalte(config.path / config["run"]["template"])
+
+        # > do a dry run to check that the runcard is valid
+        tmp_path: Path = config.path / "tmp"
+        if tmp_path.exists():
+            shutil.rmtree(tmp_path)
+        tmp_path.mkdir(parents=True)
+        tmp_run: Path = tmp_path / "job.run"
+        RuncardTemplate(config.path / config["run"]["template"]).fill(
+            tmp_run, sweep="warmup = 1[1]", run="", channels="LO", channels_region="", toplevel=""
+        )
+        dry_exe: dict = dry_run(config["exe"]["path"], tmp_path, tmp_run)
+        if not dry_exe["success"]:
+            console.print(f"error in dry run at {tmp_path}")
+            if Confirm.ask("see output?"):
+                with open(dry_exe["file_out"], "r") as of:
+                    syntx = Syntax(of.read(), "text", word_wrap=True)
+                    console.print(syntx)
+            sys.exit("invalid input runcard?!")
+        else:
+            shutil.rmtree(tmp_path)
+
         try:
             bibout, bibtex = make_bib(runcard.data["process_name"], config.path)
             console.print(f'process: "[bold]{runcard.data["process_name"]}[/bold]"')
@@ -181,30 +219,12 @@ def main() -> None:
                 syntx = Syntax(bib.read(), "tex", word_wrap=True)
                 console.print(syntx)
             console.print(
-                "When using results obtained with this software, you are required to cite the relevant references."
+                "When using results obtained with this software, please cite the relevant references."
             )
-            if not Confirm.ask("Please confirm that you agree to these terms"):
+            if not Confirm.ask("Confirm"):
                 sys.exit("failed to agree with the terms of use")
         except Exception as e:
             console.print(f"error encountered in writing bibliography files:\n{e}")
-
-        config["exe"]["path"] = nnlojet_exe
-        config["run"]["dokan_version"] = __version__
-        config["run"]["name"] = runcard.data["run_name"]
-        config["run"]["histograms"] = runcard.data["histograms"]
-        if "histograms_single_file" in runcard.data:
-            config["run"]["histograms_single_file"] = runcard.data["histograms_single_file"]
-        config["run"]["template"] = "template.run"
-        config["process"]["name"] = runcard.data["process_name"]
-        config["process"]["channels"] = get_lumi(
-            config["exe"]["path"], config["process"]["name"], use_default=args.no_lumi
-        )
-        for PDF in runcard.data["PDFs"]:
-            if not check_PDF(config["exe"]["path"], PDF):
-                raise RuntimeError(f'PDF set: "{PDF}" not found')
-
-        config.write()
-        runcard.to_tempalte(Path(config["run"]["path"]) / config["run"]["template"])
 
     # >-----
     if args.action == "init" or args.action == "config":
@@ -405,10 +425,7 @@ def main() -> None:
                 )
                 template = Path(templates[it])
             config["exe"]["policy_settings"][f"{cluster}_template"] = template.name
-            dst = (
-                Path(config["run"]["path"])
-                / config["exe"]["policy_settings"][f"{cluster}_template"]
-            )
+            dst = config.path / config["exe"]["policy_settings"][f"{cluster}_template"]
             shutil.copyfile(template, dst)
             console.print(
                 f"{cluster} template: [italic]{template.name}[/italic] copied to run folder:"
