@@ -194,7 +194,12 @@ def main() -> None:
         tmp_path.mkdir(parents=True)
         tmp_run: Path = tmp_path / "job.run"
         RuncardTemplate(config.path / config["run"]["template"]).fill(
-            tmp_run, sweep="warmup = 1[1]", run="", channels="LO", channels_region="", toplevel=""
+            tmp_run,
+            sweep="warmup = 1[1]  production = 1[1]",
+            run="",
+            channels="LO",
+            channels_region="",
+            toplevel="",
         )
         dry_exe: dict = dry_run(config["exe"]["path"], tmp_path, tmp_run)
         if not dry_exe["success"]:
@@ -204,8 +209,8 @@ def main() -> None:
                     syntx = Syntax(of.read(), "text", word_wrap=True)
                     console.print(syntx)
             sys.exit("invalid input runcard?!")
-        else:
-            shutil.rmtree(tmp_path)
+        # else:
+        #     shutil.rmtree(tmp_path)
 
         try:
             bibout, bibtex = make_bib(runcard.data["process_name"], config.path)
@@ -242,6 +247,12 @@ def main() -> None:
                     console.print("please enter a non-negative value")
                 config["run"]["seed_offset"] = new_seed_offset
                 console.print(f"[dim]seed_offset = {config['run']['seed_offset']!r}[/dim]")
+
+                new_ui_monitor: bool = Confirm.ask(
+                    "activate the live monitor?", default=config["ui"]["monitor"]
+                )
+                config["ui"]["monitor"] = new_ui_monitor
+                console.print(f"[dim]ui_monitor = {config['ui']['monitor']!r}[/dim]")
 
                 # console.print(
                 #     "for further advanced settings edit the config.json manually & consult the documentation"
