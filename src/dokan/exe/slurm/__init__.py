@@ -43,7 +43,7 @@ class SlurmExec(Executor):
             self._track_job()
             return
 
-        # > populate the submission tempalte file
+        # > populate the submission template file
         slurm_settings: dict = {
             "exe": self.exe_data["exe"],
             "job_path": str(self.exe_data.path.absolute()),

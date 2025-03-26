@@ -3,8 +3,18 @@
 refactor common functions and patterns here
 """
 
+import hashlib
 import re
 from datetime import timedelta
+from pathlib import Path
+
+HASH_PATH = "md5"
+
+
+def template_to_hash(template: Path) -> str:
+    """Takes the path to a template file and returns a md5 hash of its content as a string."""
+    template_bytes = Path(template).read_bytes()
+    return hashlib.md5(template_bytes).hexdigest()
 
 
 def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:

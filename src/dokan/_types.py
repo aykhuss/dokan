@@ -1,4 +1,4 @@
-"""Type delcarations for dokan
+"""Type declarations for dokan
 
 Attributes
 ----------

@@ -9,6 +9,7 @@ from enum import IntFlag, auto
 from pathlib import Path
 
 from ._types import GenericPath
+from .util import template_to_hash, HASH_PATH
 
 
 class RuncardTemplate:
@@ -65,8 +66,15 @@ class Runcard:
             raise ValueError(f"{runcard} does not exist?!")
         self.data: dict = Runcard.parse_runcard(self.runcard)
 
-    def to_tempalte(self, template: GenericPath) -> RuncardTemplate:
+    def to_template(self, template: GenericPath) -> RuncardTemplate:
+        """Writes down the runcard converted into a template file
+        and a md5 hash of its content."""
         Runcard.runcard_to_template(self.runcard, template)
+
+        hash_md5 = template_to_hash(template)
+        hash_file = Path(template).parent / HASH_PATH
+        hash_file.write_text(hash_md5)
+
         return RuncardTemplate(template)
 
     @staticmethod
