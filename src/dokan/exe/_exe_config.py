@@ -25,10 +25,14 @@ class ExecutionPolicy(IntEnum):
         return str(self)
 
     @staticmethod
+    def parse(s: str):
+        return ExecutionPolicy[s.upper()]
+
+    @staticmethod
     def argparse(s: str):
         """method for `argparse`"""
         try:
-            return ExecutionPolicy[s.upper()]
+            return ExecutionPolicy.parse(s)
         except KeyError:
             return s
 

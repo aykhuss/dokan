@@ -13,7 +13,7 @@ from pathlib import Path
 
 import luigi
 from rich.console import Console
-from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt, PromptBase
+from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt, PromptBase, InvalidResponse
 from rich.syntax import Syntax
 from sqlalchemy import select
 
@@ -58,7 +58,11 @@ class OrderPrompt(PromptBase[Order]):
     validate_error_message = "[prompt.invalid]Please enter a valid order"
 
     def process_response(self, value: str) -> Order:
-        return self.response_type.argparse(value.strip())
+        try:
+            parsed: Order = Order.parse(value.strip())
+        except KeyError:
+            raise InvalidResponse(self.validate_error_message)
+        return parsed
 
 
 class ExecutionPolicyPrompt(PromptBase[ExecutionPolicy]):
@@ -66,7 +70,11 @@ class ExecutionPolicyPrompt(PromptBase[ExecutionPolicy]):
     validate_error_message = "[prompt.invalid]Please enter a valid policy"
 
     def process_response(self, value: str) -> ExecutionPolicy:
-        return self.response_type.argparse(value.strip())
+        try:
+            parsed: ExecutionPolicy = ExecutionPolicy.parse(value.strip())
+        except KeyError:
+            raise InvalidResponse(self.validate_error_message)
+        return parsed
 
 
 def main() -> None:

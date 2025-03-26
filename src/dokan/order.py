@@ -25,10 +25,14 @@ class Order(IntEnum):
         return str(self)
 
     @staticmethod
+    def parse(s: str):
+        return Order[s.upper()]
+
+    @staticmethod
     def argparse(s: str):
         """method for `argparse`"""
         try:
-            return Order[s.upper()]
+            return Order.parse(s)
         except KeyError:
             return s
 
