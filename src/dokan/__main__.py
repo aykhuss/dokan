@@ -193,7 +193,7 @@ def main() -> None:
             if not check_PDF(config["exe"]["path"], PDF):
                 raise RuntimeError(f'PDF set: "{PDF}" not found')
         config.write()
-        runcard.to_tempalte(config.path / config["run"]["template"])
+        runcard.to_template(config.path / config["run"]["template"])
 
         # > do a dry run to check that the runcard is valid
         tmp_path: Path = config.path / "tmp"
