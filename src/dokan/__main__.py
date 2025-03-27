@@ -276,6 +276,7 @@ def main() -> None:
                 # )
 
                 # > config with flags skip the default config options
+                config.write()
                 return
 
             # > merge settings
@@ -327,6 +328,7 @@ def main() -> None:
                 )
 
                 # > config with flags skip the default config options
+                config.write()
                 return
 
         console.print(
@@ -636,7 +638,7 @@ def main() -> None:
         if not luigi_result.scheduling_succeeded:
             console.print(luigi_result.summary_text)
 
-        console.print("\n" + luigi_result.one_line_summary)
+        # console.print("\n" + luigi_result.one_line_summary)
         # console.print(luigi_result.status)
         # console.print(luigi_result.summary_text)
 
