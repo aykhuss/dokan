@@ -13,7 +13,7 @@ from pathlib import Path
 
 import luigi
 from rich.console import Console
-from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt, PromptBase, InvalidResponse
+from rich.prompt import Confirm, FloatPrompt, IntPrompt, InvalidResponse, Prompt, PromptBase
 from rich.syntax import Syntax
 from sqlalchemy import select
 
@@ -200,8 +200,8 @@ def main() -> None:
         for PDF in runcard.data["PDFs"]:
             if not check_PDF(config["exe"]["path"], PDF):
                 raise RuntimeError(f'PDF set: "{PDF}" not found')
-        template = runcard.to_template(config.path / config["run"]["template"])
-        config["run"]["md5"] = template.to_md5_hash()
+        run_template: RuncardTemplate = runcard.to_template(config.path / config["run"]["template"])
+        config["run"]["md5"] = run_template.to_md5_hash()
         config.write()
 
         # > do a dry run to check that the runcard is valid
@@ -210,7 +210,7 @@ def main() -> None:
             shutil.rmtree(tmp_path)
         tmp_path.mkdir(parents=True)
         tmp_run: Path = tmp_path / "job.run"
-        RuncardTemplate(config.path / config["run"]["template"]).fill(
+        run_template.fill(
             tmp_run,
             sweep="warmup = 1[1]  production = 1[1]",
             run="",
@@ -438,28 +438,28 @@ def main() -> None:
             config["exe"]["policy_settings"][f"{cluster}_retry_delay"] = 30.0
 
         # > executor templates
-        if len(templates := Executor.get_cls(policy=config["exe"]["policy"]).templates()) > 0:
+        if len(exe_templates := Executor.get_cls(policy=config["exe"]["policy"]).templates()) > 0:
             cluster: str = str(config["exe"]["policy"]).lower()
             # console.print(f"execution policy \"[bold]{cluster}[/bold]\" requires templates!")
-            template: Path = Path(templates[0])
-            if len(templates) > 1:
+            exe_template: Path = Path(exe_templates[0])
+            if len(exe_templates) > 1:
                 console.print(f"please select one of the following built-in {cluster} templates:")
-                for i, t in enumerate(templates):
+                for i, t in enumerate(exe_templates):
                     console.print(f" [italic]{i}:[/italic] {Path(t).name}")
                 it: int = IntPrompt.ask(
                     "template index",
-                    choices=[str(i) for i in range(len(templates))],
+                    choices=[str(i) for i in range(len(exe_templates))],
                     default=0,
                 )
-                template = Path(templates[it])
-            config["exe"]["policy_settings"][f"{cluster}_template"] = template.name
+                exe_template = Path(exe_templates[it])
+            config["exe"]["policy_settings"][f"{cluster}_template"] = exe_template.name
             dst = config.path / config["exe"]["policy_settings"][f"{cluster}_template"]
-            shutil.copyfile(template, dst)
+            shutil.copyfile(exe_template, dst)
             console.print(
-                f"{cluster} template: [italic]{template.name}[/italic] copied to run folder:"
+                f"{cluster} template: [italic]{exe_template.name}[/italic] copied to run folder:"
             )
             with open(dst, "r") as run_template:
-                syntx = Syntax(run_template.read(), "shell", word_wrap=True)
+                syntx = Syntax(run_exe_template.read(), "shell", word_wrap=True)
                 console.print(syntx)
             console.print("please edit this file to your needs")
 

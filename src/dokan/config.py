@@ -51,6 +51,7 @@ _schema: dict = {
         "name": str,  # job name
         "path": str,  # absolute path to job directory
         "template": str,  # template file name (not path)
+        "md5": str,  # hash of the template file
         "histograms": {str: {"nx": int, "cumulant": int, "grid": str}},  # list of all histograms
         "histograms_single_file": str,  # name in case we concatenate all histograms to a single file
         "order": Order,  # what order to compute (LO, NLO, NNLO)
@@ -64,7 +65,6 @@ _schema: dict = {
         "jobs_batch_unit_size": int,  # the minimum batch size of a submission
         "seed_offset": int,  # seed number offset
         "timestamps": float,  # @todo list of timestamps when `run` was called
-        "md5": str,  # hash of the template file
     },
     "ui": {
         "monitor": bool,
@@ -157,7 +157,7 @@ class Config(UserDict):
     def __setitem__(self, key, item) -> None:
         super().__setitem__(key, item)
         if not self.is_valid():
-            raise ValueError(f"ExeData scheme forbids: {key} : {item}")
+            raise ValueError(f"Config: scheme forbids: {key} : {item}")
 
     def set_path(self, path: GenericPath, load: bool = False) -> None:
         self.path = Path(path)
@@ -174,7 +174,7 @@ class Config(UserDict):
         with open(_default_config, "rt") as tmp:
             self.data = json.load(tmp)
         if not self.is_valid(convert_to_type=True):
-            raise RuntimeError("ExeData load_defaults encountered conflict with schema")
+            raise RuntimeError("Config: load_defaults encountered conflict with schema")
 
     def load(self, default_ok: bool = True) -> None:
         if self.file_cfg and self.file_cfg.exists():
@@ -185,7 +185,7 @@ class Config(UserDict):
                 raise FileNotFoundError(f"Config file not found: {self.file_cfg}")
             self.load_defaults()
         if not self.is_valid(convert_to_type=True):
-            raise RuntimeError("ExeData load encountered conflict with schema")
+            raise RuntimeError("Config: load encountered conflict with schema")
 
         # > Check whether the template file matches the md5 entry
         if self.path is not None and self.data.get("run", {}).get("template") is not None:

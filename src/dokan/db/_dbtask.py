@@ -205,7 +205,7 @@ class DBTask(Task, metaclass=ABCMeta):
                     i_tau_err = ic["sum2"] / ic["norm"] - i_tau**2
                     if i_tau_err <= 0.0:
                         # i_tau_err = 0.0
-                        i_tau_err = abs(i_tau_err)  # keep as an estimate, even when it's numerical noise
+                        i_tau_err = abs(i_tau_err)  # keep as an estimate
                     else:
                         i_tau_err = math.sqrt(i_tau_err)
                 # > convert to time
