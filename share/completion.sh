@@ -44,8 +44,9 @@ _nnlojet_run() {
 
   # $1=COMP_WORDS[1]
   _compgen_files() {
-    # Show only files with extension .run
-    compgen -f -- $1 | while read f ; do [ -d "$f" -o "$f" = *.run ] && echo $f ; done  # files
+    # Show only directories and files with extension .run
+    compgen -d -- $1
+    compgen -f -X '!*.run' -- $1
   }
 
   # $1=COMP_WORDS[1]
