@@ -204,7 +204,8 @@ class DBTask(Task, metaclass=ABCMeta):
                 if ic["count"] > 1:
                     i_tau_err = ic["sum2"] / ic["norm"] - i_tau**2
                     if i_tau_err <= 0.0:
-                        i_tau_err = 0.0
+                        # i_tau_err = 0.0
+                        i_tau_err = abs(i_tau_err)  # keep as an estimate, even when it's numerical noise
                     else:
                         i_tau_err = math.sqrt(i_tau_err)
                 # > convert to time
@@ -259,7 +260,7 @@ class DBTask(Task, metaclass=ABCMeta):
         for part_id, ires in result["part"].items():
             # > 5 sigma buffer but never larger than 50% runtime
             tau_buf: float = min(5 * ires["tau_err"], 0.5 * ires["tau"])
-            if tau_buf == 0.0:  # in case we have no clue: target 50%
+            if tau_buf <= 0.0:  # in case we have no clue: target 50%
                 tau_buf = 0.5 * ires["tau"]
             # > target runtime for one job corrected for buffer
             T_max_job: float = self.config["run"]["job_max_runtime"] * (1.0 - tau_buf / ires["tau"])
