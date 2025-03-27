@@ -460,7 +460,7 @@ def main() -> None:
             console.print(
                 f"{cluster} template: [italic]{exe_template.name}[/italic] copied to run folder:"
             )
-            with open(dst, "r") as run_template:
+            with open(dst, "r") as run_exe_template:
                 syntx = Syntax(run_exe_template.read(), "shell", word_wrap=True)
                 console.print(syntx)
             console.print("please edit this file to your needs")
