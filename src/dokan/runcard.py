@@ -3,13 +3,13 @@
 collection of helper functions to parse and manipulate NNLOJET runcards
 """
 
+import hashlib
 import re
 import string
 from enum import IntFlag, auto
 from pathlib import Path
 
 from ._types import GenericPath
-from .util import template_to_hash, HASH_PATH
 
 
 class RuncardTemplate:
@@ -21,6 +21,18 @@ class RuncardTemplate:
 
     def fill(self, target: GenericPath, **kwargs) -> None:
         RuncardTemplate.fill_template(target, self.template, **kwargs)
+
+    def to_md5_hash(self) -> str:
+        """create a md5 hash of the template file
+
+        Returns
+        -------
+        str
+            md5 hash of the template file
+
+        """
+        template_bytes = self.template.read_bytes()
+        return hashlib.md5(template_bytes).hexdigest()
 
     @staticmethod
     def fill_template(runcard: GenericPath, template: GenericPath, **kwargs):
@@ -70,11 +82,6 @@ class Runcard:
         """Writes down the runcard converted into a template file
         and a md5 hash of its content."""
         Runcard.runcard_to_template(self.runcard, template)
-
-        hash_md5 = template_to_hash(template)
-        hash_file = Path(template).parent / HASH_PATH
-        hash_file.write_text(hash_md5)
-
         return RuncardTemplate(template)
 
     @staticmethod
@@ -194,7 +201,7 @@ class Runcard:
         runcard : GenericPath
             A NNLOJET runcard file
         template : GenericPath
-            The template file to write ou
+            The template file to write out
 
         Raises
         ------

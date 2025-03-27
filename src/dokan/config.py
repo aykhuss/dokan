@@ -19,7 +19,8 @@ from ._types import GenericPath
 from .db._loglevel import LogLevel
 from .exe import ExecutionPolicy
 from .order import Order
-from .util import fill_missing, validate_schema, template_to_hash, HASH_PATH
+from .runcard import RuncardTemplate
+from .util import fill_missing, validate_schema
 
 _default_config: Path = Path(__file__).parent.resolve() / "config.json"
 
@@ -63,6 +64,7 @@ _schema: dict = {
         "jobs_batch_unit_size": int,  # the minimum batch size of a submission
         "seed_offset": int,  # seed number offset
         "timestamps": float,  # @todo list of timestamps when `run` was called
+        "md5": str,  # hash of the template file
     },
     "ui": {
         "monitor": bool,
@@ -185,12 +187,13 @@ class Config(UserDict):
         if not self.is_valid(convert_to_type=True):
             raise RuntimeError("ExeData load encountered conflict with schema")
 
-        # > check whether the template has been modified if we have already path and template
+        # > Check whether the template file matches the md5 entry
         if self.path is not None and self.data.get("run", {}).get("template") is not None:
-            template_hash = template_to_hash(self.path / self.data["run"]["template"])
-            original_hash = (self.path / HASH_PATH).read_text()
-            if template_hash != original_hash:
-                raise RuntimeError("Template has been manually modified, this is now allowed.")
+            template_hash = RuncardTemplate(self.path / self.data["run"]["template"]).to_md5_hash()
+            # > skip the check if we don't have a md5 yet
+            if (original_hash := self.data["run"].get("md5")) is not None:
+                if template_hash != original_hash:
+                    raise RuntimeError("Template has been manually modified, this is not allowed.")
 
     def fill_defaults(self):
         with open(_default_config, "rt") as tmp:

@@ -192,8 +192,9 @@ def main() -> None:
         for PDF in runcard.data["PDFs"]:
             if not check_PDF(config["exe"]["path"], PDF):
                 raise RuntimeError(f'PDF set: "{PDF}" not found')
+        template = runcard.to_template(config.path / config["run"]["template"])
+        config["run"]["md5"] = template.to_md5_hash()
         config.write()
-        runcard.to_template(config.path / config["run"]["template"])
 
         # > do a dry run to check that the runcard is valid
         tmp_path: Path = config.path / "tmp"
