@@ -264,9 +264,11 @@ class MergePart(DBMerge):
             # > ("+ pt.error" accounts for the worst case with histogram selectors)
             # max_err: float = pt.error + max(e for _, e in cross_list)
             # > (approx. error beyond histogram selector linearly)
-            max_err: float = max(
-                e + (pt.error / pt.result) * abs(pt.result - r) for r, e in cross_list
-            )
+            max_err: float = max(e for _, e in cross_list)
+            if pt.result * pt.error != 0.0:
+                max_err = max(
+                    e + (pt.error / pt.result) * abs(pt.result - r) for r, e in cross_list
+                )
             # > alternative: rescale relative errors to the same cross section
             # max_err: float = pt.result * max(abs(e / r) for r, e in cross_list)
             if opt_target == "cross":
@@ -363,6 +365,13 @@ class MergeAll(DBMerge):
                     else:
                         raise FileNotFoundError(f"MergeAll::run:  missing {in_file}")
             opt_target_rel = math.sqrt(opt_target_rel) / opt_target_ref  # relative uncertainty
+
+            # > use `distribute_time` to fetch optimization target
+            # > use small 1s value; a non-zero time to avoid division by zero
+            # > the above does not include penalty, which is why we override it this way
+            opt_dist = self._distribute_time(session, 1.0)
+            opt_target_ref = opt_dist["tot_result"]
+            opt_target_rel = abs(opt_dist["tot_error"] / opt_dist["tot_result"])
 
             # > sum all parts
             for obs in self.config["run"]["histograms"]:

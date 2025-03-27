@@ -181,7 +181,7 @@ class DBTask(Task, metaclass=ABCMeta):
         # _console.print(cache)
         for part_id, ic in cache.items():
             if ic["error"] < min(pt_avg_error, pt_min_error):
-                ic["error"] += 1e-2 * min(pt_avg_error, pt_min_error)
+                ic["error"] += 2e-3 * min(pt_avg_error, pt_min_error)
             if ic["count"] <= 1:
                 ic["error"] += max(pt_avg_error, pt_min_error)
         # _console.print(cache)
