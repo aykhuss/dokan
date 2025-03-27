@@ -12,4 +12,4 @@ jobseed="$$(($$SLURM_ARRAY_TASK_ID+${start_seed}-1))"
 #SBATCH --output=job.s$$jobseed.out  
 #SBATCH --error=job.s$$jobseed.err
 
-${exe} -run job.run -iseed $$jobseed
+${exe} --run job.run --iseed $$jobseed
