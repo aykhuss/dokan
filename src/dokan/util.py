@@ -5,7 +5,6 @@ refactor common functions and patterns here
 
 import re
 from datetime import timedelta
-from pathlib import Path
 
 
 def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:

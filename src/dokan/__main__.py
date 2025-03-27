@@ -172,9 +172,17 @@ def main() -> None:
 
         # > save all to the run config file
         if args.run_path:
-            config.set_path(args.run_path)
+            target_path = args.run_path
         else:
-            config.set_path(os.path.relpath(runcard.data["run_name"]))
+            target_path = os.path.relpath(runcard.data["run_name"])
+        if Path(target_path).exists():
+            if not Confirm.ask(
+                f"The folder {target_path} already exists, do you want to continue?"
+            ):
+                sys.exit("Please, select a different output folder.")
+
+        config.set_path(target_path)
+
         console.print(f"run folder: [italic]{(config.path).absolute()}[/italic]")
 
         config["exe"]["path"] = nnlojet_exe
