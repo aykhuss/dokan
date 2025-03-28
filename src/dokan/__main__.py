@@ -341,6 +341,7 @@ def main() -> None:
             "consult the subcommand help `submit --help` how these settings can be overridden for each submission"
         )
 
+        old_policy: ExecutionPolicy = config["exe"]["policy"]
         new_policy: ExecutionPolicy = ExecutionPolicyPrompt.ask(
             "policy",
             choices=list(str(p) for p in ExecutionPolicy),
@@ -376,9 +377,15 @@ def main() -> None:
         config["run"]["job_max_runtime"] = new_job_max_runtime
         console.print(f"[dim]job_max_runtime = {config['run']['job_max_runtime']!r}s[/dim]")
 
+        def_job_fill_max_runtime: bool = config["run"]["job_fill_max_runtime"]
+        if old_policy != new_policy:
+            if new_policy == ExecutionPolicy.LOCAL:
+                def_job_fill_max_runtime = False
+            else:
+                def_job_fill_max_runtime = True
         new_job_fill_max_runtime: bool = Confirm.ask(
             "attempt to exhaust the maximum runtime for each job?",
-            default=config["run"]["job_fill_max_runtime"],
+            default=def_job_fill_max_runtime,
         )
         config["run"]["job_fill_max_runtime"] = new_job_fill_max_runtime
         console.print(
