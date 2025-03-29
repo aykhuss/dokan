@@ -68,6 +68,7 @@ _schema: dict = {
     },
     "ui": {
         "monitor": bool,
+        "refresh_delay": float,
         "log_level": LogLevel,
     },
     "process": {

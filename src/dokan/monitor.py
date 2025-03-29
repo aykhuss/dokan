@@ -9,6 +9,7 @@ import time
 from operator import itemgetter
 
 from rich import box
+from rich.console import Console
 from rich.live import Live
 from rich.style import Style
 from rich.table import Column, Table
@@ -20,13 +21,19 @@ from .db._jobstatus import JobStatus
 from .db._loglevel import LogLevel
 from .exe import ExecutionMode
 
+_console = Console()
+
 
 class Monitor(DBTask):
     # @todo: poll_rate? --> config
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        print(f"Monitor::init  {time.ctime(self.run_tag)}")
+        _console.print(f"Monitor::init:  {time.ctime(self.run_tag)}")
+
+        self._refresh_delay = (
+            self.config["ui"]["refresh_delay"] if "refresh_delay" in self.config["ui"] else 1.0
+        )
 
         self._log_id: int = 0
         with self.session as session:
@@ -172,4 +179,4 @@ class Monitor(DBTask):
                             return
                         # time.sleep(0.01)
 
-                    time.sleep(1.0)
+                    time.sleep(self._refresh_delay)

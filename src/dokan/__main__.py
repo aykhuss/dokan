@@ -271,6 +271,18 @@ def main() -> None:
                 config["ui"]["monitor"] = new_ui_monitor
                 console.print(f"[dim]ui_monitor = {config['ui']['monitor']!r}[/dim]")
 
+                if config["ui"]["monitor"]:
+                    while True:
+                        new_ui_refresh_delay: float = TimeIntervalPrompt.ask(
+                            "refresh rate of the monitor specified as the delay in seconds",
+                            default=config["ui"]["refresh_delay"],
+                        )
+                        if new_ui_refresh_delay >= 0.1:
+                            break
+                        console.print("please enter a delay of at least 0.1s")
+                    config["ui"]["refresh_delay"] = new_ui_refresh_delay
+                    console.print(f"[dim]refresh_delay = {config['ui']['refresh_delay']!r}s[/dim]")
+
                 # console.print(
                 #     "for further advanced settings edit the config.json manually & consult the documentation"
                 # )
