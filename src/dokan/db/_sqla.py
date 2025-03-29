@@ -19,8 +19,8 @@ class Part(DokanDB):
     id: Mapped[int] = mapped_column(primary_key=True)
 
     # > same structure as nnlojet.get_lumi dictionary
-    name: Mapped[str]
-    string: Mapped[str]
+    name: Mapped[str]  # RRa_7, ...
+    string: Mapped[str]  # channels string
     part: Mapped[str]  # LO, R, V, RR, RV, VV
     part_num: Mapped[int]  # partonic channel id
     region: Mapped[str | None]  # 'a', 'b', or None

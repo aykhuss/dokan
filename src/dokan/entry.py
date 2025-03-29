@@ -49,11 +49,11 @@ class Entry(DBTask):
                 )
                 preprods.append(preprod)
 
-            self._logger(session, "Entry: yield preprods")
+            self._logger(session, "Entry::run:  yield preprods")
             yield preprods
-            self._logger(session, "Entry: complete preprods -> MergeAll")
+            self._logger(session, "Entry::run:  complete preprods -> MergeAll")
             yield self.clone(MergeAll, force=True)
-            self._logger(session, "Entry: complete MergeAll -> dispatch")
+            self._logger(session, "Entry::run:  complete MergeAll -> dispatch")
             # self.print_job()
             n_dispatch: int = max(len(preprods), self.config["run"]["jobs_max_concurrent"])
             dispatch: list[luigi.Task] = [
@@ -64,9 +64,9 @@ class Entry(DBTask):
                 dispatch = [
                     self.clone(DBResurrect, run_tag=r[0], rel_path=r[1]) for r in self.resurrect
                 ] + dispatch
-            self._debug(session, "Entry: yield dispatch")
+            self._debug(session, "Entry::run:  yield dispatch")
             yield dispatch
-            self._logger(session, "Entry: complete dispatch -> MergeFinal")
+            self._logger(session, "Entry::run:  complete dispatch -> MergeFinal")
             yield self.clone(MergeFinal, force=True)
             # > should already been triggered in MergeFinal but for good measure
-            self._logger(session, "Entry: complete", level=LogLevel.SIG_COMP)
+            self._logger(session, "Entry::run:  complete", level=LogLevel.SIG_COMP)

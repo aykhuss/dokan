@@ -9,6 +9,8 @@ import luigi
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from dokan.db._loglevel import LogLevel
+
 from ..exe import ExecutionMode
 from ._dbrunner import DBRunner
 from ._dbtask import DBTask
@@ -90,7 +92,9 @@ class DBDispatch(DBTask):
             ncall: int = (opt["ntot_job"] // niter) + 1
             if ncall * niter == 0:
                 self._logger(
-                    session, f"part {part_id} has ntot={opt['ntot_job']} -> 0 = {ncall} * {niter}"
+                    session,
+                    f"part {part_id} has ntot={opt['ntot_job']} -> 0 = {ncall} * {niter}",
+                    level=LogLevel.WARN,
                 )
                 # ncall = self.config["production"]["ncall_start"]
                 return []
@@ -179,10 +183,10 @@ class DBDispatch(DBTask):
             # > the sole location where we break out of the infinite loop
             if qbreak:
                 if self.part_id > 0:
+                    pt: Part = session.get_one(Part, self.part_id)
                     self._logger(
                         session,
-                        f"DBDispatch[{self.id},{self._n}]::repopulate:  "
-                        + f"next in line is part_id = {self.part_id}",
+                        f"DBDispatch[{self.id}]::repopulate:  " + f"next in line:  {pt.name}",
                     )
                 break
 
@@ -231,10 +235,11 @@ class DBDispatch(DBTask):
                     continue
                 # > regiser njobs new jobs with ncall,niter and time estime to DB
                 ids = queue_production(part_id, opt)
+                pt: Part = session.get_one(Part, part_id)
                 self._logger(
                     session,
-                    f"DBDispatch[{self.id},{self._n}]::repopulate:  "
-                    + f"part_id = {part_id}:  (#:{len(ids)}) {ids}",
+                    f"DBDispatch[{self.id}]::repopulate:  "
+                    + f"register [bold]{len(ids)}[/bold] jobs for {pt.name} [dim](job_ids = {ids})[/dim]",
                 )
                 tot_T += opt["njobs"] * opt["T_job"]
 
@@ -311,10 +316,11 @@ class DBDispatch(DBTask):
                 self._safe_commit(session)
 
                 # > time to dispatch Runners
+                pt: Part = session.get_one(Part, self.part_id)
                 self._logger(
                     session,
-                    f"DBDispatch[{self.id},{self._n}]::run:  "
-                    + f"submitting jobs for part_id = {self.part_id} with seed(s): "
+                    f"DBDispatch[{self.id}]::run:  "
+                    + f"submitting {pt.name} jobs with seed(s): "
                     + (f" {jobs[0].seed}-{jobs[-1].seed}" if len(jobs) > 1 else f" {jobs[0].seed}"),
                 )
                 yield self.clone(cls=DBRunner, ids=[job.id for job in jobs], part_id=self.part_id)

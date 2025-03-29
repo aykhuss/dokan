@@ -5,7 +5,7 @@ import luigi
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .db import DBTask, Job, JobStatus
+from .db import DBTask, Job, JobStatus, Part
 from .db._dbdispatch import DBDispatch
 from .db._loglevel import LogLevel
 from .exe import ExecutionMode
@@ -330,16 +330,21 @@ class PreProduction(DBTask):
 
     def run(self):
         with self.session as session:
-            self._logger(session, f"PreProduction::run[{self.part_id}]:")
+            pt: Part = session.get_one(Part, self.part_id)
+            self._logger(session, f"PreProduction::run[{pt.name}]:")
             if (job_id := self._append_warmup(session)) > 0:
-                self._logger(session, f"PreProduction::run[{self.part_id}]:  yield warmup {job_id}")
+                self._logger(
+                    session,
+                    f"PreProduction::run[{pt.name}]:  yield warmup [dim](job_id = {job_id})[/dim]",
+                )
                 yield self.clone(cls=DBDispatch, id=job_id)
             self._logger(
                 session,
-                f"PreProduction::run[{self.part_id}]:  warmup done {self.part_id}: {WarmupFlag.print_flags(WarmupFlag(-job_id))}",
+                f"PreProduction::run[{pt.name}]:  warmup done [dim]{WarmupFlag.print_flags(WarmupFlag(-job_id))}[/dim]",
             )
             if (job_id := self._append_production(session)) > 0:
                 self._logger(
-                    session, f"PreProduction::run[{self.part_id}]:  yield pre-production {job_id}"
+                    session,
+                    f"PreProduction::run[{pt.name}]:  yield pre-production [dim](job_id = {job_id})[/dim]",
                 )
                 yield self.clone(cls=DBDispatch, id=job_id)
