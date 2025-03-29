@@ -182,7 +182,7 @@ class MergePart(DBMerge):
                 in_files = dict((obs, singles) for obs in self.config["run"]["histograms"].keys())
 
             # > merge all histograms
-            # > keep track of all cross section estimates (also from distributions)
+            # > keep track of all cross section estimates (also as sums over distributions)
             cross_list: list[tuple[float, float]] = []
             for obs in self.config["run"]["histograms"]:
                 out_file: Path = mrg_path / f"{obs}.dat"
@@ -216,7 +216,7 @@ class MergePart(DBMerge):
                 if "cumulant" in self.config["run"]["histograms"][obs]:
                     continue  # @todo ?
 
-                res, err = 0.0, 0.0
+                res, err = 0.0, 0.0  # accumulate bins to "cross" (possible fac, selectors, ...)
                 nx: int = self.config["run"]["histograms"][obs]["nx"]
                 if nx == 0:
                     with open(out_file, "rt") as cross:
@@ -260,29 +260,23 @@ class MergePart(DBMerge):
 
             opt_target: str = self.config["run"]["opt_target"]
 
-            # > this is an upper bound on the XS error derived from any histogram
-            # > ("+ pt.error" accounts for the worst case with histogram selectors)
-            # max_err: float = pt.error + max(e for _, e in cross_list)
-            # > (approx. error beyond histogram selector linearly)
-            max_err: float = max(e for _, e in cross_list)
-            if pt.result * pt.error != 0.0:
-                max_err = max(
-                    e + (pt.error / pt.result) * abs(pt.result - r) for r, e in cross_list
-                )
-            # > alternative: rescale relative errors to the same cross section
-            # max_err: float = pt.result * max(abs(e / r) for r, e in cross_list)
+            # > different estimates for the relative cross uncertainties
+            rel_cross_err: float = abs(pt.error / pt.result)  # default
+            max_rel_hist_err: float = max(abs(e / r) for r, e in cross_list if r != 0.0)
             if opt_target == "cross":
                 pass  # keep cross error for optimisation
             elif opt_target == "cross_hist":
-                # pt.error = (pt.error + max_err) / 2.0
-                # > since we took the worst case for max_err, let's take a geometric mean
-                pt.error = math.sqrt(pt.error * max_err)
+                # rel_cross_err = (rel_cross_err+max_rel_hist_err)/2.0
+                # > since we took the worst case for max_rel_hist_err, let's take a geometric mean
+                rel_cross_err = math.sqrt(rel_cross_err * max_rel_hist_err)
             elif opt_target == "hist":
-                pt.error = max_err
+                rel_cross_err = max_rel_hist_err
             else:
                 raise ValueError(
                     f"MergePart::run[{self.part_id}]:  unknown opt_target {opt_target}"
                 )
+            # > override with registered error with the optimization target
+            pt.error = rel_cross_err * pt.result
 
             self._safe_commit(session)
 

@@ -44,7 +44,6 @@ class Monitor(DBTask):
                     pt.part if not pt.region else pt.part + pt.region,
                 )
                 if ipt not in part_order:
-                    print(f"# appending {ipt}")
                     part_order.append(ipt)
         part_order.sort(key=itemgetter(1))  # alphabetically by name
         part_order.sort(key=itemgetter(0))  # then finally by the order
