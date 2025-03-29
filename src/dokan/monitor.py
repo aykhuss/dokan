@@ -34,13 +34,17 @@ class Monitor(DBTask):
             if last_log:
                 self._log_id = last_log.id
 
-        self._nchan: int = 0
+        self._nchan: int = 0  # find maximum # of partonic channels (= # rows)
         part_order: list[tuple[int, str]] = []
         with self.session as session:
             for pt in session.scalars(select(Part).where(Part.active.is_(True))):
                 self._nchan = max(self._nchan, pt.part_num)
-                ipt: tuple[int, str] = (abs(pt.order), pt.part)
+                ipt: tuple[int, str] = (
+                    abs(pt.order),
+                    pt.part if not pt.region else pt.part + pt.region,
+                )
                 if ipt not in part_order:
+                    print(f"# appending {ipt}")
                     part_order.append(ipt)
         part_order.sort(key=itemgetter(1))  # alphabetically by name
         part_order.sort(key=itemgetter(0))  # then finally by the order
@@ -101,8 +105,9 @@ class Monitor(DBTask):
     def _generate_table(self, session: Session) -> Table:
         # > collect data from DB
         for pt in session.scalars(select(Part).where(Part.active.is_(True))):
+            pt_label: str = pt.part if not pt.region else pt.part + pt.region
             irow: int = pt.part_num
-            icol: int = self._map_col[pt.part]
+            icol: int = self._map_col[pt_label]
             self._data[irow][icol] = self.job_summary(pt)
 
         # > create the table structure

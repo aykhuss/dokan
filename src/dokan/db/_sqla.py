@@ -21,10 +21,10 @@ class Part(DokanDB):
     # > same structure as nnlojet.get_lumi dictionary
     name: Mapped[str]
     string: Mapped[str]
-    part: Mapped[str]
-    part_num: Mapped[int]
-    region: Mapped[str | None]
-    order: Mapped[int]
+    part: Mapped[str]  # LO, R, V, RR, RV, VV
+    part_num: Mapped[int]  # partonic channel id
+    region: Mapped[str | None]  # 'a', 'b', or None
+    order: Mapped[int]  # Order: 0: LO, -1: NLO_only, -2: NNLO_only
 
     # @todo: future features
     # variation: Mapped[int]  # <- to identify different setups (rewgt, etc)
