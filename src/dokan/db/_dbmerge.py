@@ -65,6 +65,19 @@ class MergePart(DBMerge):
     # def select_part(self):
     #     return select(Part).where(Part.id == self.part_id).where(Part.active.is_(True))
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._logger_prefix: str = "MergePart"
+        with self.session as session:
+            pt: Part = session.get_one(Part, self.part_id)
+            self._logger_prefix = (
+                f"MergePart[{pt.name}"
+                + (f", force={self.force}" if self.force else "")
+                + (f", reset={time.ctime(self.reset_tag)}" if self.reset_tag > 0.0 else "")
+                + "]"
+            )
+            self._debug(session, self._logger_prefix + "::init")
+
     @property
     def select_job(self):
         return (
@@ -79,6 +92,8 @@ class MergePart(DBMerge):
 
     def complete(self) -> bool:
         with self.session as session:
+            pt: Part = session.get_one(Part, self.part_id)
+
             query_job = (
                 session.query(Job)
                 .join(Part)
@@ -94,20 +109,20 @@ class MergePart(DBMerge):
             if (c_done + c_merged) == 0:
                 self._debug(
                     session,
-                    f"MergePart::complete[{self.part_id},{self.force},{self.reset_tag}]: done {c_done}, merged {c_merged} => mark complete",
+                    self._logger_prefix
+                    + f"::complete:  #done={c_done}, #merged={c_merged} => mark complete",
                 )
                 # @todo raise error as we should never be in this situation?
                 return True
 
             self._debug(
                 session,
-                f"MergePart::complete[{self.part_id},{self.force},{self.reset_tag}]: done {c_done}, merged {c_merged}",
+                self._logger_prefix + f"::complete:  #done={c_done}, #merged={c_merged}",
             )
 
             if self.force and c_done > 0:
                 return False
 
-            pt: Part = session.get_one(Part, self.part_id)
             if pt.timestamp < self.reset_tag:
                 return False
 
@@ -124,8 +139,8 @@ class MergePart(DBMerge):
 
             self._logger(
                 session,
-                f"MergePart::complete[{self.part_id},{self.force},{self.reset_tag}]:  "
-                + f"done {c_done}, merged {c_merged} => not yet complete",
+                self._logger_prefix
+                + f"::complete:  #done={c_done}, #merged={c_merged} => time for a re-merge",
             )
 
         return False
@@ -133,16 +148,20 @@ class MergePart(DBMerge):
     def run(self):
         if self.complete():
             with self.session as session:
+                pt: Part = session.get_one(Part, self.part_id)
                 self._debug(
                     session,
-                    f"MergePart::run[{self.part_id},{self.force},{self.reset_tag}]:  already complete",
+                    self._logger_prefix + "::run:  already complete",
                 )
             return
 
         with self.session as session:
-            self._debug(session, f"MergePart::run[{self.part_id},{self.force},{self.reset_tag}]")
             # > get the part and update timestamp to tag for 'MERGE'
             pt: Part = session.get_one(Part, self.part_id)
+            self._logger(
+                session,
+                self._logger_prefix + "::run",
+            )
             pt.timestamp = time.time()
             self._safe_commit(session)
 
@@ -164,7 +183,10 @@ class MergePart(DBMerge):
             for job in session.scalars(self.select_job):
                 if not job.rel_path:
                     continue  # @todo raise warning in logger?
-                self._debug(session, f"MergePart::run[{self.part_id}] appending {job!r}")
+                self._debug(
+                    session,
+                    self._logger_prefix + f"::run:  appending {job!r}",
+                )
                 pt.Ttot += job.elapsed_time
                 pt.ntot += job.niter * job.ncall
                 job_path: Path = self._path / job.rel_path
@@ -242,7 +264,7 @@ class MergePart(DBMerge):
                             # > but serves as a conservative error for optimizing on histograms
                             err += ((col[2] - col[0]) * col[4]) ** 2
                 else:
-                    raise ValueError(f"MergePart::run[{self.part_id}]:  unexpected nx = {nx}")
+                    raise ValueError(self._logger_prefix + f"::run:  unexpected nx = {nx}")
                 err = math.sqrt(err)
 
                 if obs == "cross":
@@ -250,7 +272,8 @@ class MergePart(DBMerge):
                     pt.error = err
 
                 self._debug(
-                    session, f"MergePart::run[{self.part_id}]:  {obs:>15}[{nx}]:  {res} +/- {err}"
+                    session,
+                    self._logger_prefix + f"::run:  {obs:>15}[{nx}]:  {res} +/- {err}",
                 )
                 cross_list.append((res, err))
 
@@ -272,11 +295,9 @@ class MergePart(DBMerge):
             elif opt_target == "hist":
                 rel_cross_err = max_rel_hist_err
             else:
-                raise ValueError(
-                    f"MergePart::run[{self.part_id}]:  unknown opt_target {opt_target}"
-                )
+                raise ValueError(self._logger_prefix + f"::run:  unknown opt_target {opt_target}")
             # > override with registered error with the optimization target
-            pt.error = rel_cross_err * pt.result
+            pt.error = abs(rel_cross_err * pt.result)
 
             self._safe_commit(session)
 
@@ -294,8 +315,13 @@ class MergeAll(DBMerge):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._logger_prefix: str = "MergeAll"
         with self.session as session:
-            self._debug(session, f"MergeAll::init[force={self.force},reset_tag={self.reset_tag}]")
+            if self.force or self.reset_tag > 0.0:
+                self._logger_prefix = (
+                    f"MergeAll[force={self.force}, reset={time.ctime(self.reset_tag)}]"
+                )
+            self._debug(session, self._logger_prefix + "::init")
         # > output directory
         self.mrg_path: Path = self._path.joinpath("result", "merge")
         if not self.mrg_path.exists():
@@ -308,7 +334,7 @@ class MergeAll(DBMerge):
     def requires(self):
         if self.force or self.reset_tag > 0.0:
             with self.session as session:
-                self._debug(session, "MergeAll: requires parts...")
+                self._debug(session, self._logger_prefix + "::requires:  requiring parts...")
                 return [
                     self.clone(cls=MergePart, part_id=pt.id)
                     for pt in session.scalars(self.select_part)
@@ -329,10 +355,16 @@ class MergeAll(DBMerge):
             return False
 
         with self.session as session:
-            self._debug(session, f"MergeAll: files {datetime.datetime.fromtimestamp(timestamp)}")
+            self._debug(
+                session,
+                self._logger_prefix
+                + f"::complete:  files {datetime.datetime.fromtimestamp(timestamp)}",
+            )
             for pt in session.scalars(self.select_part):
                 self._debug(
-                    session, f"MergeAll: {pt.name} {datetime.datetime.fromtimestamp(pt.timestamp)}"
+                    session,
+                    self._logger_prefix
+                    + f"::complete:  {pt.name} {datetime.datetime.fromtimestamp(pt.timestamp)}",
                 )
                 if pt.timestamp > timestamp:
                     return False
@@ -340,7 +372,7 @@ class MergeAll(DBMerge):
 
     def run(self):
         with self.session as session:
-            self._logger(session, f"MergeAll::run[force={self.force},reset_tag={self.reset_tag}]")
+            self._logger(session, self._logger_prefix + "::run")
             mrg_parent: Path = self._path.joinpath("result", "part")
 
             # > collect all input files
@@ -373,7 +405,9 @@ class MergeAll(DBMerge):
                 nx: int = self.config["run"]["histograms"][obs]["nx"]
                 if len(in_files[obs]) == 0:
                     self._logger(
-                        session, f"MergeAll::run:  no files for {obs}", level=LogLevel.ERROR
+                        session,
+                        self._logger_prefix + f"::run:  no files for {obs}",
+                        level=LogLevel.ERROR,
                     )
                     continue
                 hist = NNLOJETHistogram()
@@ -410,9 +444,13 @@ class MergeFinal(DBMerge):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
+        self._logger_prefix: str = "MergeFinal"
         with self.session as session:
-            self._debug(session, f"MergeFinal::init[force={self.force},reset_tag={self.reset_tag}]")
+            if self.force or self.reset_tag > 0.0:
+                self._logger_prefix = (
+                    f"MergeFinal[force={self.force}, reset={time.ctime(self.reset_tag)}]"
+                )
+            self._debug(session, self._logger_prefix + "::init")
 
         # > output directory
         self.fin_path: Path = self._path.joinpath("result", "final")
@@ -424,27 +462,23 @@ class MergeFinal(DBMerge):
 
     def requires(self):
         with self.session as session:
-            self._debug(
-                session, "MergeFinal::requires[force={self.force},reset_tag={self.reset_tag}]"
-            )
+            self._debug(session, self._logger_prefix + "::requires")
         return [self.clone(MergeAll, force=True)]
 
     def complete(self) -> bool:
         with self.session as session:
-            self._debug(
-                session, "MergeFinal::complete[force={self.force},reset_tag={self.reset_tag}]"
-            )
+            self._debug(session, self._logger_prefix + "::complete")
             last_sig = session.scalars(
                 select(Log).where(Log.level < 0).order_by(Log.id.desc())
             ).first()
-            self._debug(session, f"MergeFinal::complete:  last_sig = {last_sig!r}")
+            self._debug(session, self._logger_prefix + f"::complete:  last_sig = {last_sig!r}")
             if last_sig and last_sig.level in [LogLevel.SIG_COMP]:
                 return True
         return False
 
     def run(self):
         with self.session as session:
-            self._logger(session, f"MergeFinal::run[force={self.force},reset_tag={self.reset_tag}]")
+            self._logger(session, self._logger_prefix + "::run")
             mrg_parent: Path = self._path.joinpath("result", "part")
 
             # > create "final" files that merge parts into the different orders that are complete
@@ -465,7 +499,9 @@ class MergeFinal(DBMerge):
                     continue
 
                 self._debug(
-                    session, f"{out_order}: {list(map(lambda x: (x.id, x.ntot), matched_parts))}"
+                    session,
+                    self._logger_prefix
+                    + f"::run:  {out_order}: {list(map(lambda x: (x.id, x.ntot), matched_parts))}",
                 )
 
                 in_files = dict((obs, []) for obs in self.config["run"]["histograms"].keys())
@@ -483,7 +519,9 @@ class MergeFinal(DBMerge):
                     nx: int = self.config["run"]["histograms"][obs]["nx"]
                     if len(in_files[obs]) == 0:
                         self._logger(
-                            session, f"MergeFinal::run:  no files for {obs}", level=LogLevel.ERROR
+                            session,
+                            self._logger_prefix + f"::run:  no files for {obs}",
+                            level=LogLevel.ERROR,
                         )
                         continue
                     hist = NNLOJETHistogram()
@@ -493,7 +531,8 @@ class MergeFinal(DBMerge):
                         except ValueError as e:
                             self._logger(
                                 session,
-                                f"error reading file {in_file} ({e!r})",
+                                self._logger_prefix
+                                + f"::run:  error reading file {in_file} ({e!r})",
                                 level=LogLevel.ERROR,
                             )
                     hist.write_to_file(out_file)
