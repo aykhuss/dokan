@@ -692,6 +692,8 @@ def main() -> None:
             config["merge"]["k_scan_nsteps"] = args.k_scan_nsteps
         if args.k_scan_maxdev_steps is not None:
             config["merge"]["k_scan_maxdev_steps"] = args.k_scan_maxdev_steps
+        # > no monitor needed for finalize
+        config["ui"]["monitor"] = False
         console.print(config["merge"])
 
         # > launch the finalization task
