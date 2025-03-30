@@ -77,6 +77,18 @@ class ExecutionPolicyPrompt(PromptBase[ExecutionPolicy]):
         return parsed
 
 
+class LogLevelPrompt(PromptBase[LogLevel]):
+    response_type = LogLevel
+    validate_error_message = "[prompt.invalid]Please enter a valid log level"
+
+    def process_response(self, value: str) -> LogLevel:
+        try:
+            parsed: LogLevel = LogLevel.parse(value.strip())
+        except KeyError:
+            raise InvalidResponse(self.validate_error_message)
+        return parsed
+
+
 def main() -> None:
     # > some action-global variables
     config = Config(default_ok=True)
@@ -282,6 +294,14 @@ def main() -> None:
                         console.print("please enter a delay of at least 0.1s")
                     config["ui"]["refresh_delay"] = new_ui_refresh_delay
                     console.print(f"[dim]refresh_delay = {config['ui']['refresh_delay']!r}s[/dim]")
+
+                new_log_level: LogLevel = LogLevelPrompt.ask(
+                    "log_level",
+                    choices=list(str(p) for p in LogLevel if p > 0),
+                    default=config["ui"]["log_level"],
+                )
+                config["ui"]["log_level"] = new_log_level
+                console.print(f"[dim]log_level = {config['ui']['log_level']!r}[/dim]")
 
                 # console.print(
                 #     "for further advanced settings edit the config.json manually & consult the documentation"

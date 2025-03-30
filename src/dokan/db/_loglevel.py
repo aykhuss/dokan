@@ -28,3 +28,7 @@ class LogLevel(IntEnum):
 
     def __repr__(self):
         return str(self)
+
+    @staticmethod
+    def parse(s: str):
+        return LogLevel[s.upper()]
