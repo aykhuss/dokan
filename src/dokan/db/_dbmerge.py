@@ -500,7 +500,7 @@ class MergeFinal(DBMerge):
 
             # > shut down the monitor
             self._logger(session, "complete", level=LogLevel.SIG_COMP)
-            time.sleep(2.0)  # twice the monitor refresh interval
+            time.sleep(2.0 * self.config["ui"]["refresh_delay"])
 
             # > parse merged cross section result
             mrg_all: MergeAll = self.requires()[0]

@@ -19,7 +19,7 @@ from ..runcard import RuncardTemplate
 from ._dbmerge import MergePart
 from ._dbtask import DBTask
 from ._jobstatus import JobStatus
-from ._sqla import Job
+from ._sqla import Job, Part
 
 
 class DBRunner(DBTask):
@@ -74,7 +74,8 @@ class DBRunner(DBTask):
         exe_data = ExeData(self.job_path)
 
         with self.session as session:
-            self._logger(session, f"DBRunner::run  part_id = {self.part_id}, ids = {self.ids}")
+            pt: Part = session.get_one(Part, self.part_id)
+            self._logger(session, f"DBRunner[{pt.name}]::run:  [dim](job_ids = {self.ids})[/dim]")
 
             # > DBDispatch takes care to stay within batch size
             db_jobs: list[Job] = []
@@ -86,7 +87,7 @@ class DBRunner(DBTask):
                 assert all(j.status == job_status for j in db_jobs)
 
             if job_status == JobStatus.DISPATCHED and not exe_data.is_final:
-                self._debug(session, f"DBRunner::run  part_id = {self.part_id} > prepare execution")
+                self._debug(session, f"DBRunner[{pt.name}]::run:  prepare execution")
                 # > populate ExeData with all necessary information for the Executor
                 exe_data["exe"] = self.config["exe"]["path"]
                 exe_data["mode"] = self.mode
@@ -162,7 +163,7 @@ class DBRunner(DBTask):
             # or yield here the DB recover task
             self._debug(
                 session,
-                f"DBRunner::run:  part_id = {self.part_id} > yield Executor {exe_data['jobs']}",
+                f"DBRunner[{pt.name}]::run:  yield Executor {exe_data['jobs']}",
             )
             yield Executor.factory(policy=self.policy, path=str(self.job_path.absolute()))
 
@@ -192,12 +193,8 @@ class DBRunner(DBTask):
             if self.mode == ExecutionMode.PRODUCTION:
                 mrg_part = self.clone(MergePart, force=False, part_id=self.part_id)
                 if mrg_part.complete():
-                    self._debug(
-                        session, f"DBRunner::run:  part_id = {self.part_id} > MergePart complete"
-                    )
+                    self._debug(session, f"DBRunner[{pt.name}]::run:  MergePart complete")
                     return
                 else:
-                    self._logger(
-                        session, f"DBRunner::run:  part_id = {self.part_id} > yield MergePart"
-                    )
+                    self._logger(session, f"DBRunner[{pt.name}]::run:  yield MergePart")
                     yield mrg_part

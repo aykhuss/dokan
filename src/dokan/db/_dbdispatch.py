@@ -320,7 +320,11 @@ class DBDispatch(DBTask):
                 self._logger(
                     session,
                     f"DBDispatch[{self.id}]::run:  "
-                    + f"submitting {pt.name} jobs with seed(s): "
-                    + (f" {jobs[0].seed}-{jobs[-1].seed}" if len(jobs) > 1 else f" {jobs[0].seed}"),
+                    + f"submitting {pt.name} jobs with "
+                    + (
+                        f"seeds: {jobs[0].seed}-{jobs[-1].seed}"
+                        if len(jobs) > 1
+                        else f"seed: {jobs[0].seed}"
+                    ),
                 )
                 yield self.clone(cls=DBRunner, ids=[job.id for job in jobs], part_id=self.part_id)
