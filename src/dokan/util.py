@@ -136,6 +136,34 @@ def parse_time_interval(interval: str) -> float:
     ).total_seconds()
 
 
+def format_time_interval(seconds: float) -> str:
+    """convert a time interval in seconds to a human-readable string.
+
+    Parameters
+    ----------
+    seconds : float
+        time interval in seconds
+
+    Returns
+    -------
+    str
+        time interval as a human-readable string
+    """
+    intervals = [
+        ("d", 86400),  # 1 day = 86400 seconds
+        ("h", 3600),  # 1 hour = 3600 seconds
+        ("m", 60),  # 1 minute = 60 seconds
+        ("s", 1),
+    ]
+    result = []
+    for unit, count in intervals:
+        value = seconds // count
+        if value > 0.0:
+            seconds %= count
+            result.append(f"{int(value)}{unit}")
+    return " ".join(result) if result else "0 seconds"
+
+
 patience: list[str] = [
     "He that can have patience can have what he will.",
     "Patience is the companion of wisdom.",

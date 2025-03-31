@@ -20,6 +20,7 @@ from ..combine import NNLOJETContainer, NNLOJETHistogram
 from ..exe._exe_config import ExecutionMode
 from ..exe._exe_data import ExeData
 from ..order import Order
+from ..util import format_time_interval
 from ._dbtask import DBTask
 from ._jobstatus import JobStatus
 from ._loglevel import LogLevel
@@ -334,7 +335,7 @@ class MergeAll(DBMerge):
     def requires(self):
         if self.force or self.reset_tag > 0.0:
             with self.session as session:
-                self._debug(session, self._logger_prefix + "::requires:  requiring parts...")
+                self._debug(session, self._logger_prefix + "::requires:  return parts...")
                 return [
                     self.clone(cls=MergePart, part_id=pt.id)
                     for pt in session.scalars(self.select_part)
@@ -580,11 +581,14 @@ class MergeFinal(DBMerge):
                     f"[red]reached rel. acc. {rel_acc * 1e2:.3}% on {opt_target}[/red] "
                     + f"(requested: {self.config['run']['target_rel_acc'] * 1e2:.3}%)",
                 )
-                njobs_target: int = (
-                    round(opt_dist["T_target"] / self.config["run"]["job_max_runtime"]) + 1
-                )
+                T_target: float = opt_dist["T_target"]
+                opt_dist = self._distribute_time(session, T_target)
+                njobs_target: int = sum(ires["njobs"] for _, ires in opt_dist["part"].items())
                 # @todo get a more accurate estimate for number of jobs needed by mimicking a submission?
                 self._logger(
                     session,
-                    f"still need about [bold]{njobs_target}[/bold] jobs [dim](run time: {self.config['run']['job_max_runtime']}s)[/dim] to reach desired target accuracy.",
+                    "still require about "
+                    + f"[bold]{format_time_interval(T_target)}[/bold]"
+                    + " of runtime to reach desired target accuracy"
+                    + f" [dim](approx. {njobs_target} jobs)[/dim]",
                 )
