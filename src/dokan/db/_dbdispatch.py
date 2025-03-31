@@ -186,15 +186,20 @@ class DBDispatch(DBTask):
                     pt: Part = session.get_one(Part, self.part_id)
                     self._logger(
                         session,
-                        f"DBDispatch[{self.id}]::repopulate:  " + f"next in line:  {pt.name}",
+                        f"DBDispatch[{self.id}]::repopulate:  " + f"next:  {pt.name}",
                     )
                 break
 
             # > allocate & distribute time for next batch of jobs
             T_next: float = min(
-                self.config["run"]["jobs_batch_size"] * self.config["run"]["job_max_runtime"],
+                # self.config["run"]["jobs_batch_size"] * self.config["run"]["job_max_runtime"],
                 njobs_rem * self.config["run"]["job_max_runtime"],
                 T_rem,
+            )
+            self._debug(
+                session,
+                f"DBDispatch[{self.id},{self._n}]::repopulate:  "
+                + f"njobs_rem={njobs_rem}, T_rem={T_rem}, T_next={T_next}",
             )
             opt_dist: dict = self._distribute_time(session, T_next)
 
@@ -230,6 +235,8 @@ class DBDispatch(DBTask):
                     # > at least one job: pick largest T_opt one
                     opt["njobs"] = 1
                     tot_njobs = 1  # trigger only 1st iteration
+                # > make sure we don't exceed the batch size (want *continuous* optiization)
+                opt["njobs"] = min(opt["njobs"], self.config["run"]["jobs_batch_size"])
                 self._debug(session, f"{part_id}: {opt}")
                 if opt["njobs"] <= 0:
                     continue
