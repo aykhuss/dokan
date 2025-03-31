@@ -553,11 +553,15 @@ class MergeFinal(DBMerge):
                     self.error = float(line.split()[1])
                     break
             rel_acc: float = abs(self.error / self.result)
+            # > compute total runtime invested
+            T_tot: float = sum(
+                pt.Ttot for pt in session.scalars(select(Part).where(Part.active.is_(True)))
+            )
             self._logger(
                 session,
-                f"\n[blue]cross = ({self.result} +/- {self.error}) fb  [{rel_acc * 1e2:.3}%][/blue]\n",
+                f"\n[blue]cross = ({self.result} +/- {self.error}) fb  [{rel_acc * 1e2:.3}%][/blue]"
+                + f"\n[dim](total runtime invested: {format_time_interval(T_tot)})[/dim]",
             )
-
             # > use `distribute_time` to fetch optimization target
             # > & time estimate to reach desired accuracy
             # > use small 1s value; a non-zero time to avoid division by zero
