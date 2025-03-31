@@ -12,14 +12,6 @@ from pathlib import Path
 from ._types import GenericPath
 from .order import Order
 
-_default_chan_list: dict = {
-    "LO": {"string": "LO", "part": "LO", "part_num": 1, "order": 0},
-    "R": {"string": "R", "part": "R", "part_num": 1, "order": -1},
-    "V": {"string": "V", "part": "V", "part_num": 1, "order": -1},
-    "RR": {"string": "RR", "part": "RR", "part_num": 1, "order": -2, "region": "all"},
-    "RV": {"string": "RV", "part": "RV", "part_num": 1, "order": -2},
-    "VV": {"string": "VV", "part": "VV", "part_num": 1, "order": -2},
-}
 # @todo complete this list
 _proc_has_regions: list = [
     "EPEM",
@@ -47,6 +39,147 @@ _proc_has_regions: list = [
     "HTO2E2MUJ",
     "HTO2L2NJ",
 ]
+
+_default_chan_list: dict = {
+    "LO": {"string": "LO", "part": "LO", "part_num": 1, "order": 0},
+    "R": {"string": "R", "part": "R", "part_num": 1, "order": -1},
+    "V": {"string": "V", "part": "V", "part_num": 1, "order": -1},
+    "RR": {"string": "RR", "part": "RR", "part_num": 1, "order": -2, "region": "all"},
+    "RV": {"string": "RV", "part": "RV", "part_num": 1, "order": -2},
+    "VV": {"string": "VV", "part": "VV", "part_num": 1, "order": -2},
+}
+_override_chan_list: dict = {
+    "eeJJJ": {
+        "LO_1": {"string": "1 2", "part": "LO", "part_num": 1, "order": 0},
+        "R_1": {"string": "3 4 5 6", "part": "R", "part_num": 1, "order": -1},
+        "R_2": {"string": "7 8 9 10", "part": "R", "part_num": 2, "order": -1},
+        "R_3": {"string": "11 12", "part": "R", "part_num": 3, "order": -1},
+        "V_1": {"string": "13 14", "part": "V", "part_num": 1, "order": -1},
+        "V_2": {"string": "15 16", "part": "V", "part_num": 2, "order": -1},
+        "V_3": {"string": "17 18", "part": "V", "part_num": 3, "order": -1},
+        "RRa_1": {
+            "string": "19 20",
+            "part": "RR",
+            "part_num": 1,
+            "region": "a",
+            "order": -2,
+        },
+        "RRa_2": {
+            "string": "21 22",
+            "part": "RR",
+            "part_num": 2,
+            "region": "a",
+            "order": -2,
+        },
+        "RRa_3": {
+            "string": "23 24",
+            "part": "RR",
+            "part_num": 3,
+            "region": "a",
+            "order": -2,
+        },
+        "RRa_4": {
+            "string": "25 26 27 28",
+            "part": "RR",
+            "part_num": 4,
+            "region": "a",
+            "order": -2,
+        },
+        "RRa_5": {
+            "string": "29 30 31 32",
+            "part": "RR",
+            "part_num": 5,
+            "region": "a",
+            "order": -2,
+        },
+        "RRa_6": {
+            "string": "33 34 35 36",
+            "part": "RR",
+            "part_num": 6,
+            "region": "a",
+            "order": -2,
+        },
+        "RRb_1": {
+            "string": "19 20",
+            "part": "RR",
+            "part_num": 1,
+            "region": "b",
+            "order": -2,
+        },
+        "RRb_2": {
+            "string": "21 22",
+            "part": "RR",
+            "part_num": 2,
+            "region": "b",
+            "order": -2,
+        },
+        "RRb_3": {
+            "string": "23 24",
+            "part": "RR",
+            "part_num": 3,
+            "region": "b",
+            "order": -2,
+        },
+        "RRb_4": {
+            "string": "25 26 27 28",
+            "part": "RR",
+            "part_num": 4,
+            "region": "b",
+            "order": -2,
+        },
+        "RRb_5": {
+            "string": "29 30 31 32",
+            "part": "RR",
+            "part_num": 5,
+            "region": "b",
+            "order": -2,
+        },
+        "RRb_6": {
+            "string": "33 34 35 36",
+            "part": "RR",
+            "part_num": 6,
+            "region": "b",
+            "order": -2,
+        },
+        "RV_1": {
+            "string": "37 38 43 44",
+            "part": "RV",
+            "part_num": 1,
+            "order": -2,
+        },
+        "RV_2": {
+            "string": "39 40 45 46",
+            "part": "RV",
+            "part_num": 2,
+            "order": -2,
+        },
+        "RV_3": {"string": "41 42", "part": "RV", "part_num": 3, "order": -2},
+        "RV_4": {
+            "string": "47 48 49 50 55 56 57 58",
+            "part": "RV",
+            "part_num": 4,
+            "order": -2,
+        },
+        "RV_5": {
+            "string": "51 52 53 54",
+            "part": "RV",
+            "part_num": 5,
+            "order": -2,
+        },
+        "RV_6": {
+            "string": "59 60 61 62 63 64",
+            "part": "RV",
+            "part_num": 6,
+            "order": -2,
+        },
+        "VV_1": {"string": "65 66", "part": "VV", "part_num": 1, "order": -2},
+        "VV_2": {"string": "67 68", "part": "VV", "part_num": 2, "order": -2},
+        "VV_3": {"string": "69 70", "part": "VV", "part_num": 3, "order": -2},
+        "VV_4": {"string": "71 72", "part": "VV", "part_num": 4, "order": -2},
+        "VV_5": {"string": "73 74", "part": "VV", "part_num": 5, "order": -2},
+        "VV_6": {"string": "75 76", "part": "VV", "part_num": 6, "order": -2},
+    },
+}
 
 
 def dry_run(exe: GenericPath, tmp: GenericPath, runcard: GenericPath) -> dict:
@@ -152,34 +285,39 @@ def get_lumi(exe: GenericPath, proc: str, use_default: bool = False) -> dict:
     RuntimeError
         encountered parsing error of the -listobs output
     """
-    exe_out = subprocess.run([exe, "-listlumi", proc], capture_output=True, text=True, check=True)
-    if exe_out.returncode != 0:
-        raise RuntimeError(f"get_lumi: failed calling NNLOJET: {exe_out.stderr}")
     chan_list = dict()
-    for line in exe_out.stdout.splitlines():
-        if re.search(r"unknown process", line):
-            raise RuntimeError("NNLOJET: " + line)
-        if not re.search(r" ! channel: ", line):
-            continue
-        label = None
-        chan = dict()
-        match = re.match(r"^\s*(\w+)\s+(.*)$", line)
-        if match:
-            label = match.group(1)
-            chan["string"] = match.group(2)
-        else:
-            raise RuntimeError("couldn't parse channel line")
-        match = re.match(r"^([^_]+)_(\d+)$", label)
-        if match:
-            chan["part"] = match.group(1)
-            chan["part_num"] = int(match.group(2))
-            if chan["part"][-1] == "a" or chan["part"][-1] == "b":
-                chan["region"] = chan["part"][-1]
-                chan["part"] = chan["part"][:-1]
-            chan["order"] = Order.partparse(chan["part"])
-        else:
-            raise RuntimeError("couldn't parse channel line")
-        chan_list[label] = chan
+    if proc in _override_chan_list:
+        chan_list = _override_chan_list[proc]
+    else:
+        exe_out = subprocess.run(
+            [exe, "-listlumi", proc], capture_output=True, text=True, check=True
+        )
+        if exe_out.returncode != 0:
+            raise RuntimeError(f"get_lumi: failed calling NNLOJET: {exe_out.stderr}")
+        for line in exe_out.stdout.splitlines():
+            if re.search(r"unknown process", line):
+                raise RuntimeError("NNLOJET: " + line)
+            if not re.search(r" ! channel: ", line):
+                continue
+            label = None
+            chan = dict()
+            match = re.match(r"^\s*(\w+)\s+(.*)$", line)
+            if match:
+                label = match.group(1)
+                chan["string"] = match.group(2)
+            else:
+                raise RuntimeError("couldn't parse channel line")
+            match = re.match(r"^([^_]+)_(\d+)$", label)
+            if match:
+                chan["part"] = match.group(1)
+                chan["part_num"] = int(match.group(2))
+                if chan["part"][-1] == "a" or chan["part"][-1] == "b":
+                    chan["region"] = chan["part"][-1]
+                    chan["part"] = chan["part"][:-1]
+                chan["order"] = Order.partparse(chan["part"])
+            else:
+                raise RuntimeError("couldn't parse channel line")
+            chan_list[label] = chan
     if use_default or not chan_list:
         if not use_default and not chan_list:
             print("could not parse luminoisty channels from NNLOJET")
