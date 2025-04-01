@@ -3,7 +3,7 @@
 [![PyPI - Version](https://img.shields.io/pypi/v/dokan.svg)](https://pypi.org/project/dokan)
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/dokan.svg)](https://pypi.org/project/dokan)
 
-> <img src="./doc/img/dokan.png" height="23px">&emsp;A pipeline for automating the NNLOJET workflow
+> <img src="https://raw.githubusercontent.com/aykhuss/dokan/main/doc/img/dokan.png" height="23px">&emsp;A pipeline for automating the NNLOJET workflow
 
 -----
 
@@ -21,7 +21,13 @@ This is the implementation of an automated workflow for [NNLOJET](https://nnloje
 
 ### Release version
 
-todo: publish on pypi
+```shell
+# using pip
+pip install dokan
+
+# using uv
+uv tool install dokan
+```
 
 ### Development version
 

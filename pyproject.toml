@@ -3,7 +3,8 @@ name = "dokan"
 description = "Automating the NNLOJET workflow"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {file = "LICENSE"}
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 dynamic = ["version"]
 keywords = []
 authors = [
@@ -17,6 +18,7 @@ dependencies = [
 ]
 
 [project.urls]
+Homepage = "https://nnlojet.hepforge.org"
 Documentation = "https://github.com/aykhuss/dokan#readme"
 Issues = "https://github.com/aykhuss/dokan/issues"
 Source = "https://github.com/aykhuss/dokan"
