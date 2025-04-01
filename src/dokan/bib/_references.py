@@ -2,12 +2,15 @@
 
 references = {
     ######### NNLOJET CODE
-    "NNLOJET:2025xyz": """
-@unpublished{NNLOJET:2025xyz,
+    "Huss:2025iov": """
+@article{Huss:2025iov,
     author = "Huss, A. and others",
-    collaboration = "NNLOJET",
     title = "{NNLOJET: a parton-level event generator for jet cross sections at NNLO QCD accuracy}",
+    eprint = "2503.22804",
+    archivePrefix = "arXiv",
+    primaryClass = "hep-ph",
     reportNumber = "CERN-TH-2025-012, IPPP/25/09, ZU-TH 11/25",
+    month = "3",
     year = "2025"
 }
 """,
