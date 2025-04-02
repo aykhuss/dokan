@@ -285,7 +285,12 @@ class MergePart(DBMerge):
             opt_target: str = self.config["run"]["opt_target"]
 
             # > different estimates for the relative cross uncertainties
-            rel_cross_err: float = abs(pt.error / pt.result)  # default
+            rel_cross_err: float = 0.0  # default
+            if pt.result != 0.0:
+                abs(pt.error / pt.result)
+            elif pt.error != 0.0:
+                raise ValueError(self._logger_prefix + f"::run:  val={pt.result}, err={pt.error}")
+            cross_list.append((1.0, 0.0))  # safe guard against all-zero case
             max_rel_hist_err: float = max(abs(e / r) for r, e in cross_list if r != 0.0)
             if opt_target == "cross":
                 pass  # keep cross error for optimisation
@@ -391,7 +396,7 @@ class MergeAll(DBMerge):
                         in_files[obs].append(str(in_file.relative_to(self._path)))
                     else:
                         raise FileNotFoundError(f"MergeAll::run:  missing {in_file}")
-            opt_target_rel = math.sqrt(opt_target_rel) / opt_target_ref  # relative uncertainty
+            opt_target_rel = math.sqrt(opt_target_rel) / abs(opt_target_ref)  # relative uncertainty
 
             # > use `distribute_time` to fetch optimization target
             # > use small 1s value; a non-zero time to avoid division by zero
