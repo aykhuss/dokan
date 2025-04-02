@@ -287,7 +287,7 @@ class MergePart(DBMerge):
             # > different estimates for the relative cross uncertainties
             rel_cross_err: float = 0.0  # default
             if pt.result != 0.0:
-                abs(pt.error / pt.result)
+                rel_cross_err = abs(pt.error / pt.result)
             elif pt.error != 0.0:
                 raise ValueError(self._logger_prefix + f"::run:  val={pt.result}, err={pt.error}")
             cross_list.append((1.0, 0.0))  # safe guard against all-zero case

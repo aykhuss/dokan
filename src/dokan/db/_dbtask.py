@@ -178,13 +178,11 @@ class DBTask(Task, metaclass=ABCMeta):
             self.config["run"]["target_rel_acc"] * pt_avg_error / math.sqrt(len(cache) + 1.0)
         )
         # > override errors so they are always non-zero; penalize pre-production only parts
-        # _console.print(cache)
         for part_id, ic in cache.items():
             if ic["error"] < min(pt_avg_error, pt_min_error):
                 ic["error"] += 2e-3 * min(pt_avg_error, pt_min_error)
             if ic["count"] <= 1:
                 ic["error"] += max(pt_avg_error, pt_min_error)
-        # _console.print(cache)
 
         # > actually compute estimate for time per event
         # > populate accumulators to evaluate the E-L optimization formula
