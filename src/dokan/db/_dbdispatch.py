@@ -5,7 +5,11 @@ of re-populating the queue with new jobs based on the current state of the
 calculation (available resources, target accuracy, etc.)
 """
 
+import time
+
 import luigi
+
+# from rich.console import Console
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -17,9 +21,11 @@ from ._dbtask import DBTask
 from ._jobstatus import JobStatus
 from ._sqla import Job, Part
 
+# _console = Console()
+
 
 class DBDispatch(DBTask):
-    # > inactive selection: 0
+    # > dynamic selection: 0
     # > pick a specific `Job` by id: > 0
     # > restrict to specific `Part` by id: < 0 [take abs]
     id: int = luigi.IntParameter(default=0)
@@ -32,6 +38,13 @@ class DBDispatch(DBTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._logger_prefix: str = "DBDispatch"
+        with self.session as session:
+            self._logger_prefix = (
+                self._logger_prefix + f"[{self.id}" + (f",{self._n}" if self.id == 0 else "") + "]"
+            )
+            self._debug(session, self._logger_prefix + "::init")
+
         self.part_id: int = 0  # set in `repoopulate`
 
     @property
@@ -78,9 +91,8 @@ class DBDispatch(DBTask):
         # > to get the correct state of self.part_id
         njobs_rem, T_rem = self._remainders(session)
 
-        # self.debug(
-        #     f"DBDispatch[{self.id},{self._n}]::repopulate:  "
-        #     + f"njobs = {njobs_rem}, T = {T_rem}"
+        # self._debug(
+        #     session, self._logger_prefix + "::repopulate:  " + f"njobs = {njobs_rem}, T = {T_rem}"
         # )
 
         # > queue up a new production job in the database and return job id's
@@ -157,6 +169,7 @@ class DBDispatch(DBTask):
             )
 
             # > termination condition based on #queued of individul jobs
+            tot_nact: int = 0
             for pt, nque, nact, nsuc in sorted_parts:
                 self._debug(session, f"  >> {pt!r} | {nque} | {nact} | {nsuc}")
                 if not nque:
@@ -166,6 +179,7 @@ class DBDispatch(DBTask):
                     qbreak = True
                 nsuc = nsuc if nsuc else 0
                 nact = nact if nact else 0
+                tot_nact += nact
                 # > initially, we prefer to increment jobs by 2x
                 if nque >= 2 * (nsuc + (nact - nque)):
                     qbreak = True
@@ -180,13 +194,24 @@ class DBDispatch(DBTask):
                     self.part_id = pt.id
                     break
 
+            # > wait until # active jobs drops under max_concurrent
+            if tot_nact > 1.5 * self.config["run"]["jobs_max_concurrent"]:
+                self._logger(
+                    session,
+                    self._logger_prefix
+                    + "::repopulate:  "
+                    + f"{tot_nact} > {self.config['run']['jobs_max_concurrent']} -> sleeping",
+                )
+                time.sleep(0.1 * self.config["run"]["job_max_runtime"])
+                continue
+
             # > the sole location where we break out of the infinite loop
             if qbreak:
                 if self.part_id > 0:
                     pt: Part = session.get_one(Part, self.part_id)
                     self._logger(
                         session,
-                        f"DBDispatch[{self.id}]::repopulate:  " + f"next:  {pt.name}",
+                        self._logger_prefix + "::repopulate:  " + f"next:  {pt.name}",
                     )
                 break
 
@@ -198,7 +223,8 @@ class DBDispatch(DBTask):
             )
             self._debug(
                 session,
-                f"DBDispatch[{self.id},{self._n}]::repopulate:  "
+                self._logger_prefix
+                + "::repopulate:  "
                 + f"njobs_rem={njobs_rem}, T_rem={T_rem}, T_next={T_next}",
             )
             opt_dist: dict = self._distribute_time(session, T_next)
@@ -209,14 +235,17 @@ class DBDispatch(DBTask):
             if rel_acc <= self.config["run"]["target_rel_acc"]:
                 self._debug(
                     session,
-                    f"DBDispatch[{self.id},{self._n}]::repopulate:  "
+                    self._logger_prefix
+                    + "::repopulate:  "
                     + f"rel_acc = {rel_acc} vs. {self.config['run']['target_rel_acc']}",
                 )
                 qbreak = True
                 continue
 
             # > make sure we stay within `njobs` resource limits
-            while (tot_njobs := sum(opt["njobs"] for opt in opt_dist["part"].values())) > njobs_rem:
+            while (tot_njobs := sum(opt["njobs"] for opt in opt_dist["part"].values())) > min(
+                njobs_rem, self.config["run"]["jobs_max_concurrent"]
+            ):
                 # > decrement in steps of min/2
                 dec_njobs: int = (
                     min(opt["njobs"] for opt in opt_dist["part"].values() if opt["njobs"] > 0) // 2
@@ -225,6 +254,8 @@ class DBDispatch(DBTask):
                 for opt in opt_dist["part"].values():
                     if opt["njobs"] > 0:
                         opt["njobs"] -= dec_njobs
+
+            # _console.print(opt_dist)
 
             # > register (at least one) job(s)
             tot_T: float = 0.0
@@ -245,7 +276,8 @@ class DBDispatch(DBTask):
                 pt: Part = session.get_one(Part, part_id)
                 self._logger(
                     session,
-                    f"DBDispatch[{self.id}]::repopulate:  "
+                    self._logger_prefix
+                    + "::repopulate:  "
                     + f"register [bold]{len(ids)}[/bold] jobs for {pt.name} [dim](job_ids = {ids})[/dim]",
                 )
                 tot_T += opt["njobs"] * opt["T_job"]
@@ -264,9 +296,7 @@ class DBDispatch(DBTask):
 
     def run(self):
         with self.session as session:
-            self._debug(
-                session, f"DBDispatch[{self.id},{self._n}]::run:  " + f"part_id = {self.part_id}"
-            )
+            self._debug(session, self._logger_prefix + "::run:  " + f"part_id = {self.part_id}")
             self._repopulate(session)
 
             # > queue empty and no job added in `repopulate`: we're done
@@ -310,8 +340,7 @@ class DBDispatch(DBTask):
                 if last_job and last_job.seed:
                     self._debug(
                         session,
-                        f"DBDispatch[{self.id},{self._n}]::run:  "
-                        + f"{self.id} last job:  {last_job!r}",
+                        self._logger_prefix + "::run:  " + f"{self.id} last job:  {last_job!r}",
                     )
                     seed_start: int = last_job.seed + 1
                 else:
@@ -326,7 +355,8 @@ class DBDispatch(DBTask):
                 pt: Part = session.get_one(Part, self.part_id)
                 self._logger(
                     session,
-                    f"DBDispatch[{self.id}]::run:  "
+                    self._logger_prefix
+                    + "::run:  "
                     + f"submitting {pt.name} jobs with "
                     + (
                         f"seeds: {jobs[0].seed}-{jobs[-1].seed}"

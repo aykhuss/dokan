@@ -163,26 +163,29 @@ class DBTask(Task, metaclass=ABCMeta):
                 cache[job.part_id]["nextra"] += ntot
 
         # > check every active part has an entry; compute the minimum & average error
-        pt_min_error: float = 0.0
-        pt_avg_error: float = 0.0
+        pt_min_error: float = +float("inf")
+        pt_max_error: float = -float("inf")
+        pt_avg_error: float = 0.0  # avg error on part to get target accuracy
         for pt in session.scalars(select(Part).where(Part.active.is_(True))):
             if pt.id not in cache:
                 raise RuntimeError(f"part {pt.id} not in cache?!")
             if cache[pt.id]["error"] > 0.0:
-                if pt_min_error <= 0.0:
-                    pt_min_error = cache[pt.id]["error"]
-                else:
-                    pt_min_error = min(pt_min_error, cache[pt.id]["error"])
+                pt_min_error = min(pt_min_error, cache[pt.id]["error"])
+                pt_max_error = max(pt_max_error, cache[pt.id]["error"])
             pt_avg_error += cache[pt.id]["result"]
         pt_avg_error = (
             self.config["run"]["target_rel_acc"] * pt_avg_error / math.sqrt(len(cache) + 1.0)
         )
         # > override errors so they are always non-zero; penalize pre-production only parts
+        # _console.print(cache)
         for part_id, ic in cache.items():
-            if ic["error"] < min(pt_avg_error, pt_min_error):
-                ic["error"] += 2e-3 * min(pt_avg_error, pt_min_error)
-            if ic["count"] <= 1:
-                ic["error"] += max(pt_avg_error, pt_min_error)
+            # if ic["error"] < min(pt_avg_error, pt_min_error):
+            #     ic["error"] += 2e-3 * min(pt_avg_error, pt_min_error)
+            if ic["error"] < 2 * pt_min_error:
+                ic["error"] += 0.5 * pt_min_error
+            if ic["count"] <= 1 and ic["nextra"] <= 0:
+                ic["error"] += pt_max_error
+        # _console.print(cache)
 
         # > actually compute estimate for time per event
         # > populate accumulators to evaluate the E-L optimization formula
@@ -258,8 +261,9 @@ class DBTask(Task, metaclass=ABCMeta):
         for part_id, ires in result["part"].items():
             # > 5 sigma buffer but never larger than 50% runtime
             tau_buf: float = min(5 * ires["tau_err"], 0.5 * ires["tau"])
-            if tau_buf <= 0.0:  # in case we have no clue: target 50%
+            if tau_buf <= 0.0:  # in case we have no clue (tau_err==0): target 50%
                 tau_buf = 0.5 * ires["tau"]
+
             # > target runtime for one job corrected for buffer
             T_max_job: float = self.config["run"]["job_max_runtime"] * (1.0 - tau_buf / ires["tau"])
             if self.config["run"]["job_fill_max_runtime"]:
@@ -278,6 +282,12 @@ class DBTask(Task, metaclass=ABCMeta):
                 else:
                     njobs: int = 0
                     ntot_job: int = 0
+
+            # > if we inflated the error of a count==1 part, we only want to register *one* job
+            if cache[part_id]["count"] <= 1 and cache[part_id]["nextra"] <= 0:
+                njobs = min(njobs, 1)
+
+            # > update & store info for each part
             T_job: float = ntot_job * ires["tau"]
             T_jobs: float = njobs * T_job
             ires["T_max_job"] = T_max_job
@@ -286,6 +296,7 @@ class DBTask(Task, metaclass=ABCMeta):
             ires["ntot_job"] = ntot_job
             i_T: float = ires.pop("i_T")  # pop it here
             result["tot_error_estimate_jobs"] += cache[part_id]["error"] ** 2 * i_T / (i_T + T_jobs)
+
         result["tot_error_estimate_jobs"] = math.sqrt(result["tot_error_estimate_jobs"])
 
         return result
