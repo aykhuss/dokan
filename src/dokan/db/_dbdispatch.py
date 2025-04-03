@@ -148,10 +148,18 @@ class DBDispatch(DBTask):
 
             self.part_id = 0  # reset in each loop set @ break
 
-            # > get counters for temrination conditions on #queued
+            # > get counters for termination conditions on #queued
             job_count_queued = job_count_subquery([JobStatus.QUEUED])
             job_count_active = job_count_subquery(JobStatus.active_list())
             job_count_success = job_count_subquery(JobStatus.success_list())
+            job_min_id_queued = (
+                session.query(Job.part_id, func.min(Job.id).label("job_id"))
+                .filter(Job.run_tag == self.run_tag)
+                .filter(Job.mode == ExecutionMode.PRODUCTION)
+                .filter(Job.status.in_([JobStatus.QUEUED]))
+                .group_by(Job.part_id)
+                .subquery()
+            )
             # > get tuples (Part, #queued, #active, #success) ordered by #queued
             sorted_parts = (
                 session.query(
@@ -159,19 +167,22 @@ class DBDispatch(DBTask):
                     job_count_queued.c.job_count,
                     job_count_active.c.job_count,
                     job_count_success.c.job_count,
+                    job_min_id_queued.c.job_id,
                 )
                 .outerjoin(job_count_queued, Part.id == job_count_queued.c.part_id)
                 .outerjoin(job_count_active, Part.id == job_count_active.c.part_id)
                 .outerjoin(job_count_success, Part.id == job_count_success.c.part_id)
+                .outerjoin(job_min_id_queued, Part.id == job_min_id_queued.c.part_id)
                 .filter(Part.active.is_(True))
-                .order_by(job_count_queued.c.job_count.desc())
+                #.order_by(job_count_queued.c.job_count.desc())
+                .order_by(job_min_id_queued.c.job_id.asc())
                 .all()
             )
 
             # > termination condition based on #queued of individul jobs
             tot_nact: int = 0
-            for pt, nque, nact, nsuc in sorted_parts:
-                self._debug(session, f"  >> {pt!r} | {nque} | {nact} | {nsuc}")
+            for pt, nque, nact, nsuc, jobid in sorted_parts:
+                self._debug(session, f"  >> {pt!r} | {nque} | {nact} | {nsuc} | {jobid}")
                 if not nque:
                     continue
                 # > implement termination conditions
@@ -195,7 +206,7 @@ class DBDispatch(DBTask):
                     break
 
             # > wait until # active jobs drops under max_concurrent
-            if tot_nact > 1.5 * self.config["run"]["jobs_max_concurrent"]:
+            if tot_nact > 1.25 * self.config["run"]["jobs_max_concurrent"]:
                 self._logger(
                     session,
                     self._logger_prefix
