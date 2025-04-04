@@ -33,7 +33,7 @@ class DBMerge(DBTask, metaclass=ABCMeta):
     # > tag to trigger a reset to initiate a re-merge from scratch (timestamp)
     reset_tag: float = luigi.FloatParameter(default=-1.0)
 
-    priority = 200
+    priority = 20
 
     # > limit the resources on local cores
     resources = {"local_ncores": 1}
