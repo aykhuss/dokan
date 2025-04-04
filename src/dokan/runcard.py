@@ -249,7 +249,7 @@ class Runcard:
                     t.write("  ${channels}\n")
                 if re.match(r"^\s*CHANNELS", line, re.IGNORECASE):
                     if re.search(r"\bregion\b", line):
-                        line = re.sub(r"\s*region\s*=\s*\w+\b", "${channels_region}", line)
+                        line = re.sub(r"\s*region\s*=\s*\w+\b", "  ${channels_region}", line)
                     else:
                         line = re.sub(
                             r"(?<=CHANNELS)\b",
