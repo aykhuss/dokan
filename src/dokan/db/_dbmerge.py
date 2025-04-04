@@ -33,7 +33,7 @@ class DBMerge(DBTask, metaclass=ABCMeta):
     # > tag to trigger a reset to initiate a re-merge from scratch (timestamp)
     reset_tag: float = luigi.FloatParameter(default=-1.0)
 
-    priority = 20
+    priority = 200
 
     # > limit the resources on local cores
     resources = {"local_ncores": 1}
@@ -132,8 +132,12 @@ class MergePart(DBMerge):
             # if c_merged == 0 and c_done > 0:
             #     return False
 
+            if c_done == 1 and c_merged > 0:
+                # > only a pre-prduction? => force a re-merge to update DB
+                return False
+
             if (
-                float(c_done + c_merged) / float(c_merged + 1)
+                float(c_done + c_merged + 1) / float(c_merged + 1)
                 < self.config["production"]["fac_merge_trigger"]
             ):
                 return True

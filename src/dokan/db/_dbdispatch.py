@@ -205,7 +205,7 @@ class DBDispatch(DBTask):
                     self.part_id = pt.id
                     break
 
-            # > wait until # active jobs drops under max_concurrent
+            # > wait until # active jobs drops under max_concurrent with 25% buffer
             if tot_nact > 1.25 * self.config["run"]["jobs_max_concurrent"]:
                 self._logger(
                     session,
