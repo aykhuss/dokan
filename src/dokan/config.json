@@ -8,7 +8,7 @@
     "histograms": {},
     "opt_target": "cross_hist",
     "target_rel_acc": 0.01,
-    "job_max_runtime": 3600,
+    "job_max_runtime": 4200,
     "job_fill_max_runtime": false,
     "jobs_max_total": 100,
     "jobs_max_concurrent": 10,
@@ -29,11 +29,11 @@
     "ncall_start": 500,
     "niter": 2,
     "min_increment_steps": 2,
-    "max_increment_steps": 7,
+    "max_increment_steps": 9,
     "fac_increment": 4.0,
-    "max_chi2dof": 1.5,
-    "max_err_rel_var": 0.4,
-    "scaling_window": 0.4
+    "max_chi2dof": 1.2,
+    "max_err_rel_var": 0.3,
+    "scaling_window": 0.3
   },
   "production": {
     "ncores": 1,
@@ -43,9 +43,9 @@
     "fac_merge_trigger": 1.5
   },
   "merge": {
-    "trim_threshold": 3.5,
-    "trim_max_fraction": 0.01,
-    "k_scan_nsteps": 2,
-    "k_scan_maxdev_steps": 0.5
+    "trim_threshold": 4,
+    "trim_max_fraction": 0.007,
+    "k_scan_nsteps": 3,
+    "k_scan_maxdev_steps": 0.2
   }
 }

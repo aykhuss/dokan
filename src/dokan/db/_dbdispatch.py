@@ -174,7 +174,7 @@ class DBDispatch(DBTask):
                 .outerjoin(job_count_success, Part.id == job_count_success.c.part_id)
                 .outerjoin(job_min_id_queued, Part.id == job_min_id_queued.c.part_id)
                 .filter(Part.active.is_(True))
-                #.order_by(job_count_queued.c.job_count.desc())
+                # .order_by(job_count_queued.c.job_count.desc())
                 .order_by(job_min_id_queued.c.job_id.asc())
                 .all()
             )

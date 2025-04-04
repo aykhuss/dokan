@@ -399,7 +399,7 @@ def main() -> None:
 
         while True:
             new_job_max_runtime: float = TimeIntervalPrompt.ask(
-                'maximum runtime for individual jobs with optional units {s[default],m,h,d,w} e.g. "1h 30m"',
+                'maximum runtime for individual jobs with optional units {s[default],m,h,d,w} e.g. "1h 10m"',
                 default=config["run"]["job_max_runtime"],
             )
             if new_job_max_runtime > 0.0:
