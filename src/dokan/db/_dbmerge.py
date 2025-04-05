@@ -132,9 +132,14 @@ class MergePart(DBMerge):
             # if c_merged == 0 and c_done > 0:
             #     return False
 
-            if c_done == 1 and c_merged > 0:
-                # > only a pre-prduction? => force a re-merge to update DB
-                return False
+            if c_done == 1:
+                # > only a pre-prduction
+                if c_merged <= 0:
+                    # > still in pre-production stage: no merge (must force it: above)
+                    return True
+                else:
+                    # > pre-production finished & collected un-merged jobs
+                    return False
 
             if (
                 float(c_done + c_merged + 1) / float(c_merged + 1)
