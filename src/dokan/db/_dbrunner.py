@@ -19,6 +19,7 @@ from ..runcard import RuncardTemplate
 from ._dbmerge import MergePart
 from ._dbtask import DBTask
 from ._jobstatus import JobStatus
+from ._loglevel import LogLevel
 from ._sqla import Job, Part
 
 
@@ -32,7 +33,14 @@ class DBRunner(DBTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        self._logger_prefix: str = "DBRunner"
+
         with self.session as session:
+            pt: Part = session.get_one(Part, self.part_id)
+            self._logger_prefix = self._logger_prefix + f"[{pt.name}]"
+            self._debug(session, self._logger_prefix + "::init")
+
             jobs: list[Job] = []
             for job_id in self.ids:
                 jobs.append(session.get_one(Job, job_id))
@@ -75,7 +83,9 @@ class DBRunner(DBTask):
 
         with self.session as session:
             pt: Part = session.get_one(Part, self.part_id)
-            self._logger(session, f"DBRunner[{pt.name}]::run:  [dim](job_ids = {self.ids})[/dim]")
+            self._logger(
+                session, self._logger_prefix + f"::run:  [dim](job_ids = {self.ids})[/dim]"
+            )
 
             # > DBDispatch takes care to stay within batch size
             db_jobs: list[Job] = []
@@ -87,7 +97,7 @@ class DBRunner(DBTask):
                 assert all(j.status == job_status for j in db_jobs)
 
             if job_status == JobStatus.DISPATCHED and not exe_data.is_final:
-                self._debug(session, f"DBRunner[{pt.name}]::run:  prepare execution")
+                self._debug(session, self._logger_prefix + "::run:  prepare execution")
                 # > populate ExeData with all necessary information for the Executor
                 exe_data["exe"] = self.config["exe"]["path"]
                 exe_data["mode"] = self.mode
@@ -163,7 +173,7 @@ class DBRunner(DBTask):
             # or yield here the DB recover task
             self._debug(
                 session,
-                f"DBRunner[{pt.name}]::run:  yield Executor {exe_data['jobs']}",
+                self._logger_prefix + f"::run:  yield Executor {exe_data['jobs']}",
             )
             yield Executor.factory(policy=self.policy, path=str(self.job_path.absolute()))
 
@@ -183,7 +193,17 @@ class DBRunner(DBTask):
                         db_job.result = exe_data["jobs"][db_job.id]["result"]
                         db_job.error = exe_data["jobs"][db_job.id]["error"]
                         db_job.chi2dof = exe_data["jobs"][db_job.id]["chi2dof"]
-                        db_job.elapsed_time = exe_data["jobs"][db_job.id]["elapsed_time"]
+                        if exe_data["jobs"][db_job.id]["elapsed_time"] > 0:
+                            db_job.elapsed_time = exe_data["jobs"][db_job.id]["elapsed_time"]
+                        else:
+                            # > log warning and keep estimated runtime in database to avoid issues down the line
+                            self._logger(
+                                session,
+                                self._logger_prefix
+                                + f"::run:  job {db_job.id} in {exe_data['path']}"
+                                + f"has an invalid elapsed time: {exe_data['jobs'][db_job.id]['elapsed_time']}",
+                                LogLevel.WARN,
+                            )
                         db_job.status = JobStatus.DONE
                 else:
                     db_job.status = JobStatus.FAILED
@@ -193,8 +213,8 @@ class DBRunner(DBTask):
             if self.mode == ExecutionMode.PRODUCTION:
                 mrg_part = self.clone(MergePart, force=False, part_id=self.part_id)
                 if mrg_part.complete():
-                    self._debug(session, f"DBRunner[{pt.name}]::run:  MergePart complete")
+                    self._debug(session, self._logger_prefix + "::run:  MergePart complete")
                     return
                 else:
-                    self._logger(session, f"DBRunner[{pt.name}]::run:  yield MergePart")
+                    self._logger(session, self._logger_prefix + "::run:  yield MergePart")
                     yield mrg_part
