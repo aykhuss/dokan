@@ -152,6 +152,13 @@ class DBTask(Task, metaclass=ABCMeta):
                 }
             ntot: int = job.niter * job.ncall
             if job.status in JobStatus.success_list():
+                if job.elapsed_time < 0.0:
+                    self._logger(
+                        session,
+                        "DBTask::_distribute_time: skipping negative elapsed time in " + f"{job!r}",
+                        LogLevel.WARN,
+                    )
+                    continue
                 cache[job.part_id]["sum"] += job.elapsed_time
                 cache[job.part_id]["sum2"] += (job.elapsed_time) ** 2 / float(ntot)
                 cache[job.part_id]["norm"] += ntot
