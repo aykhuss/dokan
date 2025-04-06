@@ -72,7 +72,8 @@ class MergePart(DBMerge):
         with self.session as session:
             pt: Part = session.get_one(Part, self.part_id)
             self._logger_prefix = (
-                f"MergePart[{pt.name}"
+                self._logger_prefix
+                + f"[{pt.name}"
                 + (f", force={self.force}" if self.force else "")
                 + (f", reset={time.ctime(self.reset_tag)}" if self.reset_tag > 0.0 else "")
                 + "]"
@@ -334,7 +335,8 @@ class MergeAll(DBMerge):
         with self.session as session:
             if self.force or self.reset_tag > 0.0:
                 self._logger_prefix = (
-                    f"MergeAll[force={self.force}, reset={time.ctime(self.reset_tag)}]"
+                    self._logger_prefix
+                    + f"[force={self.force}, reset={time.ctime(self.reset_tag)}]"
                 )
             self._debug(session, self._logger_prefix + "::init")
         # > output directory
@@ -463,7 +465,8 @@ class MergeFinal(DBMerge):
         with self.session as session:
             if self.force or self.reset_tag > 0.0:
                 self._logger_prefix = (
-                    f"MergeFinal[force={self.force}, reset={time.ctime(self.reset_tag)}]"
+                    self._logger_prefix
+                    + f"[force={self.force}, reset={time.ctime(self.reset_tag)}]"
                 )
             self._debug(session, self._logger_prefix + "::init")
 

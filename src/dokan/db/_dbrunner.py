@@ -82,7 +82,6 @@ class DBRunner(DBTask):
         exe_data = ExeData(self.job_path)
 
         with self.session as session:
-            pt: Part = session.get_one(Part, self.part_id)
             self._logger(
                 session, self._logger_prefix + f"::run:  [dim](job_ids = {self.ids})[/dim]"
             )
@@ -200,8 +199,9 @@ class DBRunner(DBTask):
                             self._logger(
                                 session,
                                 self._logger_prefix
-                                + f"::run:  job {db_job.id} in {exe_data['path']}"
-                                + f"has an invalid elapsed time: {exe_data['jobs'][db_job.id]['elapsed_time']}",
+                                + f"::run:  job {db_job.id} at {exe_data['path']} has"
+                                + f" elapsed time: {exe_data['jobs'][db_job.id]['elapsed_time']}"
+                                + f" -> overwrite {db_job.elapsed_time}",
                                 LogLevel.WARN,
                             )
                         db_job.status = JobStatus.DONE
