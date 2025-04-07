@@ -199,7 +199,7 @@ class DBRunner(DBTask):
                             self._logger(
                                 session,
                                 self._logger_prefix
-                                + f"::run:  job {db_job.id} at {exe_data['path']} has"
+                                + f"::run:  job {db_job.id} at {exe_data.path} has"
                                 + f" elapsed time: {exe_data['jobs'][db_job.id]['elapsed_time']}"
                                 + f" -> overwrite {db_job.elapsed_time}",
                                 LogLevel.WARN,
