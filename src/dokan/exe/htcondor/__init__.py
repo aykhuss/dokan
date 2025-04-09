@@ -96,12 +96,12 @@ class HTCondorExec(Executor):
                 self.exe_data.write()
                 break
             else:
-                logger.info(f"HTCondorExec failed to submit job {self.exe_data['path']}:")
+                logger.info(f"HTCondorExec failed to submit job {self.exe_data.path}:")
                 logger.info(f"{condor_submit.stdout}\n{condor_submit.stderr}")
                 time.sleep(self.exe_data["policy_settings"]["htcondor_retry_delay"])
 
         if cluster_id < 0:
-            logger.warn(f"HTCondorExec failed to submit job {self.exe_data['path']}")
+            logger.warn(f"HTCondorExec failed to submit job {self.exe_data.path}")
             return  # failed job
 
         # > now we need to track the job
