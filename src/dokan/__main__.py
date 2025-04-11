@@ -97,6 +97,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="dokan: an automated NNLOJET workflow")
     parser.add_argument("--exe", dest="exe", help="path to NNLOJET executable")
+    parser.add_argument("-w", "--nworkers", help="Number of workers to be used by Luigi", type=int)
     parser.add_argument("-v", "--version", action="version", version="%(prog)s " + __version__)
     subparsers = parser.add_subparsers(dest="action")
 
@@ -627,7 +628,12 @@ def main() -> None:
             local_ncores: int = jobs_max
         else:
             local_ncores: int = cpu_count
-        nworkers: int = max(cpu_count, nactive_part) + 1
+
+        if args.nworkers is None:
+            nworkers: int = max(cpu_count, nactive_part) + 1
+        else:
+            nworkers = args.nworkers
+
         config["run"]["jobs_batch_size"] = max(
             2 * (jobs_max // nactive_part) + 1,
             config["run"]["jobs_batch_unit_size"],
@@ -707,6 +713,12 @@ def main() -> None:
             nactive_part = session.query(Part).filter(Part.active.is_(True)).count()
             mrg_final._logger(session, "finalize", level=LogLevel.SIG_FINI)
 
+        if args.nworkers is None:
+            nworkers: int = min(cpu_count, nactive_part) + 1
+        else:
+            nworkers = args.nworkers
+        console.print(f"# workers: {nworkers}")
+
         luigi_result = luigi.build(
             [mrg_final],
             worker_scheduler_factory=WorkerSchedulerFactory(
@@ -721,7 +733,7 @@ def main() -> None:
                 wait_interval=0.1,
             ),
             detailed_summary=True,
-            workers=min(cpu_count, nactive_part) + 1,
+            workers=nworkers,
             local_scheduler=True,
             log_level="WARNING",
         )  # 'WARNING', 'INFO', 'DEBUG''
