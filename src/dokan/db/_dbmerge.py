@@ -217,16 +217,20 @@ class MergePart(DBMerge):
             # > merge all histograms
             # > keep track of all cross section estimates (also as sums over distributions)
             cross_list: list[tuple[float, float]] = []
-            for obs in self.config["run"]["histograms"]:
+            for obs, obs_info in self.config["run"]["histograms"].items():
                 out_file: Path = mrg_path / f"{obs}.dat"
-                nx: int = self.config["run"]["histograms"][obs]["nx"]
-                container = NNLOJETContainer(size=len(in_files[obs]))
+                nx: int = obs_info["nx"]
+                weights: bool = obs_info.get("grid") is not None
+                container = NNLOJETContainer(size=len(in_files[obs]), weights=weights)
                 obs_name: str | None = obs if single_file else None
                 for in_file in in_files[obs]:
                     try:
                         container.append(
                             NNLOJETHistogram(
-                                nx=nx, filename=self._path / in_file, obs_name=obs_name
+                                nx=nx,
+                                filename=self._path / in_file,
+                                obs_name=obs_name,
+                                weights=weights,
                             )
                         )
                     except ValueError as e:
@@ -244,6 +248,9 @@ class MergePart(DBMerge):
                 )
                 hist = container.merge(weighted=True)
                 hist.write_to_file(out_file)
+                if weights:
+                    weights_file = out_file.with_suffix(".weights.txt")
+                    weights_file.write_text(hist.to_weights())
 
                 # > register cross section numbers
                 if "cumulant" in self.config["run"]["histograms"][obs]:
@@ -290,7 +297,7 @@ class MergePart(DBMerge):
 
                 # # > override error if larger from bin sums (correaltions with counter-events)
                 # if err > pt.error:
-                #     pt.error = err
+                #   pt.error = err
 
             opt_target: str = self.config["run"]["opt_target"]
 
@@ -417,9 +424,10 @@ class MergeAll(DBMerge):
             opt_target_rel = abs(opt_dist["tot_error"] / opt_dist["tot_result"])
 
             # > sum all parts
-            for obs in self.config["run"]["histograms"]:
+            for obs, obs_info in self.config["run"]["histograms"].items():
                 out_file: Path = self.mrg_path / f"{obs}.dat"
-                nx: int = self.config["run"]["histograms"][obs]["nx"]
+                nx: int = obs_info["nx"]
+                weights: bool = obs_info.get("grid") is not None
                 if len(in_files[obs]) == 0:
                     self._logger(
                         session,
@@ -430,12 +438,17 @@ class MergeAll(DBMerge):
                 hist = NNLOJETHistogram()
                 for in_file in in_files[obs]:
                     try:
-                        hist = hist + NNLOJETHistogram(nx=nx, filename=self._path / in_file)
+                        hist = hist + NNLOJETHistogram(
+                            nx=nx, filename=self._path / in_file, weights=weights
+                        )
                     except ValueError as e:
                         self._logger(
                             session, f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR
                         )
                 hist.write_to_file(out_file)
+                if weights:
+                    weights_file = out_file.with_suffix(".weights.txt")
+                    weights_file.write_text(hist.to_weights())
                 if obs == "cross":
                     with open(out_file, "rt") as cross:
                         for line in cross:
@@ -532,9 +545,10 @@ class MergeFinal(DBMerge):
                             raise FileNotFoundError(f"MergeFinal::run:  missing {in_file}")
 
                 # > sum all parts
-                for obs in self.config["run"]["histograms"]:
+                for obs, obs_info in self.config["run"]["histograms"].items():
                     out_file: Path = self.fin_path / f"{out_order}.{obs}.dat"
                     nx: int = self.config["run"]["histograms"][obs]["nx"]
+                    weights: bool = obs_info.get("grid") is not None
                     if len(in_files[obs]) == 0:
                         self._logger(
                             session,
@@ -545,7 +559,9 @@ class MergeFinal(DBMerge):
                     hist = NNLOJETHistogram()
                     for in_file in in_files[obs]:
                         try:
-                            hist = hist + NNLOJETHistogram(nx=nx, filename=self._path / in_file)
+                            hist = hist + NNLOJETHistogram(
+                                nx=nx, filename=self._path / in_file, weights=weights
+                            )
                         except ValueError as e:
                             self._logger(
                                 session,
@@ -554,6 +570,9 @@ class MergeFinal(DBMerge):
                                 level=LogLevel.ERROR,
                             )
                     hist.write_to_file(out_file)
+                    if weights:
+                        weights_file = out_file.with_suffix(".weights.txt")
+                        weights_file.write_text(hist.to_weights())
 
             # > shut down the monitor
             self._logger(session, "complete", level=LogLevel.SIG_COMP)
