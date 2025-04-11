@@ -61,10 +61,7 @@ class NNLOJETHistogram:
     def filename_suff(filename, suff=".npz"):
         if filename is None:
             return None
-        if filename.endswith(".dat"):
-            return filename[:-4] + suff
-        else:
-            return filename + suff
+        return filename.with_suffix(suff)
 
     @property
     def filename_wgt(self):
@@ -373,7 +370,7 @@ class NNLOJETHistogram:
         if self.filename_wgt is None:
             raise ValueError("tried to load weights although no filename attached")
         if os.path.isfile(self.filename_wgt):
-            npzfile = np.load(self.filename_wgt)
+            npzfile = np.load(self.filename_wgt, allow_pickle=True)
             self._files_wgt = npzfile["files"]
             self._wgt = npzfile["weights"]
         else:  # initialise weights to one
@@ -450,7 +447,7 @@ class NNLOJETHistogram:
         # files & weights
         nfiles = len(self._files_wgt)
         for i_file in range(nfiles):
-            line = self._files_wgt[i_file]
+            line = self._files_wgt[i_file].as_posix()
             for iwgt, wgt in enumerate(self._wgt[:, 0, i_file]):  # only first column
                 if iwgt == self._ioverflow:  # skipping overflow
                     continue
