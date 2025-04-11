@@ -36,7 +36,7 @@ class DBTask(Task, metaclass=ABCMeta):
         self.logname: str = "sqlite:///" + str(self._local("log.sqlite").absolute())
 
     def _create_engine(self, name: str) -> Engine:
-        return create_engine(name + "?check_same_thread=true&timeout=600&uri=true")
+        return create_engine(name + "?timeout=1000&uri=true")
 
     @property
     def session(self) -> Session:
@@ -48,14 +48,16 @@ class DBTask(Task, metaclass=ABCMeta):
         )
 
     def _safe_commit(self, session: Session) -> None:
-        for _ in range(10):  # maximum number of tries
-            try:
-                session.commit()
-                return
-            except Exception as e:
-                self._logger(session, f"DBTask::_safe_commit: {e!r}", LogLevel.ERROR)
-                time.sleep(1.0)  # time delay between retries
-        raise RuntimeError("DBTask::_safe_commit: ran out of retries")
+        # for _ in range(10):  # maximum number of tries
+        #     try:
+        #         session.commit()
+        #         return
+        #     except Exception as e:
+        #         self._logger(session, f"DBTask::_safe_commit: {e!r}", LogLevel.ERROR)
+        #         time.sleep(1.0)  # time delay between retries
+        # raise RuntimeError("DBTask::_safe_commit: ran out of retries")
+        # > the above did not work well, rely on the SQLite timeout instead
+        session.commit()
 
     def output(self):
         # > DBTask has no output files but uses the DB itself to track the status
