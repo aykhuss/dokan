@@ -50,9 +50,9 @@ class DBDispatch(DBTask):
     @property
     def resources(self):
         if self.id == 0:
-            return {"DBDispatch": 1}
+            return super().resources | {"DBDispatch": 1}
         else:
-            return None
+            return super().resources
 
     priority = 5
 

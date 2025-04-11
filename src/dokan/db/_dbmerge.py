@@ -36,7 +36,9 @@ class DBMerge(DBTask, metaclass=ABCMeta):
     priority = 20
 
     # > limit the resources on local cores
-    resources = {"local_ncores": 1}
+    @property
+    def resources(self):
+        return super().resources | {"local_ncores": 1}
 
     # @staticmethod
     # def clone_factory(orig: DBTask, id: int = 0):

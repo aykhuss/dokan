@@ -53,7 +53,7 @@ class PreProduction(DBTask):
     @property
     def resources(self):
         # > each part can only have one active pre-production
-        return {f"PreProduction_{self.part_id}": 1}
+        return super().resources | {f"PreProduction_{self.part_id}": 1}
 
     def complete(self) -> bool:
         with self.session as session:

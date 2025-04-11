@@ -113,7 +113,7 @@ class Executor(luigi.Task, metaclass=ABCMeta):
                 if of.endswith(f".s{job_data['seed']}.log")
             ]
             if len(log_matches) != 1:
-                logging.warn(f"Executor: log file not found for job {job_id}")
+                logging.warn(f"Executor: log file not found for job {job_id} in {self.path}")
                 continue
             parsed_data = parse_log_file(Path(self.path) / log_matches[0])
             for key in parsed_data:
