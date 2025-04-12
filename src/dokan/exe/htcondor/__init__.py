@@ -95,13 +95,18 @@ class HTCondorExec(Executor):
                 break
             else:
                 self._logger(
-                    f"HTCondorExec failed to submit job {self.exe_data.path}:", LogLevel.INFO
+                    f"HTCondorExec failed to submit job {self.exe_data.path}:\n"
+                    + f"{condor_submit.stdout}\n"
+                    + f"{condor_submit.stderr}",
+                    LogLevel.INFO,
                 )
-                self._logger(f"{condor_submit.stdout}\n{condor_submit.stderr}", LogLevel.INFO)
                 time.sleep(self.exe_data["policy_settings"]["htcondor_retry_delay"])
 
         if cluster_id < 0:
-            self._logger(f"HTCondorExec failed to submit job {self.exe_data.path}", LogLevel.WARN)
+            self._logger(
+                f"HTCondorExec failed to submit job (exhausted max retries) {self.exe_data.path}",
+                LogLevel.WARN,
+            )
             return  # failed job
 
         # > now we need to track the job
@@ -127,8 +132,12 @@ class HTCondorExec(Executor):
                     condor_q_json = json.loads(condor_q.stdout)
                     break
                 else:
-                    self._logger(f"HTCondorExec failed to query job {job_id}:", LogLevel.INFO)
-                    self._logger(f"{condor_q.stdout}\n{condor_q.stderr}", LogLevel.INFO)
+                    self._logger(
+                        f"HTCondorExec failed to query job [dim](job_id={job_id})[/dim]:\n"
+                        + f"{condor_q.stdout}\n"
+                        + f"{condor_q.stderr}",
+                        LogLevel.INFO,
+                    )
                     time.sleep(retry_delay)
 
             # > "JobStatus" codes

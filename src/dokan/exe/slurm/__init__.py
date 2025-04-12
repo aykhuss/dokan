@@ -6,9 +6,8 @@ import subprocess
 import time
 from pathlib import Path
 
-from ...db._loglevel import LogLevel
-
 from ..._types import GenericPath
+from ...db._loglevel import LogLevel
 from .._executor import Executor
 
 
@@ -83,8 +82,12 @@ class SlurmExec(Executor):
                 self.exe_data.write()
                 break
             else:
-                self._logger(f"SlurmExec failed to submit job {self.exe_data.path}:", LogLevel.INFO)
-                self._logger(f"{slurm_submit.stdout}\n{slurm_submit.stderr}", LogLevel.INFO)
+                self._logger(
+                    f"SlurmExec failed to submit job {self.exe_data.path}:\n"
+                    + f"{slurm_submit.stdout}\n"
+                    + f"{slurm_submit.stderr}",
+                    LogLevel.INFO,
+                )
                 time.sleep(self.exe_data["policy_settings"]["slurm_retry_delay"])
 
         if cluster_id < 0:
@@ -114,6 +117,10 @@ class SlurmExec(Executor):
                 else:
                     if re.search("Invalid job id specified", squeue.stderr):
                         return  # job terminated and record no longer in scheduler
-                    self._logger(f"SlurmExec failed to query job {job_id}:", LogLevel.INFO)
-                    self._logger(f"{squeue.stdout}\n{squeue.stderr}", LogLevel.INFO)
+                    self._logger(
+                        f"SlurmExec failed to query job [dim](job_id={job_id})[/dim]:\n"
+                        + f"{squeue.stdout}\n"
+                        + f"{squeue.stderr}",
+                        LogLevel.INFO,
+                    )
                     time.sleep(retry_delay)
