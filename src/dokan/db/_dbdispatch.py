@@ -38,13 +38,9 @@ class DBDispatch(DBTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._logger_prefix: str = "DBDispatch"
-        with self.session as session:
-            self._logger_prefix = (
-                self._logger_prefix + f"[{self.id}" + (f",{self._n}" if self.id == 0 else "") + "]"
-            )
-            self._debug(session, self._logger_prefix + "::init")
-
+        self._logger_prefix: str = (
+            self.__class__.__name__ + f"[{self.id}" + (f",{self._n}" if self.id == 0 else "") + "]"
+        )
         self.part_id: int = 0  # set in `repoopulate`
 
     @property

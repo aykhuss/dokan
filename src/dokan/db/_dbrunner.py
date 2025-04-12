@@ -34,16 +34,14 @@ class DBRunner(DBTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self._logger_prefix: str = "DBRunner"
+        self._logger_prefix: str = self.__class__.__name__
 
         with self.session as session:
             pt: Part = session.get_one(Part, self.part_id)
-            self._logger_prefix = self._logger_prefix + f"[{pt.name}]"
+            self._logger_prefix = self.__class__.__name__ + f"[{pt.name}]"
             self._debug(session, self._logger_prefix + "::init")
 
-            jobs: list[Job] = []
-            for job_id in self.ids:
-                jobs.append(session.get_one(Job, job_id))
+            jobs: list[Job] = list(session.scalars(select(Job).where(Job.id.in_(self.ids))).all())
             assert all(j.part_id == self.part_id for j in jobs)
             self.mode: ExecutionMode = ExecutionMode(jobs[0].mode)
             assert all(j.mode == self.mode for j in jobs)
