@@ -1,5 +1,4 @@
 import datetime
-import logging
 import os
 import re
 import string
@@ -7,10 +6,10 @@ import subprocess
 import time
 from pathlib import Path
 
+from ...db._loglevel import LogLevel
+
 from ..._types import GenericPath
 from .._executor import Executor
-
-logger = logging.getLogger("luigi-interface")
 
 
 class SlurmExec(Executor):
@@ -84,12 +83,12 @@ class SlurmExec(Executor):
                 self.exe_data.write()
                 break
             else:
-                logger.info(f"SlurmExec failed to submit job {self.exe_data.path}:")
-                logger.info(f"{slurm_submit.stdout}\n{slurm_submit.stderr}")
+                self._logger(f"SlurmExec failed to submit job {self.exe_data.path}:", LogLevel.INFO)
+                self._logger(f"{slurm_submit.stdout}\n{slurm_submit.stderr}", LogLevel.INFO)
                 time.sleep(self.exe_data["policy_settings"]["slurm_retry_delay"])
 
         if cluster_id < 0:
-            logger.warn(f"SlurmExec failed to submit job {self.exe_data.path}")
+            self._logger(f"SlurmExec failed to submit job {self.exe_data.path}", LogLevel.WARN)
             return  # failed job
 
         # > now we need to track the job
@@ -115,6 +114,6 @@ class SlurmExec(Executor):
                 else:
                     if re.search("Invalid job id specified", squeue.stderr):
                         return  # job terminated and record no longer in scheduler
-                    logger.info(f"SlurmExec failed to query job {job_id}:")
-                    logger.info(f"{squeue.stdout}\n{squeue.stderr}")
+                    self._logger(f"SlurmExec failed to query job {job_id}:", LogLevel.INFO)
+                    self._logger(f"{squeue.stdout}\n{squeue.stderr}", LogLevel.INFO)
                     time.sleep(retry_delay)

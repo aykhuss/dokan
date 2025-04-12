@@ -654,7 +654,7 @@ def main() -> None:
                 resources={
                     "local_ncores": local_ncores,
                     "jobs_concurrent": jobs_max,
-                    "DBTask": cpu_count + 2,
+                    "DBTask": min(cpu_count, nactive_part) + 2,
                     "DBDispatch": 1,
                 },
                 cache_task_completion=False,  # needed for MergePart

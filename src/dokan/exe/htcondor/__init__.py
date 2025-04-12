@@ -4,7 +4,6 @@ implementation of the backend for ExecutionPolicy.HTCONDOR
 """
 
 import json
-import logging
 import os
 import re
 import string
@@ -13,9 +12,8 @@ import time
 from pathlib import Path
 
 from ..._types import GenericPath
+from ...db._loglevel import LogLevel
 from .._executor import Executor
-
-logger = logging.getLogger("luigi-interface")
 
 
 class HTCondorExec(Executor):
@@ -96,12 +94,14 @@ class HTCondorExec(Executor):
                 self.exe_data.write()
                 break
             else:
-                logger.info(f"HTCondorExec failed to submit job {self.exe_data.path}:")
-                logger.info(f"{condor_submit.stdout}\n{condor_submit.stderr}")
+                self._logger(
+                    f"HTCondorExec failed to submit job {self.exe_data.path}:", LogLevel.INFO
+                )
+                self._logger(f"{condor_submit.stdout}\n{condor_submit.stderr}", LogLevel.INFO)
                 time.sleep(self.exe_data["policy_settings"]["htcondor_retry_delay"])
 
         if cluster_id < 0:
-            logger.warn(f"HTCondorExec failed to submit job {self.exe_data.path}")
+            self._logger(f"HTCondorExec failed to submit job {self.exe_data.path}", LogLevel.WARN)
             return  # failed job
 
         # > now we need to track the job
@@ -127,8 +127,8 @@ class HTCondorExec(Executor):
                     condor_q_json = json.loads(condor_q.stdout)
                     break
                 else:
-                    logger.info(f"HTCondorExec failed to query job {job_id}:")
-                    logger.info(f"{condor_q.stdout}\n{condor_q.stderr}")
+                    self._logger(f"HTCondorExec failed to query job {job_id}:", LogLevel.INFO)
+                    self._logger(f"{condor_q.stdout}\n{condor_q.stderr}", LogLevel.INFO)
                     time.sleep(retry_delay)
 
             # > "JobStatus" codes
@@ -151,5 +151,7 @@ class HTCondorExec(Executor):
             # )
 
             if njobs == 0:
-                logger.warn(f"HTCondorExec failed to query job {job_id} with njobs = {njobs}")
+                self._logger(
+                    f"HTCondorExec failed to query job {job_id} with njobs = {njobs}", LogLevel.WARN
+                )
                 return

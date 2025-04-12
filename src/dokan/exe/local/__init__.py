@@ -3,16 +3,15 @@
 implementation of the backend for ExecutionPolicy.LOCAL
 """
 
-import logging
 import os
 import subprocess
 from pathlib import Path
 
 import luigi
 
-from .._executor import Executor
+from ...db._loglevel import LogLevel
 
-logger = logging.getLogger("luigi-interface")
+from .._executor import Executor
 
 
 class LocalExec(Executor):
@@ -71,7 +70,7 @@ class SingleLocalExec(LocalExec):
         return [luigi.LocalTarget(self.file_out)]
 
     def exe(self):
-        # > should never run since `run` is overloaded
+        # > should never run since `run` is overridden
         raise RuntimeError("SingleLocalExec::exe: should never be called")
 
     def run(self):
@@ -95,5 +94,7 @@ class SingleLocalExec(LocalExec):
                 text=True,
             )
             if exec_out.returncode != 0:
-                logger.warn(f"SingleLocalExec failed to execute job {self.path}")
+                self._logger(
+                    f"SingleLocalExec failed to execute job {self.path}", level=LogLevel.ERROR
+                )
                 return  # job will be flagged "failed"

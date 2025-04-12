@@ -174,11 +174,26 @@ class DBRunner(DBTask):
                 session,
                 self._logger_prefix + f"::run:  yield Executor {exe_data['jobs']}",
             )
-            yield Executor.factory(policy=self.policy, path=str(self.job_path.absolute()))
+            yield Executor.factory(
+                policy=self.policy,
+                path=str(self.job_path.absolute()),
+                log_level=self.config["ui"]["log_level"],
+            )
 
             # > parse the retun data
             if not exe_data.is_final:
+                # > even failed jobs should finalize ExeData
                 raise RuntimeError(f"{self.ids} not final?!\n{self.job_path}\n{exe_data.data}")
+            # > check if there was an Executor log written out; if yes print it
+            exe_log: Path = exe_data.path / Executor._file_log
+            if exe_log.exists():
+                with open(exe_log, "r") as f:
+                    self._logger(
+                        session,
+                        self._logger_prefix
+                        + f"::run: Executor log [dim]({exe_log})[/dim]:\n"
+                        + "\n".join(f" | [dim]{ln.strip()}[/dim]" for ln in f.readlines()),
+                    )
             for db_job in db_jobs:  # loop exe data jobs keys
                 if db_job.status in JobStatus.terminated_list():
                     continue
