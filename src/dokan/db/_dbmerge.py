@@ -14,6 +14,7 @@ from pathlib import Path
 
 import luigi
 from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from .._types import GenericPath
 from ..combine import NNLOJETContainer, NNLOJETHistogram
@@ -40,24 +41,18 @@ class DBMerge(DBTask, metaclass=ABCMeta):
     def resources(self):
         return super().resources | {"local_ncores": 1}
 
-    # @staticmethod
-    # def clone_factory(orig: DBTask, id: int = 0):
-    #     if id > 0:
-    #         return orig.clone(cls=MergePart, part_id=id)
-    #     else:
-    #         return orig.clone(cls=MergeAll)
+    def _make_prefix(self, session: Session | None = None) -> str:
+        return (
+            self.__class__.__name__
+            + "["
+            + ", ".join(
+                ([f"force={self.force}"] if self.force else [])
+                + ([f"reset={time.ctime(self.reset_tag)}"] if self.reset_tag > 0.0 else [])
+            )
+            + "]"
+        )
 
-    # @property
-    # @abstractmethod
-    # def select_part(self):
-    #     return select(Part)
 
-    # def update_timestamp(self) -> None:
-    #     with self.session as session:
-    #         timestamp: float = time.time()
-    #         for pt in session.scalars(self.select_part):
-    #             pt.timestamp = timestamp
-    #         self._safe_commit(session)
 
 
 class MergePart(DBMerge):
@@ -150,7 +145,7 @@ class MergePart(DBMerge):
             ):
                 return True
 
-            self._logger(
+            self._debug(
                 session,
                 self._logger_prefix
                 + f"::complete:  #done={c_done}, #merged={c_merged} => time for a re-merge",
@@ -330,6 +325,8 @@ class MergePart(DBMerge):
 
 class MergeAll(DBMerge):
     # > merge all `Part` objects that are currently active
+
+    priority = 110
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

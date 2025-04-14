@@ -44,7 +44,8 @@ class DBTask(Task, metaclass=ABCMeta):
             binds={
                 DokanDB: self._create_engine(self.dbname),
                 DokanLog: self._create_engine(self.logname),
-            }
+            },
+            autoflush=False,
         )
 
     def _safe_commit(self, session: Session) -> None:
