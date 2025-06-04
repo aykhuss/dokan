@@ -138,7 +138,7 @@ class DBTask(Task, metaclass=ABCMeta):
             .where(Job.mode == ExecutionMode.PRODUCTION)
             .where(Job.policy == self.config["exe"]["policy"])
         )
-        # > PreProduction assures there's a pre-production job for any new policy
+        # > PreProduction guarantees there's a production job for any new policy
         for job in session.scalars(select_job):
             if job.part_id not in cache:
                 cache[job.part_id] = {
@@ -153,24 +153,28 @@ class DBTask(Task, metaclass=ABCMeta):
                     "norm": 0,
                     "count": 0,
                 }
+            if job.elapsed_time < 0.0:
+                self._logger(
+                    session,
+                    "DBTask::_distribute_time:  skipping negative elapsed time in " + f"{job!r}",
+                    LogLevel.WARN,
+                )
+                continue
             ntot: int = job.niter * job.ncall
+            # > runtime estimate based on *all* successful jobs
             if job.status in JobStatus.success_list():
-                if job.elapsed_time < 0.0:
-                    self._logger(
-                        session,
-                        "DBTask::_distribute_time: skipping negative elapsed time in " + f"{job!r}",
-                        LogLevel.WARN,
-                    )
-                    continue
                 cache[job.part_id]["sum"] += job.elapsed_time
                 cache[job.part_id]["sum2"] += (job.elapsed_time) ** 2 / float(ntot)
                 cache[job.part_id]["norm"] += ntot
                 cache[job.part_id]["count"] += 1
-            if job.status != JobStatus.MERGED:
+            # > extra time allocation from active parts & DONE jobs
+            if job.status in [*JobStatus.active_list(), JobStatus.DONE]:
                 # > everything that was not yet merged needs to be accounted for
                 # > in the error estimation & the distribution of *new* jobs
                 cache[job.part_id]["Textra"] += job.elapsed_time
                 cache[job.part_id]["nextra"] += ntot
+            # @todo maybe we would want to include the failed jobs above
+            #  to see if they hit the runtime limit?
 
         # > check every active part has an entry; compute the minimum & average error
         pt_min_error: float = +float("inf")
@@ -206,46 +210,70 @@ class DBTask(Task, metaclass=ABCMeta):
             "tot_error_estimate_opt": 0.0,
             "tot_error_estimate_jobs": 0.0,
         }
-        accum_T: float = T
+        # > loop until there are no negative time assignments
+        accum_T: float = 0.0
         accum_err_sqrtT: float = 0.0
-        for part_id, ic in cache.items():
-            if part_id not in result["part"]:
-                i_tau: float = ic["sum"] / ic["norm"]
-                i_tau_err: float = 0.0
-                if ic["count"] > 1:
-                    i_tau_err = ic["sum2"] / ic["norm"] - i_tau**2
-                    if i_tau_err <= 0.0:
-                        # i_tau_err = 0.0
-                        i_tau_err = abs(i_tau_err)  # keep as an estimate
-                    else:
-                        i_tau_err = math.sqrt(i_tau_err)
-                # > convert to time
-                # include estimate from the extra jobs already allocated
-                i_T: float = i_tau * (ic["ntot"] + ic["nextra"])
-                ic["error"] = math.sqrt(ic["error"] ** 2 * ic["ntot"] / (ic["ntot"] + ic["nextra"]))
-                result["part"][part_id] = {
-                    "tau": i_tau,
-                    "tau_err": i_tau_err,
-                    "i_T": i_T,
-                    "i_err_sqrtT": ic["error"] * math.sqrt(i_T),
-                }
-            else:
-                raise RuntimeError(f"part {part_id} already in result?!")
-            accum_T += result["part"][part_id]["i_T"]
-            accum_err_sqrtT += result["part"][part_id]["i_err_sqrtT"]
+        while True:
+            accum_T = 0.0
+            accum_err_sqrtT = 0.0
+            for part_id, ic in cache.items():
+                if part_id not in result["part"]:
+                    i_tau: float = ic["sum"] / ic["norm"]
+                    i_tau_err: float = 0.0
+                    if ic["count"] > 1:
+                        i_tau_err = ic["sum2"] / ic["norm"] - i_tau**2
+                        if i_tau_err <= 0.0:
+                            # i_tau_err = 0.0
+                            i_tau_err = abs(i_tau_err)  # keep as an estimate
+                        else:
+                            i_tau_err = math.sqrt(i_tau_err)
+                    # > convert to time
+                    # include estimate from the extra jobs already allocated
+                    i_T: float = i_tau * (ic["ntot"] + ic["nextra"])
+                    ic["error"] = math.sqrt(
+                        ic["error"] ** 2 * ic["ntot"] / (ic["ntot"] + ic["nextra"])
+                    )
+                    result["part"][part_id] = {
+                        "tau": i_tau,
+                        "tau_err": i_tau_err,
+                        "i_T": i_T,
+                        "i_err_sqrtT": ic["error"] * math.sqrt(i_T),
+                    }
+                # > skip excluded parts
+                if result["part"][part_id].get("T_opt", 1.0) > 0.0:
+                    accum_T += result["part"][part_id]["i_T"]
+                    accum_err_sqrtT += result["part"][part_id]["i_err_sqrtT"]
 
-        # > use E-L formula to compute the optimal distribution of T to the active parts
-        acc_T_opt: float = 0.0
-        for _, ires in result["part"].items():
-            i_err_sqrtT: float = ires.pop("i_err_sqrtT")
-            i_T: float = ires.get("i_T")  # need it for error calc below
-            T_opt: float = (i_err_sqrtT / accum_err_sqrtT) * accum_T - i_T
-            if T_opt < 0.0:
-                T_opt = 0.0  # too lazy to do proper inequality E-L optimization
-            ires["T_opt"] = T_opt
-            acc_T_opt += T_opt
-        # > normalize at the end to account for the dropped negative weights
-        # and compute an estimate for the error to be achieved
+            # > use E-L formula to compute the optimal distribution of T to the active parts
+            # > and flag if parts were removed and we need to recompute
+            acc_T_opt: float = 0.0
+            no_negative_T_opt: bool = True
+            for part_id, ires in result["part"].items():
+                if ires.get("T_opt", 1.0) <= 0.0:
+                    continue
+                # i_err_sqrtT: float = ires.pop("i_err_sqrtT")
+                i_err_sqrtT: float = ires.get("i_err_sqrtT")
+                i_T: float = ires.get("i_T")  # need it for error calc below
+                T_opt: float = (i_err_sqrtT / accum_err_sqrtT) * (T + accum_T) - i_T
+                if T_opt < 0.0:
+                    no_negative_T_opt = False
+                    T_opt = 0.0  # flag as excluded from optimization
+                ires["T_opt"] = T_opt
+                acc_T_opt += T_opt
+            # > check if all T_opt were positive
+            self._logger(
+                session,
+                f"DBTask::_distribute_time:  skipped: {[part_id for part_id, ires in result['part'].items() if ires['T_opt'] <= 0.0]}",
+                LogLevel.DEBUG,
+            )
+            if no_negative_T_opt:
+                for _, ires in result["part"].items():
+                    del ires["i_err_sqrtT"]
+                break  # no more negative T_opt
+
+        # > re-normalize at the end for good measure
+        # > and compute an estimate for the error to be achieved
+        self._logger(session, f"DBTask::_distribute_time:  {T=} v.s. {acc_T_opt=}", LogLevel.DEBUG)
         result["tot_result"] = 0.0
         result["tot_error"] = 0.0
         result["tot_error_estimate_opt"] = 0.0
@@ -263,7 +291,13 @@ class DBTask(Task, metaclass=ABCMeta):
         # > use E-L formula to compute a time estimate (beyond T)
         # > needed to achieve the desired accuracy
         target_abs_acc: float = self.config["run"]["target_rel_acc"] * result["tot_result"]
-        result["T_target"] = max(0.0, (accum_err_sqrtT / target_abs_acc) ** 2 - accum_T)
+        result["T_target"] = (accum_err_sqrtT / target_abs_acc) ** 2 - accum_T
+        self._logger(
+            session,
+            f"DBTask::_distribute_time: tot_result = {result['tot_result']},  {target_abs_acc=}, T_target={result['T_target']}",
+            LogLevel.DEBUG,
+        )
+        result["T_target"] = max(0.0, result["T_target"])
 
         # > split up into jobs
         # (T_max_job, T_job, njobs, ntot_job)

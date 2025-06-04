@@ -581,7 +581,8 @@ class MergeFinal(DBMerge):
             # > use `distribute_time` to fetch optimization target
             # > & time estimate to reach desired accuracy
             # > use small 1s value; a non-zero time to avoid division by zero
-            opt_dist = self._distribute_time(session, 1.0)
+            prev_T_target: float = 1.0
+            opt_dist = self._distribute_time(session, prev_T_target)
             # self._logger(session,f"{opt_dist}")
             opt_target: str = self.config["run"]["opt_target"]
             self._logger(
@@ -602,9 +603,12 @@ class MergeFinal(DBMerge):
                     + f"(requested: {self.config['run']['target_rel_acc'] * 1e2:.3}%)",
                 )
                 T_target: float = opt_dist["T_target"]
-                opt_dist = self._distribute_time(session, T_target)
+                # > because of inequality constraints, need to loop to find reliable estimate
+                while T_target / prev_T_target > 1.3:
+                    opt_dist = self._distribute_time(session, T_target)
+                    prev_T_target = T_target
+                    T_target = opt_dist["T_target"]
                 njobs_target: int = sum(ires["njobs"] for _, ires in opt_dist["part"].items())
-                # @todo get a more accurate estimate for number of jobs needed by mimicking a submission?
                 self._logger(
                     session,
                     "still require about "
