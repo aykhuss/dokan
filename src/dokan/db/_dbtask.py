@@ -379,7 +379,6 @@ class DBInit(DBTask):
                 for db_pt in session.scalars(stmt):
                     if db_pt.active != Order(db_pt.order).is_in(Order(self.order)):
                         return False
-
         return True
 
     def run(self) -> None:
@@ -390,11 +389,10 @@ class DBInit(DBTask):
             for pt in self.channels:
                 stmt = select(Part).where(Part.name == pt)
                 # @ todo catch case where it's already there and check it has same entries?
-                if not session.scalars(stmt).first():
-                    session.add(
-                        Part(name=pt, active=False, timestamp=time.time(), **self.channels[pt])
-                    )
-                for db_pt in session.scalars(stmt):
-                    db_pt.active = Order(db_pt.order).is_in(Order(self.order))
+                db_pt = session.scalars(stmt).first()
+                active: bool = Order(self.channels[pt].get("order")).is_in(Order(self.order))
+                if not db_pt:
+                    session.add(Part(name=pt, active=active, timestamp=time.time(), **self.channels[pt]))
+                else:
+                    db_pt.active = active
             self._safe_commit(session)
-        # self.print_part()
