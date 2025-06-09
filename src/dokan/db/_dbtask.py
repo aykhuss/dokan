@@ -146,6 +146,7 @@ class DBTask(Task, metaclass=ABCMeta):
                     "ntot": job.part.ntot,
                     "result": job.part.result,
                     "error": job.part.error,
+                    "adj_error": float("nan"),
                     "Textra": 0.0,
                     "nextra": 0,
                     "sum": 0.0,
@@ -176,29 +177,42 @@ class DBTask(Task, metaclass=ABCMeta):
             # @todo maybe we would want to include the failed jobs above
             #  to see if they hit the runtime limit?
 
-        # > check every active part has an entry; compute the minimum & average error
+        # > check every active part has an entry; compute the minimum & average error; accumulate tot result & error
         pt_min_error: float = +float("inf")
         pt_max_error: float = -float("inf")
         pt_avg_error: float = 0.0  # avg error on part to get target accuracy
+        tot_result: float = 0.0
+        tot_error: float = 0.0
         for pt in session.scalars(select(Part).where(Part.active.is_(True))):
             if pt.id not in cache:
                 raise RuntimeError(f"part {pt.id} not in cache?!")
             if cache[pt.id]["error"] > 0.0:
                 pt_min_error = min(pt_min_error, cache[pt.id]["error"])
                 pt_max_error = max(pt_max_error, cache[pt.id]["error"])
-            pt_avg_error += cache[pt.id]["result"]
+            pt_avg_error += abs(cache[pt.id]["result"])
+            tot_result += cache[pt.id]["result"]
+            tot_error += cache[pt.id]["error"] ** 2
         pt_avg_error = (
             self.config["run"]["target_rel_acc"] * pt_avg_error / math.sqrt(len(cache) + 1.0)
         )
-        # > override errors so they are always non-zero; penalize pre-production only parts
+        tot_error = math.sqrt(tot_error)
+
+        # > adjusted errors
         # _console.print(cache)
+        adj_thresh_min: float = 2.0
+        adj_thresh_max: float = 1e2
+        adj_penalty: float = 10.0
         for part_id, ic in cache.items():
-            # if ic["error"] < min(pt_avg_error, pt_min_error):
-            #     ic["error"] += 2e-3 * min(pt_avg_error, pt_min_error)
-            if ic["error"] < 2 * pt_min_error:
-                ic["error"] += 0.5 * pt_min_error
+            ic["adj_error"] = ic["error"]
+            # > enforce non-zero errors:  arithmetic mean
+            if ic["error"] < adj_thresh_min * pt_min_error:
+                ic["adj_error"] = 0.5 * (ic["error"] + adj_thresh_min * pt_min_error)
+            # > dampen outliers:  geometric mean
+            if ic["error"] > adj_thresh_max * pt_avg_error:
+                ic["adj_error"] = math.sqrt(ic["error"] * adj_thresh_max * pt_avg_error)
+            # > penalize pre-production only parts
             if ic["count"] <= 1 and ic["nextra"] <= 0:
-                ic["error"] += pt_max_error
+                ic["adj_error"] = ic["error"] + adj_penalty * pt_max_error
         # _console.print(cache)
 
         # > actually compute estimate for time per event
@@ -230,14 +244,14 @@ class DBTask(Task, metaclass=ABCMeta):
                     # > convert to time
                     # include estimate from the extra jobs already allocated
                     i_T: float = i_tau * (ic["ntot"] + ic["nextra"])
-                    ic["error"] = math.sqrt(
-                        ic["error"] ** 2 * ic["ntot"] / (ic["ntot"] + ic["nextra"])
+                    ic["adj_error"] = math.sqrt(
+                        ic["adj_error"] ** 2 * ic["ntot"] / (ic["ntot"] + ic["nextra"])
                     )
                     result["part"][part_id] = {
                         "tau": i_tau,
                         "tau_err": i_tau_err,
                         "i_T": i_T,
-                        "i_err_sqrtT": ic["error"] * math.sqrt(i_T),
+                        "i_err_sqrtT": ic["adj_error"] * math.sqrt(i_T),
                     }
                 # > skip excluded parts
                 if result["part"][part_id].get("T_opt", 1.0) > 0.0:
@@ -261,19 +275,18 @@ class DBTask(Task, metaclass=ABCMeta):
                 ires["T_opt"] = T_opt
                 acc_T_opt += T_opt
             # > check if all T_opt were positive
-            self._logger(
-                session,
-                f"DBTask::_distribute_time:  skipped: {[part_id for part_id, ires in result['part'].items() if ires['T_opt'] <= 0.0]}",
-                LogLevel.DEBUG,
-            )
             if no_negative_T_opt:
+                self._debug(
+                    session,
+                    f"DBTask::_distribute_time:  skipped: {[part_id for part_id, ires in result['part'].items() if ires['T_opt'] <= 0.0]}",
+                )
                 for _, ires in result["part"].items():
                     del ires["i_err_sqrtT"]
                 break  # no more negative T_opt
 
         # > re-normalize at the end for good measure
         # > and compute an estimate for the error to be achieved
-        self._logger(session, f"DBTask::_distribute_time:  {T=} v.s. {acc_T_opt=}", LogLevel.DEBUG)
+        self._debug(session, f"DBTask::_distribute_time:  {T=} v.s. {acc_T_opt=}")
         result["tot_result"] = 0.0
         result["tot_error"] = 0.0
         result["tot_error_estimate_opt"] = 0.0
@@ -292,10 +305,9 @@ class DBTask(Task, metaclass=ABCMeta):
         # > needed to achieve the desired accuracy
         target_abs_acc: float = self.config["run"]["target_rel_acc"] * result["tot_result"]
         result["T_target"] = (accum_err_sqrtT / target_abs_acc) ** 2 - accum_T
-        self._logger(
+        self._debug(
             session,
             f"DBTask::_distribute_time: tot_result = {result['tot_result']},  {target_abs_acc=}, T_target={result['T_target']}",
-            LogLevel.DEBUG,
         )
         result["T_target"] = max(0.0, result["T_target"])
 
@@ -392,7 +404,9 @@ class DBInit(DBTask):
                 db_pt = session.scalars(stmt).first()
                 active: bool = Order(self.channels[pt].get("order")).is_in(Order(self.order))
                 if not db_pt:
-                    session.add(Part(name=pt, active=active, timestamp=time.time(), **self.channels[pt]))
+                    session.add(
+                        Part(name=pt, active=active, timestamp=time.time(), **self.channels[pt])
+                    )
                 else:
                     db_pt.active = active
             self._safe_commit(session)
