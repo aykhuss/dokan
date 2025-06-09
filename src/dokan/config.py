@@ -153,7 +153,12 @@ class Config(UserDict):
                 and self.data["warmup"]["min_increment_steps"] < 2
             ):
                 return False
-
+        if "production" in self.data:
+            if (
+                "min_number" in self.data["production"]
+                and self.data["production"]["min_number"] < 1
+            ):
+                return False
         return True
 
     def __setitem__(self, key, item) -> None:

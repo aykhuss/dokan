@@ -34,7 +34,7 @@ class DBMerge(DBTask, metaclass=ABCMeta):
     # > tag to trigger a reset to initiate a re-merge from scratch (timestamp)
     reset_tag: float = luigi.FloatParameter(default=-1.0)
 
-    priority = 20
+    priority = 120
 
     # > limit the resources on local cores
     @property
@@ -53,11 +53,45 @@ class DBMerge(DBTask, metaclass=ABCMeta):
         )
 
 
+class MergeObs(luigi.Task):
+    ### part_id : the only significant parameter (all other)
+    in_files: list[GenericPath] = luigi.ListParameter()
+    out_file: GenericPath = luigi.Parameter()
+    nx: int = luigi.IntParameter()
+    obs_name: str | None = luigi.OptionalParameter(default=None)
+
+    priority = 150
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    # > limit the resources on local cores
+    @property
+    def resources(self):
+        return super().resources | {"local_ncores": 1}
+
+    def complete(self):
+        # > check if file exists:
+        # -> no: false
+        # -> yes:
+        #   check the timestamp:
+        #   ->
+        return False
+
+    def run(self):
+        # >
+        # print(f"MergeObs:\n{self.in_files}\n{self.out_file}\n{self.nx}\n{self.obs_name}")
+        pass
 
 
 class MergePart(DBMerge):
     # > merge only a specific `Part`
     part_id: int = luigi.IntParameter()
+
+    # > limit the resources on local cores
+    @property
+    def resources(self):
+        return super().resources | {"local_ncores": 1}
 
     # @property
     # def select_part(self):
@@ -116,7 +150,8 @@ class MergePart(DBMerge):
 
             self._debug(
                 session,
-                self._logger_prefix + f"::complete:  #done={c_done}, #merged={c_merged}",
+                self._logger_prefix
+                + f"::complete:  #done={c_done}, #merged={c_merged}, timestamp={time.ctime(pt.timestamp)}",
             )
 
             if self.force and c_done > 0:
@@ -130,14 +165,18 @@ class MergePart(DBMerge):
             # if c_merged == 0 and c_done > 0:
             #     return False
 
-            if c_done == 1:
-                # > only a pre-prduction
-                if c_merged <= 0:
-                    # > still in pre-production stage: no merge (must force it: above)
-                    return True
-                else:
-                    # > pre-production finished & collected un-merged jobs
-                    return False
+            # > only a pre-prduction
+            # > still in pre-production stage: no merge (must force it: above)
+            if (c_done == 1) and (c_merged <= 0):
+                return True
+
+            # > below min production number: force re-merge each time
+            if (
+                self.config["production"]["min_number"] > 0
+                and c_done > 0
+                and c_merged <= self.config["production"]["min_number"]
+            ):
+                return False
 
             if (
                 float(c_done + c_merged + 1) / float(c_merged + 1)
@@ -156,7 +195,6 @@ class MergePart(DBMerge):
     def run(self):
         if self.complete():
             with self.session as session:
-                pt: Part = session.get_one(Part, self.part_id)
                 self._debug(
                     session,
                     self._logger_prefix + "::run:  already complete",
@@ -170,8 +208,6 @@ class MergePart(DBMerge):
                 session,
                 self._logger_prefix + "::run",
             )
-            pt.timestamp = time.time()
-            self._safe_commit(session)
 
             # > output directory
             mrg_path: Path = self._path.joinpath("result", "part", pt.name)
@@ -205,11 +241,36 @@ class MergePart(DBMerge):
                             in_files[dat.group(1)].append(
                                 str((job_path / out).relative_to(self._path))
                             )
+                        else:
+                            self._logger(
+                                session,
+                                self._logger_prefix
+                                + "::run:  "
+                                + f"unmatched observable {dat.group(1)}?! ({in_files.keys()})",
+                            )
                 job.status = JobStatus.MERGED
             if single_file:
                 # > unroll the single histogram to all registered observables
                 singles: list[GenericPath] = in_files.pop(single_file)
                 in_files = dict((obs, singles) for obs in self.config["run"]["histograms"].keys())
+
+            # > commit merged status and timestamp before yielding
+            pt.timestamp = time.time()
+            self._safe_commit(session)
+
+            # # > using MergeObs
+            # mrg_obs_list = yield [
+            #     MergeObs(
+            #         in_files=[str(f) for f in in_files[obs]],
+            #         out_file=str((mrg_path / f"{obs}.dat").relative_to(self._path)),
+            #         nx=self.config["run"]["histograms"][obs]["nx"],
+            #         obs_name=obs if single_file else None,
+            #     )
+            #     for obs in self.config["run"]["histograms"]
+            # ]
+            # print(f"{mrg_obs_list!r}")
+            # for i, mrg_obs in enumerate(mrg_obs_list, start=1):
+            #     print(f"{i}: {mrg_obs}")
 
             # > merge all histograms
             # > keep track of all cross section estimates (also as sums over distributions)
@@ -507,11 +568,18 @@ class MergeFinal(DBMerge):
                     select_order = select_order.where(func.abs(Part.order) <= out_order)
                 matched_parts = session.scalars(select_order).all()
 
+                # > is there even a Part at this order for this process? (NNLO for an NLO-only process)
+                if session.query(Part).filter(func.abs(Part.order) == abs(out_order)).count() == 0:
+                    self._logger(
+                        session, self._logger_prefix + f"::run:  no parts at order {out_order}"
+                    )
+                    continue
+
                 # > in order to write out an `order` result, we need at least one complete result for each part
                 if any(pt.ntot <= 0 for pt in matched_parts):
                     self._logger(
                         session,
-                        f'[red]MergeFinal::run:  skipping "{out_order}" due to missing parts[/red]',
+                        f'[red]MergeFinal::run:  skipping "{out_order}" due to incomplete parts[/red]',
                     )
                     continue
 
