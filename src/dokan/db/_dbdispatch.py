@@ -38,9 +38,7 @@ class DBDispatch(DBTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._logger_prefix: str = (
-            self.__class__.__name__ + f"[{self.id}" + (f",{self._n}" if self.id == 0 else "") + "]"
-        )
+        self._logger_prefix: str = self.__class__.__name__ + f"[{self.id}" + (f",{self._n}" if self.id == 0 else "") + "]"
         self.part_id: int = 0  # set in `repoopulate`
 
     @property
@@ -65,10 +63,7 @@ class DBDispatch(DBTask):
 
     def complete(self) -> bool:
         with self.session as session:
-            if (
-                session.scalars(self.select_job.where(Job.status == JobStatus.QUEUED)).first()
-                is not None
-            ):
+            if session.scalars(self.select_job.where(Job.status == JobStatus.QUEUED)).first() is not None:
                 return False
         return True
 
@@ -205,9 +200,7 @@ class DBDispatch(DBTask):
             if tot_nact > 1.25 * self.config["run"]["jobs_max_concurrent"]:
                 self._logger(
                     session,
-                    self._logger_prefix
-                    + "::repopulate:  "
-                    + f"{tot_nact} > {self.config['run']['jobs_max_concurrent']} -> sleeping",
+                    self._logger_prefix + "::repopulate:  " + f"{tot_nact} > {self.config['run']['jobs_max_concurrent']} -> sleeping",
                 )
                 time.sleep(0.1 * self.config["run"]["job_max_runtime"])
                 continue
@@ -230,9 +223,7 @@ class DBDispatch(DBTask):
             )
             self._debug(
                 session,
-                self._logger_prefix
-                + "::repopulate:  "
-                + f"njobs_rem={njobs_rem}, T_rem={T_rem}, T_next={T_next}",
+                self._logger_prefix + "::repopulate:  " + f"njobs_rem={njobs_rem}, T_rem={T_rem}, T_next={T_next}",
             )
             opt_dist: dict = self._distribute_time(session, T_next)
 
@@ -242,38 +233,54 @@ class DBDispatch(DBTask):
             if rel_acc <= self.config["run"]["target_rel_acc"]:
                 self._debug(
                     session,
-                    self._logger_prefix
-                    + "::repopulate:  "
-                    + f"rel_acc = {rel_acc} vs. {self.config['run']['target_rel_acc']}",
+                    self._logger_prefix + "::repopulate:  " + f"rel_acc = {rel_acc} vs. {self.config['run']['target_rel_acc']}",
                 )
                 qbreak = True
                 continue
+            # @todo: place to inject the staggered merge settings?
 
             # > make sure we stay within `njobs` resource limits
-            while (tot_njobs := sum(opt["njobs"] for opt in opt_dist["part"].values())) > min(
-                njobs_rem, self.config["run"]["jobs_max_concurrent"]
-            ):
-                # > decrement in steps of min/2
-                dec_njobs: int = (
-                    min(opt["njobs"] for opt in opt_dist["part"].values() if opt["njobs"] > 0) // 2
-                    + 1
-                )
-                for opt in opt_dist["part"].values():
-                    if opt["njobs"] > 0:
-                        opt["njobs"] -= dec_njobs
-
-            # _console.print(opt_dist)
+            # > by decreasing the number of jobs in proportion to `T_opt`
+            lim_njobs: int = min(njobs_rem, self.config["run"]["jobs_max_concurrent"])
+            tot_njobs: int = sum(opt["njobs"] for opt in opt_dist["part"].values())
+            tot_T_opt: float = sum(opt["T_opt"] for opt in opt_dist["part"].values())
+            while tot_njobs > lim_njobs:
+                fac_T_opt: float = (tot_njobs - lim_njobs) / tot_T_opt
+                tot_njobs = 0  # reset to re-accumulate
+                # > keep track of how many jobs were removed
+                del_njobs: int = 0
+                max_njobs: int = 0
+                max_njobs_ipt: int = 0
+                max_njobs_T_opt: float = 0.0
+                for ipt, opt in opt_dist["part"].items():
+                    if opt["njobs"] > 1:  # protect decrementing `njobs=1` (min-production-parts)
+                        idel_njobs: int = int(fac_T_opt * opt["T_opt"])
+                        opt["njobs"] -= idel_njobs
+                        del_njobs += idel_njobs
+                    # > re-accumulate total number of jobs
+                    tot_njobs += opt["njobs"]
+                    # > find job with highest jobs count to use in guaranteed decrement per loop (termination)
+                    # > degenerate case: pick the one with *smaller* `T_opt`
+                    # > might look odd but want to *decrement* the jobs with smaller `T_opt`
+                    if (opt["njobs"] > max_njobs) or ((opt["njobs"] == max_njobs) and (opt["T_opt"] < max_njobs_T_opt)):
+                        max_njobs = opt["njobs"]
+                        max_njobs_ipt = ipt
+                        max_njobs_T_opt = opt["T_opt"]
+                # > make sure every iteration decements so termination is guaranteed
+                # > picking max njobs ensures we don't mess up the min-production-parts (njobs==1)
+                if del_njobs == 0:
+                    opt_dist["part"][max_njobs_ipt]["njobs"] -= 1
+                    tot_njobs -= 1
+                    del_njobs += 1
 
             # > register (at least one) job(s)
             tot_T: float = 0.0
-            for part_id, opt in sorted(
-                opt_dist["part"].items(), key=lambda x: x[1]["T_opt"], reverse=True
-            ):
+            for part_id, opt in sorted(opt_dist["part"].items(), key=lambda x: x[1]["T_opt"], reverse=True):
                 if tot_njobs == 0:
                     # > at least one job: pick largest T_opt one
                     opt["njobs"] = 1
                     tot_njobs = 1  # trigger only 1st iteration
-                # > make sure we don't exceed the batch size (want *continuous* optiization)
+                # > make sure we don't exceed the batch size (want *continuous* optimization)
                 opt["njobs"] = min(opt["njobs"], self.config["run"]["jobs_batch_size"])
                 self._debug(session, f"{part_id}: {opt}")
                 if opt["njobs"] <= 0:
@@ -283,9 +290,7 @@ class DBDispatch(DBTask):
                 pt: Part = session.get_one(Part, part_id)
                 self._logger(
                     session,
-                    self._logger_prefix
-                    + "::repopulate:  "
-                    + f"register [bold]{len(ids)}[/bold] jobs for {pt.name} [dim](job_ids = {ids})[/dim]",
+                    self._logger_prefix + "::repopulate:  " + f"register [bold]{len(ids)}[/bold] jobs for {pt.name} [dim](job_ids = {ids})[/dim]",
                 )
                 tot_T += opt["njobs"] * opt["T_job"]
 
@@ -294,9 +299,7 @@ class DBDispatch(DBTask):
             njobs_rem -= tot_njobs
             T_rem -= tot_T
 
-            estimate_rel_acc: float = abs(
-                opt_dist["tot_error_estimate_jobs"] / opt_dist["tot_result"]
-            )
+            estimate_rel_acc: float = abs(opt_dist["tot_error_estimate_jobs"] / opt_dist["tot_result"])
             if estimate_rel_acc <= self.config["run"]["target_rel_acc"]:
                 qbreak = True
                 continue
@@ -322,9 +325,7 @@ class DBDispatch(DBTask):
                     j.ncall = jobs[-1].ncall
                     j.niter = jobs[-1].niter
                     j.elapsed_time = jobs[-1].elapsed_time
-                if (
-                    self.id == 0
-                ):  # only for production dispatch @todo think about warmup & pre-production
+                if self.id == 0:  # only for production dispatch @todo think about warmup & pre-production
                     # > try to exhaust the batch with multiples of the batch unit size
                     nbatch_curr: int = min(len(jobs), self.config["run"]["jobs_batch_size"])
                     nbatch_unit: int = self.config["run"]["jobs_batch_unit_size"]
@@ -362,13 +363,6 @@ class DBDispatch(DBTask):
                 pt: Part = session.get_one(Part, self.part_id)
                 self._logger(
                     session,
-                    self._logger_prefix
-                    + "::run:  "
-                    + f"submitting {pt.name} jobs with "
-                    + (
-                        f"seeds: {jobs[0].seed}-{jobs[-1].seed}"
-                        if len(jobs) > 1
-                        else f"seed: {jobs[0].seed}"
-                    ),
+                    self._logger_prefix + "::run:  " + f"submitting {pt.name} jobs with " + (f"seeds: {jobs[0].seed}-{jobs[-1].seed}" if len(jobs) > 1 else f"seed: {jobs[0].seed}"),
                 )
                 yield self.clone(cls=DBRunner, ids=[job.id for job in jobs], part_id=self.part_id)
