@@ -40,7 +40,8 @@
     "ncall_start": 100,
     "niter": 2,
     "penalty_wrt_warmup": 0.1,
-    "fac_merge_trigger": 1.5
+    "fac_merge_trigger": 1.5,
+    "min_number": 1
   },
   "merge": {
     "trim_threshold": 4,

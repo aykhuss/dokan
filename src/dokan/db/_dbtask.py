@@ -211,7 +211,7 @@ class DBTask(Task, metaclass=ABCMeta):
             if ic["error"] > adj_thresh_max * pt_avg_error:
                 ic["adj_error"] = math.sqrt(ic["error"] * adj_thresh_max * pt_avg_error)
             # > penalize pre-production only parts
-            if ic["count"] <= 1 and ic["nextra"] <= 0:
+            if ic["count"] <= self.config["production"]["min_number"] and ic["nextra"] <= 0:
                 ic["adj_error"] = ic["error"] + adj_penalty * pt_max_error
         # _console.print(cache)
 
@@ -340,7 +340,10 @@ class DBTask(Task, metaclass=ABCMeta):
                     ntot_job: int = 0
 
             # > if we inflated the error of a count==1 part, we only want to register *one* job
-            if cache[part_id]["count"] <= 1 and cache[part_id]["nextra"] <= 0:
+            if (
+                cache[part_id]["count"] <= self.config["production"]["min_number"]
+                and cache[part_id]["nextra"] <= 0
+            ):
                 njobs = min(njobs, 1)
 
             # > update & store info for each part

@@ -100,6 +100,7 @@ _schema: dict = {
         "niter": int,  # number of iterations in a single job (>=2 for chi2dof)
         "penalty_wrt_warmup": float,  # factor that takes into account the slowdown from warmup -> production
         "fac_merge_trigger": float,  # factor that triggers a merge if ((#done+#merged)/(#merged+1)) > fac_merge_trigger
+        "min_number": int,  # minimum #of production jobs beyond pre-production (defaults to 1)
     },
     "merge": {
         "trim_threshold": float,  # threshold to trim outliers
