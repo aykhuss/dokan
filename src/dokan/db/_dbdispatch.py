@@ -175,8 +175,20 @@ class DBDispatch(DBTask):
                 .all()
             )
 
+            # > wait until # active jobs drops under max_concurrent with 25% buffer
+            if (
+                tot_nact := sum(nact for _, _, nact, _, _ in sorted_parts if nact is not None)
+            ) > 1.25 * self.config["run"]["jobs_max_concurrent"]:
+                self._logger(
+                    session,
+                    self._logger_prefix
+                    + "::repopulate:  "
+                    + f"{tot_nact} v.s. {self.config['run']['jobs_max_concurrent']} -> sleeping",
+                )
+                time.sleep(0.1 * self.config["run"]["job_max_runtime"])
+                continue
+
             # > termination condition based on #queued of individul jobs
-            tot_nact: int = 0
             for pt, nque, nact, nsuc, jobid in sorted_parts:
                 self._debug(session, f"  >> {pt!r} | {nque} | {nact} | {nsuc} | {jobid}")
                 if not nque:
@@ -186,7 +198,6 @@ class DBDispatch(DBTask):
                     qbreak = True
                 nsuc = nsuc if nsuc else 0
                 nact = nact if nact else 0
-                tot_nact += nact
                 # > initially, we prefer to increment jobs by 2x
                 if nque >= 2 * (nsuc + (nact - nque)):
                     qbreak = True
@@ -200,17 +211,6 @@ class DBDispatch(DBTask):
                     # >  pick part with largest # of queued jobs
                     self.part_id = pt.id
                     break
-
-            # > wait until # active jobs drops under max_concurrent with 25% buffer
-            if tot_nact > 1.25 * self.config["run"]["jobs_max_concurrent"]:
-                self._logger(
-                    session,
-                    self._logger_prefix
-                    + "::repopulate:  "
-                    + f"{tot_nact} > {self.config['run']['jobs_max_concurrent']} -> sleeping",
-                )
-                time.sleep(0.1 * self.config["run"]["job_max_runtime"])
-                continue
 
             # > the sole location where we break out of the infinite loop
             if qbreak:
