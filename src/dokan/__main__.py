@@ -601,8 +601,8 @@ def main() -> None:
                     with db_init.session as session:
                         for job in session.scalars(select_active_jobs):
                             console.print(f" > removing: {job!r}")
-                            if job.rel_path is not None and Path(job.rel_path).exists():
-                                shutil.rmtree(db_init._local(job.rel_path))
+                            if job.rel_path is not None and (jpath := db_init._local(job.rel_path)).exists():
+                                shutil.rmtree(jpath)
                             session.delete(job)
                         db_init._safe_commit(session)
 
@@ -613,8 +613,8 @@ def main() -> None:
                 with db_init.session as session:
                     for job in session.scalars(select_failed_jobs):
                         console.print(f" > removing: {job!r}")
-                        if job.rel_path is not None and Path(job.rel_path).exists():
-                            shutil.rmtree(db_init._local(job.rel_path))
+                        if job.rel_path is not None and (jpath := db_init._local(job.rel_path)).exists():
+                            shutil.rmtree(jpath)
                         session.delete(job)
                     db_init._safe_commit(session)
 
