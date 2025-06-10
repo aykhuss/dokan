@@ -164,9 +164,18 @@ class DBTask(Task, metaclass=ABCMeta):
             ntot: int = job.niter * job.ncall
             # > runtime estimate based on *all* successful jobs
             if job.status in JobStatus.success_list():
-                cache[job.part_id]["sum"] += job.elapsed_time
-                cache[job.part_id]["sum2"] += (job.elapsed_time) ** 2 / float(ntot)
-                cache[job.part_id]["norm"] += ntot
+                # >--------
+                # A > previously we weighted the longer jobs with a heigher weight
+                # A > but this could lead to a bias towards the runtime-limit
+                # cache[job.part_id]["sum"] += job.elapsed_time
+                # cache[job.part_id]["sum2"] += (job.elapsed_time) ** 2 / float(ntot)
+                # cache[job.part_id]["norm"] += ntot
+                # B > now we just do a standard sample average
+                itau: float = job.elapsed_time / float(ntot)
+                cache[job.part_id]["sum"] += itau
+                cache[job.part_id]["sum2"] += itau**2
+                cache[job.part_id]["norm"] += 1
+                # >--------
                 cache[job.part_id]["count"] += 1
             # > extra time allocation from active parts & DONE jobs
             if job.status in [*JobStatus.active_list(), JobStatus.DONE]:

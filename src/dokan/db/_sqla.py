@@ -72,7 +72,7 @@ class Job(DokanDB):
     chi2dof: Mapped[float] = mapped_column(default=float("inf"))
 
     def __repr__(self) -> str:
-        return f"Job(id={self.id!r}, part_id={self.part_id!r}, status={(self.status)!r}, timestamp={self.timestamp!r}, mode={ExecutionMode(self.mode)!r}, policy={ExecutionPolicy(self.policy)!r})"
+        return f"Job(id={self.id!r}, part_id={self.part_id!r}, status={(self.status)!r}, timestamp={self.timestamp!r}, rel_path={self.rel_path}, mode={ExecutionMode(self.mode)!r}, policy={ExecutionPolicy(self.policy)!r})"
 
 
 class DokanLog(DeclarativeBase):

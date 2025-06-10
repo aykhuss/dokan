@@ -140,6 +140,7 @@ def main() -> None:
         "--jobs-max-concurrent", type=int, help="maximum number of concurrently running jobs"
     )
     parser_submit.add_argument("--seed-offset", type=int, help="seed offset")
+    parser_submit.add_argument("--local-cores", type=int, help="maximum number of local cores")
 
     # > subcommand: finalize
     parser_finalize = subparsers.add_parser(
@@ -601,7 +602,10 @@ def main() -> None:
                     with db_init.session as session:
                         for job in session.scalars(select_active_jobs):
                             console.print(f" > removing: {job!r}")
-                            if job.rel_path is not None and (jpath := db_init._local(job.rel_path)).exists():
+                            if (
+                                job.rel_path is not None
+                                and (jpath := db_init._local(job.rel_path)).exists()
+                            ):
                                 shutil.rmtree(jpath)
                             session.delete(job)
                         db_init._safe_commit(session)
@@ -613,7 +617,10 @@ def main() -> None:
                 with db_init.session as session:
                     for job in session.scalars(select_failed_jobs):
                         console.print(f" > removing: {job!r}")
-                        if job.rel_path is not None and (jpath := db_init._local(job.rel_path)).exists():
+                        if (
+                            job.rel_path is not None
+                            and (jpath := db_init._local(job.rel_path)).exists()
+                        ):
                             shutil.rmtree(jpath)
                         session.delete(job)
                     db_init._safe_commit(session)
@@ -624,9 +631,13 @@ def main() -> None:
         jobs_max: int = min(config["run"]["jobs_max_concurrent"], config["run"]["jobs_max_total"])
         console.print(f"# CPU cores: {cpu_count}")
         if config["exe"]["policy"] == ExecutionPolicy.LOCAL:
-            local_ncores: int = jobs_max
+            local_ncores: int = jobs_max + 1
         else:
             local_ncores: int = cpu_count
+        # > CLI override
+        if args.local_cores is not None:
+            local_ncores = max(2, args.local_cores)
+
         nworkers: int = max(cpu_count, nactive_part) + 1
         config["run"]["jobs_batch_size"] = max(
             2 * (jobs_max // nactive_part) + 1,
