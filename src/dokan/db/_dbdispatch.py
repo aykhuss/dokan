@@ -254,9 +254,8 @@ class DBDispatch(DBTask):
             # > by decreasing the number of jobs in proportion to `T_opt`
             lim_njobs: int = min(njobs_rem, self.config["run"]["jobs_max_concurrent"])
             tot_njobs: int = sum(opt["njobs"] for opt in opt_dist["part"].values())
-            tot_T_opt: float = sum(opt["T_opt"] for opt in opt_dist["part"].values())
             while tot_njobs > lim_njobs:
-                fac_T_opt: float = (tot_njobs - lim_njobs) / tot_T_opt
+                fac: float = (tot_njobs - lim_njobs) / float(tot_njobs)
                 tot_njobs = 0  # reset to re-accumulate
                 # > keep track of how many jobs were removed
                 del_njobs: int = 0
@@ -265,7 +264,7 @@ class DBDispatch(DBTask):
                 max_njobs_T_opt: float = 0.0
                 for ipt, opt in opt_dist["part"].items():
                     if opt["njobs"] > 1:  # protect decrementing `njobs=1` (min-production-parts)
-                        idel_njobs: int = int(fac_T_opt * opt["T_opt"])
+                        idel_njobs: int = min(int(fac * opt["njobs"]), opt["njobs"] - 1)
                         opt["njobs"] -= idel_njobs
                         del_njobs += idel_njobs
                     # > re-accumulate total number of jobs

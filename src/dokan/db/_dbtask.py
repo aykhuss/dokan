@@ -303,7 +303,7 @@ class DBTask(Task, metaclass=ABCMeta):
 
         # > use E-L formula to compute a time estimate (beyond T)
         # > needed to achieve the desired accuracy
-        target_abs_acc: float = self.config["run"]["target_rel_acc"] * result["tot_result"]
+        target_abs_acc: float = abs(self.config["run"]["target_rel_acc"] * result["tot_result"])
         result["T_target"] = (accum_err_sqrtT / target_abs_acc) ** 2 - accum_T
         self._debug(
             session,
