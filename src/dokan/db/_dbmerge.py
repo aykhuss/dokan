@@ -35,7 +35,7 @@ class DBMerge(DBTask, metaclass=ABCMeta):
     # > tag to trigger a reset to initiate a re-merge from scratch (timestamp)
     reset_tag: float = luigi.FloatParameter(default=-1.0)
     # > flag to trigger write-out of weights for interpolation grids
-    write_weights: bool = luigi.BoolParameter(default=False)
+    grids: bool = luigi.BoolParameter(default=False)
 
     priority = 120
 
@@ -281,7 +281,7 @@ class MergePart(DBMerge):
             for obs, hist_info in self.config["run"]["histograms"].items():
                 out_file: Path = mrg_path / f"{obs}.dat"
                 nx: int = hist_info["nx"]
-                qwgt: bool = self.write_weights and (hist_info.get("grid") is not None)
+                qwgt: bool = self.grids and (hist_info.get("grid") is not None)
                 container = NNLOJETContainer(size=len(in_files[obs]), weights=qwgt)
                 obs_name: str | None = obs if single_file else None
                 for in_file in in_files[obs]:
@@ -489,7 +489,7 @@ class MergeAll(DBMerge):
             for obs, hist_info in self.config["run"]["histograms"].items():
                 out_file: Path = self.mrg_path / f"{obs}.dat"
                 nx: int = hist_info["nx"]
-                qwgt: bool = self.write_weights and (hist_info.get("grid") is not None)
+                qwgt: bool = self.grids and (hist_info.get("grid") is not None)
                 if len(in_files[obs]) == 0:
                     self._logger(
                         session,
@@ -617,7 +617,7 @@ class MergeFinal(DBMerge):
                 for obs, hist_info in self.config["run"]["histograms"].items():
                     out_file: Path = self.fin_path / f"{out_order}.{obs}.dat"
                     nx: int = hist_info["nx"]
-                    qwgt: bool = self.write_weights and (hist_info.get("grid") is not None)
+                    qwgt: bool = self.grids and (hist_info.get("grid") is not None)
                     if len(in_files[obs]) == 0:
                         self._logger(
                             session,
