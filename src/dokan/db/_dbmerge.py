@@ -8,6 +8,7 @@ import datetime
 import math
 import os
 import re
+import subprocess
 import time
 from abc import ABCMeta
 from pathlib import Path
@@ -33,6 +34,8 @@ class DBMerge(DBTask, metaclass=ABCMeta):
     force: bool = luigi.BoolParameter(default=False)
     # > tag to trigger a reset to initiate a re-merge from scratch (timestamp)
     reset_tag: float = luigi.FloatParameter(default=-1.0)
+    # > flag to trigger write-out of weights for interpolation grids
+    write_weights: bool = luigi.BoolParameter(default=False)
 
     priority = 120
 
@@ -275,16 +278,20 @@ class MergePart(DBMerge):
             # > merge all histograms
             # > keep track of all cross section estimates (also as sums over distributions)
             cross_list: list[tuple[float, float]] = []
-            for obs in self.config["run"]["histograms"]:
+            for obs, hist_info in self.config["run"]["histograms"].items():
                 out_file: Path = mrg_path / f"{obs}.dat"
-                nx: int = self.config["run"]["histograms"][obs]["nx"]
-                container = NNLOJETContainer(size=len(in_files[obs]))
+                nx: int = hist_info["nx"]
+                qwgt: bool = self.write_weights and (hist_info.get("grid") is not None)
+                container = NNLOJETContainer(size=len(in_files[obs]), weights=qwgt)
                 obs_name: str | None = obs if single_file else None
                 for in_file in in_files[obs]:
                     try:
                         container.append(
                             NNLOJETHistogram(
-                                nx=nx, filename=self._path / in_file, obs_name=obs_name
+                                nx=nx,
+                                filename=self._path / in_file,
+                                obs_name=obs_name,
+                                weights=qwgt,
                             )
                         )
                     except ValueError as e:
@@ -302,13 +309,15 @@ class MergePart(DBMerge):
                 )
                 hist = container.merge(weighted=True)
                 hist.write_to_file(out_file)
+                if qwgt:
+                    weights_file = out_file.with_suffix(".weights.txt")
+                    weights_file.write_text(hist.to_weights())
 
                 # > register cross section numbers
-                if "cumulant" in self.config["run"]["histograms"][obs]:
+                if "cumulant" in hist_info:
                     continue  # @todo ?
 
                 res, err = 0.0, 0.0  # accumulate bins to "cross" (possible fac, selectors, ...)
-                nx: int = self.config["run"]["histograms"][obs]["nx"]
                 if nx == 0:
                     with open(out_file, "rt") as cross:
                         for line in cross:
@@ -477,9 +486,10 @@ class MergeAll(DBMerge):
             opt_target_rel = abs(opt_dist["tot_error"] / opt_dist["tot_result"])
 
             # > sum all parts
-            for obs in self.config["run"]["histograms"]:
+            for obs, hist_info in self.config["run"]["histograms"].items():
                 out_file: Path = self.mrg_path / f"{obs}.dat"
-                nx: int = self.config["run"]["histograms"][obs]["nx"]
+                nx: int = hist_info["nx"]
+                qwgt: bool = self.write_weights and (hist_info.get("grid") is not None)
                 if len(in_files[obs]) == 0:
                     self._logger(
                         session,
@@ -490,12 +500,17 @@ class MergeAll(DBMerge):
                 hist = NNLOJETHistogram()
                 for in_file in in_files[obs]:
                     try:
-                        hist = hist + NNLOJETHistogram(nx=nx, filename=self._path / in_file)
+                        hist = hist + NNLOJETHistogram(
+                            nx=nx, filename=self._path / in_file, weights=qwgt
+                        )
                     except ValueError as e:
                         self._logger(
                             session, f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR
                         )
                 hist.write_to_file(out_file)
+                if qwgt:
+                    weights_file = out_file.with_suffix(".weights.txt")
+                    weights_file.write_text(hist.to_weights())
                 if obs == "cross":
                     with open(out_file, "rt") as cross:
                         for line in cross:
@@ -599,9 +614,10 @@ class MergeFinal(DBMerge):
                             raise FileNotFoundError(f"MergeFinal::run:  missing {in_file}")
 
                 # > sum all parts
-                for obs in self.config["run"]["histograms"]:
+                for obs, hist_info in self.config["run"]["histograms"].items():
                     out_file: Path = self.fin_path / f"{out_order}.{obs}.dat"
-                    nx: int = self.config["run"]["histograms"][obs]["nx"]
+                    nx: int = hist_info["nx"]
+                    qwgt: bool = self.write_weights and (hist_info.get("grid") is not None)
                     if len(in_files[obs]) == 0:
                         self._logger(
                             session,
@@ -612,7 +628,9 @@ class MergeFinal(DBMerge):
                     hist = NNLOJETHistogram()
                     for in_file in in_files[obs]:
                         try:
-                            hist = hist + NNLOJETHistogram(nx=nx, filename=self._path / in_file)
+                            hist = hist + NNLOJETHistogram(
+                                nx=nx, filename=self._path / in_file, weights=qwgt
+                            )
                         except ValueError as e:
                             self._logger(
                                 session,
@@ -621,6 +639,39 @@ class MergeFinal(DBMerge):
                                 level=LogLevel.ERROR,
                             )
                     hist.write_to_file(out_file)
+                    if qwgt:
+                        weights_file = out_file.with_suffix(".weights.txt")
+                        weights_file.write_text(hist.to_weights())
+                        pine_merge: Path = (
+                            Path(self.config["exe"]["path"]).parent / "nnlojet-merge-pineappl"
+                        )
+                        if pine_merge.is_file() and os.access(pine_merge, os.X_OK):
+                            grid_file: Path = out_file.with_suffix(".pineappl.lz4")
+                            grid_log: Path = out_file.with_suffix(".pineappl.log")
+                            job_env = os.environ.copy()
+                            with open(grid_log, "w") as log:
+                                _ = subprocess.run(
+                                    [
+                                        pine_merge,
+                                        str(weights_file.relative_to(out_file.parent)),
+                                        str(grid_file.relative_to(out_file.parent)),
+                                        "-v",
+                                        "--skip",
+                                        "--noopt",
+                                    ],
+                                    env=job_env,
+                                    cwd=out_file.parent,
+                                    stdout=log,
+                                    stderr=log,
+                                    text=True,
+                                )
+                            pass
+                        else:
+                            self._logger(
+                                session,
+                                f"[red]MergeFinal::run:  missing nnlojet-merge-pineappl executable at {pine_merge}[/red]",
+                                level=LogLevel.ERROR,
+                            )
 
             # > shut down the monitor
             self._logger(session, "complete", level=LogLevel.SIG_COMP)

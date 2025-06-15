@@ -712,6 +712,7 @@ def main() -> None:
             reset_tag=time.time(),
             config=config,
             run_tag=time.time(),
+            grids=True,
         )
         nactive_part: int = 0
         with mrg_final.session as session:
