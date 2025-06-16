@@ -50,6 +50,7 @@ _schema: dict = {
         "dokan_version": str,  # verion of the workflow
         "name": str,  # job name
         "path": str,  # absolute path to job directory
+        "raw_path": str,  # (optional) absolute path to raw data directory
         "template": str,  # template file name (not path)
         "md5": str,  # hash of the template file
         "histograms": {str: {"nx": int, "cumulant": int, "grid": str}},  # list of all histograms

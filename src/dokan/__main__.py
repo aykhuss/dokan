@@ -192,7 +192,7 @@ def main() -> None:
             if not Confirm.ask(
                 f"The folder {target_path} already exists, do you want to continue?"
             ):
-                sys.exit("Please, select a different output folder.")
+                sys.exit("Please select a different output folder.")
 
         config.set_path(target_path)
 
@@ -303,6 +303,26 @@ def main() -> None:
                 )
                 config["ui"]["log_level"] = new_log_level
                 console.print(f"[dim]log_level = {config['ui']['log_level']!r}[/dim]")
+
+                if ((raw_path := config["run"].get("raw_path")) is not None) or (
+                    Confirm.ask("Store the raw data at a separate location?", default=False)
+                ):
+                    if raw_path is None:
+                        raw_path = Prompt.ask("New path for raw data")
+                        if not raw_path.endswith("/" + config.path.name):
+                            raw_path = raw_path + "/" + config.path.name
+                    else:
+                        console.print(f"current raw data path: [italic]{raw_path}[/italic]")
+                        if Confirm.ask("Do you want to change the raw data path?", default=False):
+                            sys.exit("Changing raw path through the workflow is not supported yet.")
+                    raw_path = Path(raw_path)
+                    new_raw_path: Path = Path(
+                        Prompt.ask("Path for raw data", default=str(raw_path.absolute()))
+                    )
+                    if not new_raw_path.exists():
+                        new_raw_path.mkdir(parents=True, exist_ok=True)
+                    config["run"]["raw_path"] = str(new_raw_path.absolute())
+                    console.print(f"[dim]raw_path = {config['run']['raw_path']!r}[/dim]")
 
                 # console.print(
                 #     "for further advanced settings edit the config.json manually & consult the documentation"

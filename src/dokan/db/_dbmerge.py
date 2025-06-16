@@ -9,6 +9,7 @@ import math
 import os
 import re
 import subprocess
+import shutil
 import time
 from abc import ABCMeta
 from pathlib import Path
@@ -217,6 +218,10 @@ class MergePart(DBMerge):
             if not mrg_path.exists():
                 mrg_path.mkdir(parents=True)
 
+            # > raw data path: need to move output files if not already moved
+            if (raw_path := self.config["run"].get("raw_path")) is not None:
+                raw_path = Path(raw_path)
+
             # > populate a dictionary with all histogram files (reduces IO)
             in_files: dict[str, list[GenericPath]] = dict()
             single_file: str | None = self.config["run"].get("histograms_single_file", None)
@@ -238,7 +243,17 @@ class MergePart(DBMerge):
                 pt.ntot += job.niter * job.ncall
                 job_path: Path = self._path / job.rel_path
                 exe_data = ExeData(job_path)
+                if raw_path is not None:
+                    (raw_path / job.rel_path).mkdir(parents=True, exist_ok=True)
+
                 for out in exe_data["output_files"]:
+                    # > move to raw path
+                    if raw_path is not None:
+                        orig_file: Path = job_path / out
+                        dest_file: Path = raw_path / job.rel_path / out
+                        if orig_file.exists() and not orig_file.is_symlink():
+                            shutil.move(orig_file, dest_file)
+                            orig_file.symlink_to(dest_file)
                     if dat := re.match(r"^.*\.([^.]+)\.s[0-9]+\.dat", out):
                         if dat.group(1) in in_files:
                             in_files[dat.group(1)].append(
