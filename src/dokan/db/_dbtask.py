@@ -300,7 +300,8 @@ class DBTask(Task, metaclass=ABCMeta):
         result["tot_error"] = 0.0
         result["tot_error_estimate_opt"] = 0.0
         for part_id, ires in result["part"].items():
-            ires["T_opt"] *= T / acc_T_opt
+            if acc_T_opt > 0:
+                ires["T_opt"] *= T / acc_T_opt
             i_T: float = ires.get("i_T")
             result["tot_result"] += cache[part_id]["result"]
             result["tot_error"] += cache[part_id]["error"] ** 2

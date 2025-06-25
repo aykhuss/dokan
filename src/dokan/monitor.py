@@ -102,7 +102,7 @@ class Monitor(DBTask):
             result = f"[bold]{result}[/bold]"
         else:
             result = f"[dim]{result}[/dim]"
-        result += f" [yellow]A[dim][{n_running[0] + n_running[1]}][/dim][/yellow]"
+        result += f" [yellow]A[dim][{n_running[1]}/{n_active[0] + n_active[1]}][/dim][/yellow]"
         result += f" [green]D[dim][{n_success[0] + n_success[1]}][/dim][/green]"
         if any(n > 0 for n in n_failed):
             result += f" [red]F[dim][{n_failed[0] + n_failed[1]}][/dim][/red]"
