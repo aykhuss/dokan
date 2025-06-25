@@ -175,29 +175,21 @@ class DBDispatch(DBTask):
                 .all()
             )
 
-            # > wait until # active jobs drops under max_concurrent with 25% buffer
-            if (
-                tot_nact := sum(nact for _, _, nact, _, _ in sorted_parts if nact is not None)
-            ) > 1.25 * self.config["run"]["jobs_max_concurrent"]:
-                self._logger(
-                    session,
-                    self._logger_prefix
-                    + "::repopulate:  "
-                    + f"{tot_nact} v.s. {self.config['run']['jobs_max_concurrent']} -> sleeping",
-                )
-                time.sleep(0.1 * self.config["run"]["job_max_runtime"])
-                continue
-
             # > termination condition based on #queued of individul jobs
+            tot_nque: int = 0
+            tot_nact: int = 0
+            tot_nsuc: int = 0
             for pt, nque, nact, nsuc, jobid in sorted_parts:
                 self._debug(session, f"  >> {pt!r} | {nque} | {nact} | {nsuc} | {jobid}")
-                if not nque:
-                    continue
+                nque = nque if nque else 0
+                nact = nact if nact else 0
+                nsuc = nsuc if nsuc else 0
+                tot_nque += nque
+                tot_nact += nact
+                tot_nsuc += nsuc
                 # > implement termination conditions
                 if nque >= self.config["run"]["jobs_batch_size"]:
                     qbreak = True
-                nsuc = nsuc if nsuc else 0
-                nact = nact if nact else 0
                 # > initially, we prefer to increment jobs by 2x
                 if nque >= 2 * (nsuc + (nact - nque)):
                     qbreak = True
@@ -206,12 +198,23 @@ class DBDispatch(DBTask):
                 if nque < self.config["run"]["jobs_batch_unit_size"]:
                     qbreak = False
                 # > found a part that should be dispatched:
-                if qbreak:
+                if qbreak and self.part_id <= 0:
                     # > in case other conditions trigger:
                     # >  pick part with largest # of queued jobs
                     self.part_id = pt.id
-                    break
-
+                    #  break  # to get `tot_...` right, need to continue the loop
+            # > wait until # active jobs drops under max_concurrent with 25% buffer
+            if (tot_nact > tot_nque) and (
+                tot_nact > 1.25 * self.config["run"]["jobs_max_concurrent"]
+            ):
+                self._logger(
+                    session,
+                    self._logger_prefix
+                    + "::repopulate:  "
+                    + f"{tot_nact} v.s. {self.config['run']['jobs_max_concurrent']} -> sleeping",
+                )
+                time.sleep(0.1 * self.config["run"]["job_max_runtime"])
+                continue
             # > the sole location where we break out of the infinite loop
             if qbreak:
                 if self.part_id > 0:
