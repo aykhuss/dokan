@@ -201,6 +201,8 @@ class DBTask(Task, metaclass=ABCMeta):
             pt_avg_error += abs(cache[pt.id]["result"])
             tot_result += cache[pt.id]["result"]
             tot_error += cache[pt.id]["error"] ** 2
+        # > at this point, `pt_avg_error` = sum_{pt}(|result_pt|)
+        pt_max_error = max(pt_max_error, self.config["run"]["target_rel_acc"] * pt_avg_error)
         pt_avg_error = (
             self.config["run"]["target_rel_acc"] * pt_avg_error / math.sqrt(len(cache) + 1.0)
         )
