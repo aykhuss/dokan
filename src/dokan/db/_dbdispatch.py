@@ -176,6 +176,7 @@ class DBDispatch(DBTask):
             )
 
             # > termination condition based on #queued of individul jobs
+            qterm: bool = False  # separate variable avoid interfere with other termination conditions (rel acc, etc.)
             tot_nque: int = 0
             tot_nact: int = 0
             tot_nsuc: int = 0
@@ -189,20 +190,21 @@ class DBDispatch(DBTask):
                 tot_nsuc += nsuc
                 # > implement termination conditions
                 if nque >= self.config["run"]["jobs_batch_size"]:
-                    qbreak = True
+                    qterm = True
                 # > initially, we prefer to increment jobs by 2x
                 if nque >= 2 * (nsuc + (nact - nque)):
-                    qbreak = True
+                    qterm = True
                 # @todo: more?
                 # > reset break flag in case below min batch size
                 if nque < self.config["run"]["jobs_batch_unit_size"]:
-                    qbreak = False
+                    qterm = False
                 # > found a part that should be dispatched:
-                if qbreak and self.part_id <= 0:
+                if qterm and self.part_id <= 0:
                     # > in case other conditions trigger:
                     # >  pick part with largest # of queued jobs
                     self.part_id = pt.id
                     #  break  # to get `tot_...` right, need to continue the loop
+            qbreak = qbreak or qterm  # combine the two
             # > wait until # active jobs drops under max_concurrent with 25% buffer
             if (tot_nact > tot_nque) and (
                 tot_nact > 1.25 * self.config["run"]["jobs_max_concurrent"]
