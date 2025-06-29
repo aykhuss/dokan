@@ -224,6 +224,10 @@ class DBTask(Task, metaclass=ABCMeta):
             # > penalize pre-production only parts
             if ic["count"] <= self.config["production"]["min_number"] and ic["nextra"] <= 0:
                 ic["adj_error"] = ic["error"] + adj_penalty * pt_max_error
+                self._debug(
+                    session,
+                    f"DBTask::_distribute_time:  penalize error for part={part_id}: {ic['adj_error']}",
+                )
         # _console.print(cache)
 
         # > actually compute estimate for time per event
@@ -300,6 +304,7 @@ class DBTask(Task, metaclass=ABCMeta):
         self._debug(session, f"DBTask::_distribute_time:  {T=} v.s. {acc_T_opt=}")
         result["tot_result"] = 0.0
         result["tot_error"] = 0.0
+        result["tot_adj_error"] = 0.0
         result["tot_error_estimate_opt"] = 0.0
         for part_id, ires in result["part"].items():
             if acc_T_opt > 0:
@@ -307,10 +312,15 @@ class DBTask(Task, metaclass=ABCMeta):
             i_T: float = ires.get("i_T")
             result["tot_result"] += cache[part_id]["result"]
             result["tot_error"] += cache[part_id]["error"] ** 2
+            if math.isnan(cache[part_id]["adj_error"]):
+                result["tot_adj_error"] += cache[part_id]["error"] ** 2
+            else:
+                result["tot_adj_error"] += cache[part_id]["adj_error"] ** 2
             result["tot_error_estimate_opt"] += (
                 cache[part_id]["error"] ** 2 * i_T / (i_T + ires["T_opt"])
             )
         result["tot_error"] = math.sqrt(result["tot_error"])
+        result["tot_adj_error"] = math.sqrt(result["tot_adj_error"])
         result["tot_error_estimate_opt"] = math.sqrt(result["tot_error_estimate_opt"])
 
         # > use E-L formula to compute a time estimate (beyond T)

@@ -244,12 +244,14 @@ class DBDispatch(DBTask):
             # > interrupt when target accuracy reached
             # @todo does not respect the optimization target yet?
             rel_acc: float = abs(opt_dist["tot_error"] / opt_dist["tot_result"])
-            if rel_acc <= self.config["run"]["target_rel_acc"]:
+            adj_rel_acc: float = abs(opt_dist["tot_adj_error"] / opt_dist["tot_result"])
+            if adj_rel_acc <= self.config["run"]["target_rel_acc"]:
                 self._debug(
                     session,
                     self._logger_prefix
                     + "::repopulate:  "
-                    + f"rel_acc = {rel_acc} vs. {self.config['run']['target_rel_acc']}",
+                    + f"adj_rel_acc = {adj_rel_acc} (rel_acc = {rel_acc})"
+                    + f" vs. {self.config['run']['target_rel_acc']}",
                 )
                 qbreak = True
                 continue
