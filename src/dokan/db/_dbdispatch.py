@@ -69,7 +69,9 @@ class DBDispatch(DBTask):
                 session.scalars(self.select_job.where(Job.status == JobStatus.QUEUED)).first()
                 is not None
             ):
+                self._debug(session, self._logger_prefix + "::complete:  False")
                 return False
+        self._debug(session, self._logger_prefix + "::complete:  True")
         return True
 
     def _repopulate(self, session: Session):
@@ -253,6 +255,10 @@ class DBDispatch(DBTask):
                     + f"adj_rel_acc = {adj_rel_acc} (rel_acc = {rel_acc})"
                     + f" vs. {self.config['run']['target_rel_acc']}",
                 )
+                # > need to clear all queued jobs so `complete` state is set
+                for job in session.scalars(self.select_job.where(Job.status == JobStatus.QUEUED)):
+                    session.delete(job)
+                self._safe_commit(session)
                 qbreak = True
                 continue
             # @todo: place to inject the staggered merge settings?
