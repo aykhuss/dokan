@@ -15,10 +15,10 @@ PROCESS  Z
 END_PROCESS
 
 
-RUN  example_run_Z_8TeV
+RUN  example
   PDF = NNPDF31_nnlo_as_0118[0]
   scale_coefficients = .true.
-  multi_channel = 2
+  multi_channel = -2
   iseed   = 1
   production = 123[auto]
 END_RUN
@@ -35,16 +35,17 @@ END_SELECTORS
 
 HISTOGRAMS
 
-  yz  min=-2.5  max=+2.5  nbins=10  !grid=pine
-
+  yz             min=-2.5  max=+2.5  nbins=10  !grid=pine
   yz > yz_90_92  min=-2.5  max=+2.5  nbins=10  !grid=pine
   HISTOGRAM_SELECTORS
     select  mll  min = 90  max = 92
   END_HISTOGRAM_SELECTORS
 
-  ptz  min=0    max=30  nbins=30  !grid=pine
+  ptz                   min=0  max=30  nbins=30
+  ptz > ptz_cumulant_p  min=0  max=30  nbins=30  cumulant=+1
+  ptz > ptz_cumulant_m  min=0  max=30  nbins=30  cumulant=-1
 
-  ptz > ptz_cumulant  min=0    max=30  nbins=30  cumulant=+1
+  cross > norm
 
   etz  min=80  max=150  nbins=70  !grid=pine
   mll  min=80  max=100  nbins=20  !grid=pine

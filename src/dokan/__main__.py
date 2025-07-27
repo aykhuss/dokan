@@ -155,6 +155,7 @@ def main() -> None:
     parser_finalize.add_argument(
         "--k-scan-maxdev-steps", type=float, help="maximum deviation between k-scan steps"
     )
+    parser_finalize.add_argument("--local-cores", type=int, help="maximum number of local cores")
 
     # > parse arguments
     args = parser.parse_args()
@@ -723,6 +724,10 @@ def main() -> None:
             config["merge"]["k_scan_nsteps"] = args.k_scan_nsteps
         if args.k_scan_maxdev_steps is not None:
             config["merge"]["k_scan_maxdev_steps"] = args.k_scan_maxdev_steps
+        local_ncores: int = cpu_count
+        # > CLI override
+        if args.local_cores is not None:
+            local_ncores = max(2, args.local_cores)
         # > no monitor needed for finalize
         config["ui"]["monitor"] = False
         console.print(config["merge"])
@@ -743,14 +748,14 @@ def main() -> None:
             [mrg_final],
             worker_scheduler_factory=WorkerSchedulerFactory(
                 resources={
-                    # @todo allow `-j` flag for user to pick?
-                    "local_ncores": cpu_count,
+                    "local_ncores": local_ncores,
                     "DBTask": cpu_count + 1,
                 },
                 cache_task_completion=False,
                 check_complete_on_run=False,
                 check_unfulfilled_deps=True,
-                wait_interval=0.1,
+                wait_interval=0.01,
+                wait_jitter=0.01,
             ),
             detailed_summary=True,
             workers=min(cpu_count, nactive_part) + 1,
