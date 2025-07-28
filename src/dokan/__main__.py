@@ -28,7 +28,7 @@ from .db._jobstatus import JobStatus
 from .db._loglevel import LogLevel
 from .db._sqla import Job, Log, Part
 from .entry import Entry
-from .exe import ExecutionPolicy, Executor
+from .exe import ExecutionPolicy, ExecutionMode, Executor
 from .monitor import Monitor
 from .nnlojet import check_PDF, dry_run, get_lumi
 from .order import Order
@@ -103,9 +103,7 @@ def main() -> None:
     # > subcommand: init
     parser_init = subparsers.add_parser("init", help="initialise a run")
     parser_init.add_argument("runcard", metavar="RUNCARD", help="NNLOJET runcard")
-    parser_init.add_argument(
-        "-o", "--output", dest="run_path", help="destination of the run directory"
-    )
+    parser_init.add_argument("-o", "--output", dest="run_path", help="destination of the run directory")
     parser_init.add_argument("--no-lumi", action="store_true", help="skip the luminosity breakdown")
 
     # > subcommand: config
@@ -143,9 +141,7 @@ def main() -> None:
     parser_submit.add_argument("--local-cores", type=int, help="maximum number of local cores")
 
     # > subcommand: finalize
-    parser_finalize = subparsers.add_parser(
-        "finalize", help="merge completed jobs into a final result"
-    )
+    parser_finalize = subparsers.add_parser("finalize", help="merge completed jobs into a final result")
     parser_finalize.add_argument("run_path", metavar="RUN", help="run directory")
     parser_finalize.add_argument("--trim-threshold", type=float, help="threshold to flag outliers")
     parser_finalize.add_argument(
@@ -189,9 +185,7 @@ def main() -> None:
         else:
             target_path = os.path.relpath(runcard.data["run_name"])
         if Path(target_path).exists():
-            if not Confirm.ask(
-                f"The folder {target_path} already exists, do you want to continue?"
-            ):
+            if not Confirm.ask(f"The folder {target_path} already exists, do you want to continue?"):
                 sys.exit("Please select a different output folder.")
 
         config.set_path(target_path)
@@ -269,9 +263,7 @@ def main() -> None:
             # > advanced settings
             if args.advanced:
                 while True:
-                    new_seed_offset: int = IntPrompt.ask(
-                        "seed offset", default=config["run"]["seed_offset"]
-                    )
+                    new_seed_offset: int = IntPrompt.ask("seed offset", default=config["run"]["seed_offset"])
                     if new_seed_offset >= 0:
                         break
                     console.print("please enter a non-negative value")
@@ -304,6 +296,12 @@ def main() -> None:
                 config["ui"]["log_level"] = new_log_level
                 console.print(f"[dim]log_level = {config['ui']['log_level']!r}[/dim]")
 
+                new_warmup_frozen: bool = Confirm.ask(
+                    "freeze the warmup?", default=config["warmup"]["frozen"]
+                )
+                config["warmup"]["frozen"] = new_warmup_frozen
+                console.print(f"[dim]frozen = {config['warmup']['frozen']!r}[/dim]")
+
                 if ((raw_path := config["run"].get("raw_path")) is not None) or (
                     Confirm.ask("Store the raw data at a separate location?", default=False)
                 ):
@@ -324,9 +322,9 @@ def main() -> None:
                     config["run"]["raw_path"] = str(new_raw_path.absolute())
                     console.print(f"[dim]raw_path = {config['run']['raw_path']!r}[/dim]")
 
-                # console.print(
-                #     "for further advanced settings edit the config.json manually & consult the documentation"
-                # )
+                console.print(
+                    "[dim]more advanced settings in config.json (consult documentation in src/dokan/config.py)[/dim]"
+                )
 
                 # > config with flags skip the default config options
                 config.write()
@@ -354,9 +352,7 @@ def main() -> None:
                         break
                     console.print("please enter a value between 0 and 1")
                 config["merge"]["trim_max_fraction"] = new_trim_max_fraction
-                console.print(
-                    f"[dim]trim_max_fraction = {config['merge']['trim_max_fraction']!r}[/dim]"
-                )
+                console.print(f"[dim]trim_max_fraction = {config['merge']['trim_max_fraction']!r}[/dim]")
 
                 while True:
                     new_k_scan_nsteps: int = IntPrompt.ask(
@@ -376,9 +372,7 @@ def main() -> None:
                         break
                     console.print("please enter a positive value")
                 config["merge"]["k_scan_maxdev_steps"] = new_k_scan_maxdev_steps
-                console.print(
-                    f"[dim]k_scan_maxdev_steps = {config['merge']['k_scan_maxdev_steps']!r}[/dim]"
-                )
+                console.print(f"[dim]k_scan_maxdev_steps = {config['merge']['k_scan_maxdev_steps']!r}[/dim]")
 
                 # > config with flags skip the default config options
                 config.write()
@@ -434,9 +428,7 @@ def main() -> None:
             default=config["run"]["job_fill_max_runtime"],
         )
         config["run"]["job_fill_max_runtime"] = new_job_fill_max_runtime
-        console.print(
-            f"[dim]job_fill_max_runtime = {config['run']['job_fill_max_runtime']!r}[/dim]"
-        )
+        console.print(f"[dim]job_fill_max_runtime = {config['run']['job_fill_max_runtime']!r}[/dim]")
 
         while True:
             new_jobs_max_total: int = IntPrompt.ask(
@@ -455,9 +447,7 @@ def main() -> None:
             max_concurrent_msg: str = "maximum number of concurrent jobs"
             max_concurrent_def: int = config["run"]["jobs_max_concurrent"]
         while True:
-            new_jobs_max_concurrent: int = IntPrompt.ask(
-                max_concurrent_msg, default=max_concurrent_def
-            )
+            new_jobs_max_concurrent: int = IntPrompt.ask(max_concurrent_msg, default=max_concurrent_def)
             if new_jobs_max_concurrent > 0:
                 break
             console.print("please enter a positive value")
@@ -481,9 +471,7 @@ def main() -> None:
                 )
                 if new_poll_time > 10.0 and new_poll_time < max_runtime / 2:
                     break
-                console.print(
-                    f"please enter a positive value between [10, {max_runtime / 2}] seconds"
-                )
+                console.print(f"please enter a positive value between [10, {max_runtime / 2}] seconds")
             config["exe"]["policy_settings"][f"{cluster}_poll_time"] = new_poll_time
             console.print(
                 f"[dim]poll_time = {config['exe']['policy_settings'][f'{cluster}_poll_time']!r}s[/dim]"
@@ -510,9 +498,7 @@ def main() -> None:
             config["exe"]["policy_settings"][f"{cluster}_template"] = exe_template.name
             dst = config.path / config["exe"]["policy_settings"][f"{cluster}_template"]
             shutil.copyfile(exe_template, dst)
-            console.print(
-                f"{cluster} template: [italic]{exe_template.name}[/italic] copied to run folder:"
-            )
+            console.print(f"{cluster} template: [italic]{exe_template.name}[/italic] copied to run folder:")
             with open(dst, "r") as run_exe_template:
                 syntx = Syntax(run_exe_template.read(), "shell", word_wrap=True)
                 console.print(syntx)
@@ -600,20 +586,17 @@ def main() -> None:
                                 shutil.rmtree(db_init._local(job.rel_path))
                             session.delete(job)
                         elif job.status == JobStatus.RUNNING:
+                            # console.print(f" > resurrect: {job!r}")
+                            # if all(r[1] != job.rel_path for r in resurrect if r[0] == job.run_tag):
+                            #     if job.rel_path:
+                            #         resurrect.append((job.run_tag, job.rel_path))
+                            if ExecutionMode(job.mode) == ExecutionMode.WARMUP:
+                                # > absorb to current job by updating run_tag if it's a warmup job
+                                job.run_tag = db_init.run_tag
                             console.print(f" > resurrect: {job!r}")
                             if all(r[1] != job.rel_path for r in resurrect if r[0] == job.run_tag):
                                 if job.rel_path:
                                     resurrect.append((job.run_tag, job.rel_path))
-                            # if all(
-                            #     dbr.rel_path != job.rel_path
-                            #     for dbr in resurrect
-                            #     if dbr.run_tag == job.run_tag
-                            # ):
-                            #     resurrect.append(
-                            #         db_init.clone(
-                            #             DBResurrect, run_tag=job.run_tag, rel_path=job.rel_path
-                            #         )
-                            #     )
                         else:
                             raise RuntimeError(f"unexpected job status in recovery: {job.status}")
                     db_init._safe_commit(session)
@@ -622,10 +605,7 @@ def main() -> None:
                     with db_init.session as session:
                         for job in session.scalars(select_active_jobs):
                             console.print(f" > removing: {job!r}")
-                            if (
-                                job.rel_path is not None
-                                and (jpath := db_init._local(job.rel_path)).exists()
-                            ):
+                            if job.rel_path is not None and (jpath := db_init._local(job.rel_path)).exists():
                                 shutil.rmtree(jpath)
                             session.delete(job)
                         db_init._safe_commit(session)
@@ -637,10 +617,7 @@ def main() -> None:
                 with db_init.session as session:
                     for job in session.scalars(select_failed_jobs):
                         console.print(f" > removing: {job!r}")
-                        if (
-                            job.rel_path is not None
-                            and (jpath := db_init._local(job.rel_path)).exists()
-                        ):
+                        if job.rel_path is not None and (jpath := db_init._local(job.rel_path)).exists():
                             shutil.rmtree(jpath)
                         session.delete(job)
                     db_init._safe_commit(session)

@@ -64,7 +64,7 @@ class MergeObs(luigi.Task):
     nx: int = luigi.IntParameter()
     obs_name: str | None = luigi.OptionalParameter(default=None)
 
-    priority = 150
+    priority = 130
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -146,8 +146,7 @@ class MergePart(DBMerge):
             if (c_done + c_merged) == 0:
                 self._debug(
                     session,
-                    self._logger_prefix
-                    + f"::complete:  #done={c_done}, #merged={c_merged} => mark complete",
+                    self._logger_prefix + f"::complete:  #done={c_done}, #merged={c_merged} => mark complete",
                 )
                 # @todo raise error as we should never be in this situation?
                 return True
@@ -256,9 +255,7 @@ class MergePart(DBMerge):
                             orig_file.symlink_to(dest_file)
                     if dat := re.match(r"^.*\.([^.]+)\.s[0-9]+\.dat", out):
                         if dat.group(1) in in_files:
-                            in_files[dat.group(1)].append(
-                                str((job_path / out).relative_to(self._path))
-                            )
+                            in_files[dat.group(1)].append(str((job_path / out).relative_to(self._path)))
                         else:
                             self._logger(
                                 session,
@@ -311,7 +308,9 @@ class MergePart(DBMerge):
                         )
                     except ValueError as e:
                         self._logger(
-                            session, f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR
+                            session,
+                            f"error reading file {in_file} ({e!r})",
+                            level=LogLevel.ERROR,
                         )
                 container.mask_outliers(
                     self.config["merge"]["trim_threshold"],
@@ -419,8 +418,7 @@ class MergeAll(DBMerge):
         with self.session as session:
             if self.force or self.reset_tag > 0.0:
                 self._logger_prefix = (
-                    self._logger_prefix
-                    + f"[force={self.force}, reset={time.ctime(self.reset_tag)}]"
+                    self._logger_prefix + f"[force={self.force}, reset={time.ctime(self.reset_tag)}]"
                 )
             self._debug(session, self._logger_prefix + "::init")
         # > output directory
@@ -436,10 +434,7 @@ class MergeAll(DBMerge):
         if self.force or self.reset_tag > 0.0:
             with self.session as session:
                 self._debug(session, self._logger_prefix + "::requires:  return parts...")
-                return [
-                    self.clone(cls=MergePart, part_id=pt.id)
-                    for pt in session.scalars(self.select_part)
-                ]
+                return [self.clone(cls=MergePart, part_id=pt.id) for pt in session.scalars(self.select_part)]
         else:
             return []
 
@@ -458,8 +453,7 @@ class MergeAll(DBMerge):
         with self.session as session:
             self._debug(
                 session,
-                self._logger_prefix
-                + f"::complete:  files {datetime.datetime.fromtimestamp(timestamp)}",
+                self._logger_prefix + f"::complete:  files {datetime.datetime.fromtimestamp(timestamp)}",
             )
             for pt in session.scalars(self.select_part):
                 self._debug(
@@ -515,13 +509,9 @@ class MergeAll(DBMerge):
                 hist = NNLOJETHistogram()
                 for in_file in in_files[obs]:
                     try:
-                        hist = hist + NNLOJETHistogram(
-                            nx=nx, filename=self._path / in_file, weights=qwgt
-                        )
+                        hist = hist + NNLOJETHistogram(nx=nx, filename=self._path / in_file, weights=qwgt)
                     except ValueError as e:
-                        self._logger(
-                            session, f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR
-                        )
+                        self._logger(session, f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR)
                 hist.write_to_file(out_file)
                 if qwgt:
                     weights_file = out_file.with_suffix(".weights.txt")
@@ -555,8 +545,7 @@ class MergeFinal(DBMerge):
         with self.session as session:
             if self.force or self.reset_tag > 0.0:
                 self._logger_prefix = (
-                    self._logger_prefix
-                    + f"[force={self.force}, reset={time.ctime(self.reset_tag)}]"
+                    self._logger_prefix + f"[force={self.force}, reset={time.ctime(self.reset_tag)}]"
                 )
             self._debug(session, self._logger_prefix + "::init")
 
@@ -576,9 +565,7 @@ class MergeFinal(DBMerge):
     def complete(self) -> bool:
         with self.session as session:
             self._debug(session, self._logger_prefix + "::complete")
-            last_sig = session.scalars(
-                select(Log).where(Log.level < 0).order_by(Log.id.desc())
-            ).first()
+            last_sig = session.scalars(select(Log).where(Log.level < 0).order_by(Log.id.desc())).first()
             self._debug(session, self._logger_prefix + f"::complete:  last_sig = {last_sig!r}")
             if last_sig and last_sig.level in [LogLevel.SIG_COMP]:
                 return True
@@ -600,9 +587,7 @@ class MergeFinal(DBMerge):
 
                 # > is there even a Part at this order for this process? (NNLO for an NLO-only process)
                 if session.query(Part).filter(func.abs(Part.order) == abs(out_order)).count() == 0:
-                    self._logger(
-                        session, self._logger_prefix + f"::run:  no parts at order {out_order}"
-                    )
+                    self._logger(session, self._logger_prefix + f"::run:  no parts at order {out_order}")
                     continue
 
                 # > in order to write out an `order` result, we need at least one complete result for each part
@@ -643,23 +628,18 @@ class MergeFinal(DBMerge):
                     hist = NNLOJETHistogram()
                     for in_file in in_files[obs]:
                         try:
-                            hist = hist + NNLOJETHistogram(
-                                nx=nx, filename=self._path / in_file, weights=qwgt
-                            )
+                            hist = hist + NNLOJETHistogram(nx=nx, filename=self._path / in_file, weights=qwgt)
                         except ValueError as e:
                             self._logger(
                                 session,
-                                self._logger_prefix
-                                + f"::run:  error reading file {in_file} ({e!r})",
+                                self._logger_prefix + f"::run:  error reading file {in_file} ({e!r})",
                                 level=LogLevel.ERROR,
                             )
                     hist.write_to_file(out_file)
                     if qwgt:
                         weights_file = out_file.with_suffix(".weights.txt")
                         weights_file.write_text(hist.to_weights())
-                        pine_merge: Path = (
-                            Path(self.config["exe"]["path"]).parent / "nnlojet-merge-pineappl"
-                        )
+                        pine_merge: Path = Path(self.config["exe"]["path"]).parent / "nnlojet-merge-pineappl"
                         if pine_merge.is_file() and os.access(pine_merge, os.X_OK):
                             grid_file: Path = out_file.with_suffix(".pineappl.lz4")
                             grid_log: Path = out_file.with_suffix(".pineappl.log")
@@ -704,9 +684,7 @@ class MergeFinal(DBMerge):
                     break
             rel_acc: float = abs(self.error / self.result)
             # > compute total runtime invested
-            T_tot: float = sum(
-                pt.Ttot for pt in session.scalars(select(Part).where(Part.active.is_(True)))
-            )
+            T_tot: float = sum(pt.Ttot for pt in session.scalars(select(Part).where(Part.active.is_(True))))
             self._logger(
                 session,
                 f"\n[blue]cross = ({self.result} +/- {self.error}) fb  [{rel_acc * 1e2:.3}%][/blue]"

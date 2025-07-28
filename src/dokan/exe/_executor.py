@@ -147,9 +147,7 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         # > save information from logs in exe_data
         for job_id, job_data in self.exe_data["jobs"].items():
             log_matches = [
-                of
-                for of in self.exe_data["output_files"]
-                if of.endswith(f".s{job_data['seed']}.log")
+                of for of in self.exe_data["output_files"] if of.endswith(f".s{job_data['seed']}.log")
             ]
             if len(log_matches) != 1:
                 self._logger(

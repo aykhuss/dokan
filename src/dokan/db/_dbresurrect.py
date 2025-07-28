@@ -18,7 +18,7 @@ from ._sqla import Job
 class DBResurrect(DBTask):
     rel_path: str = luigi.Parameter()
 
-    priority = 50
+    priority = 200
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -40,9 +40,7 @@ class DBResurrect(DBTask):
             self._debug(session, f"DBResurrect::complete:  rel_path = {self.rel_path}")
             for job_id in self.exe_data["jobs"].keys():
                 if session.get_one(Job, job_id).status not in JobStatus.terminated_list():
-                    self._debug(
-                        session, f"DBResurrect::complete:  rel_path = {self.rel_path}: FALSE"
-                    )
+                    self._debug(session, f"DBResurrect::complete:  rel_path = {self.rel_path}: FALSE")
                     return False
             self._debug(session, f"DBResurrect::complete:  rel_path = {self.rel_path}: TRUE")
         return True
@@ -56,9 +54,7 @@ class DBResurrect(DBTask):
             raise RuntimeError(f"{self.rel_path} not final?!\n{self.exe_data.data}")
 
         with self.session as session:
-            self._logger(
-                session, f"DBResurrect::run:  rel_path = {self.rel_path}, run_tag = {self.run_tag}"
-            )
+            self._logger(session, f"DBResurrect::run:  rel_path = {self.rel_path}, run_tag = {self.run_tag}")
             for job_id, job_entry in self.exe_data["jobs"].items():
                 db_job: Job = session.get_one(Job, job_id)
                 if "result" in job_entry:

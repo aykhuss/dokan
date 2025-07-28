@@ -166,9 +166,7 @@ class Runcard:
                         elif obs := re.match(r"^\s*([^\s!]+)\b", ln, re.IGNORECASE):
                             runcard_data["histograms"][obs.group(1)] = options
                         else:
-                            raise RuntimeError(
-                                f"could not parse observable in histogram entry: {ln}"
-                            )
+                            raise RuntimeError(f"could not parse observable in histogram entry: {ln}")
 
                 # > accumulate flag
                 blk_flag |= ln_flag

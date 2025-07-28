@@ -74,9 +74,7 @@ class SlurmExec(Executor):
                 capture_output=True,
                 text=True,
             )
-            if slurm_submit.returncode == 0 and (
-                match_id := re.match(re_cluster_id, slurm_submit.stdout)
-            ):
+            if slurm_submit.returncode == 0 and (match_id := re.match(re_cluster_id, slurm_submit.stdout)):
                 cluster_id = int(match_id.group(1))
                 self.exe_data["policy_settings"]["slurm_id"] = cluster_id
                 self.exe_data.write()

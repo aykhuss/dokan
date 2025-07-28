@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from .db import DBTask, Job, JobStatus, Part
 from .db._dbdispatch import DBDispatch
+from .db._dbresurrect import DBResurrect
 from .db._loglevel import LogLevel
 from .exe import ExecutionMode
 from .exe._exe_data import ExeData
@@ -19,13 +20,16 @@ class WarmupFlag(IntFlag):
     CONST_ERR = auto()
     GRID = auto()
     SCALING = auto()
-    MIN_INCREMENT = auto()  ##
-    MAX_INCREMENT = auto()  ##
-    RUNTIME = auto()  ##
+    MIN_INCREMENT = auto()
+    MAX_INCREMENT = auto()
+    RUNTIME = auto()
+    FROZEN = auto()
 
     @staticmethod
     def print_flags(flags) -> str:
         ret: str = ""
+        if WarmupFlag.FROZEN in flags:
+            ret += " [FROZEN] "
         if WarmupFlag.RELACC in flags:
             ret += " [RELACC] "
         if WarmupFlag.CONST_ERR in flags:
@@ -129,6 +133,11 @@ class PreProduction(DBTask):
                 self.config["warmup"]["niter"],
             )
 
+        # > need at least one warmup; then check for the frozen status
+        if self.config["warmup"]["frozen"]:
+            wflag |= WarmupFlag.FROZEN
+            return -int(wflag)
+
         # > check increment steps
         if len(past_warmups) >= self.config["warmup"]["min_increment_steps"]:
             wflag |= WarmupFlag.MIN_INCREMENT
@@ -198,11 +207,7 @@ class PreProduction(DBTask):
             wflag |= WarmupFlag.SCALING
 
         # > already reached accuracy and can trust it (chi2dof)
-        if (
-            WarmupFlag.RELACC in wflag
-            and WarmupFlag.CHI2DOF in wflag
-            and WarmupFlag.CONST_ERR in wflag
-        ):
+        if WarmupFlag.RELACC in wflag and WarmupFlag.CHI2DOF in wflag and WarmupFlag.CONST_ERR in wflag:
             return -int(wflag)
 
         # > warmup has converged
@@ -314,9 +319,7 @@ class PreProduction(DBTask):
             raise RuntimeError(f"pre-production: no warmup found for {self.part_id}")
         LW_ntot: int = LW.ncall * LW.niter
 
-        PP_ntot: int = LW_ntot * int(
-            penalty * self.config["run"]["job_max_runtime"] / LW.elapsed_time
-        )
+        PP_ntot: int = LW_ntot * int(penalty * self.config["run"]["job_max_runtime"] / LW.elapsed_time)
         if LW.result != 0.0 and LW.error != 0.0:
             PP_ntot_acc: int = LW_ntot * int(
                 (LW.error / LW.result / self.config["run"]["target_rel_acc"]) ** 2
@@ -334,10 +337,17 @@ class PreProduction(DBTask):
             self._logger(session, f"PreProduction::run[{pt.name}]:")
             if (job_id := self._append_warmup(session)) > 0:
                 self._logger(
-                    session,
-                    f"PreProduction::run[{pt.name}]:  yield warmup [dim](job_id = {job_id})[/dim]",
+                    session, f"PreProduction::run[{pt.name}]:  yield warmup [dim](job_id = {job_id})[/dim]"
                 )
                 yield self.clone(cls=DBDispatch, id=job_id)
+            if job_id > 0:
+                # > this is a resurrected warmup job
+                job: Job = session.get_one(Job, job_id)
+                self._logger(
+                    session, f"PreProduction::run[{pt.name}]:  resurrect warmup [dim](job_id = {job_id})[/dim]"
+                )
+                yield self.clone(cls=DBResurrect, rel_path=job.rel_path)
+            assert job_id < 0, f"PreProduction::run[{pt.name}]:  warmup job_id = {job_id} < 0 expected!"
             self._logger(
                 session,
                 f"PreProduction::run[{pt.name}]:  warmup done [dim]{WarmupFlag.print_flags(WarmupFlag(-job_id))}[/dim]",
@@ -348,3 +358,10 @@ class PreProduction(DBTask):
                     f"PreProduction::run[{pt.name}]:  yield pre-production [dim](job_id = {job_id})[/dim]",
                 )
                 yield self.clone(cls=DBDispatch, id=job_id)
+            if job_id > 0:
+                # > this is a resurrected warmup job
+                self._logger(
+                    session, f"PreProduction::run[{pt.name}]:  resurrect warmup [dim](job_id = {job_id})[/dim]"
+                )
+                job: Job = session.get_one(Job, job_id)
+                yield self.clone(cls=DBResurrect, rel_path=job.rel_path)

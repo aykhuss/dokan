@@ -30,10 +30,7 @@ class BatchLocalExec(LocalExec):
     """Wrapper task to batch-execute multiple local jobs"""
 
     def requires(self):
-        return [
-            self.clone(cls=SingleLocalExec, job_id=job_id)
-            for job_id in self.exe_data["jobs"].keys()
-        ]
+        return [self.clone(cls=SingleLocalExec, job_id=job_id) for job_id in self.exe_data["jobs"].keys()]
 
     def exe(self):
         pass
@@ -94,7 +91,5 @@ class SingleLocalExec(LocalExec):
                 text=True,
             )
             if exec_out.returncode != 0:
-                self._logger(
-                    f"SingleLocalExec failed to execute job {self.path}", level=LogLevel.ERROR
-                )
+                self._logger(f"SingleLocalExec failed to execute job {self.path}", level=LogLevel.ERROR)
                 return  # job will be flagged "failed"

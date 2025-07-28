@@ -37,17 +37,12 @@ def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:
             key, val = next(iter(schema.items()))
             if isinstance(key, type):
                 # > try to  convert the key back to the desired type (JSON only has str keys)
-                if (
-                    convert_to_type
-                    and key is not str
-                    and all(isinstance(k, str) for k in struct.keys())
-                ):
+                if convert_to_type and key is not str and all(isinstance(k, str) for k in struct.keys()):
                     struct_keys: list = list(struct.keys())
                     for k in struct_keys:
                         struct[key(k)] = struct.pop(k)
                 return all(
-                    isinstance(k, key) and validate_schema(v, val, convert_to_type)
-                    for k, v in struct.items()
+                    isinstance(k, key) and validate_schema(v, val, convert_to_type) for k, v in struct.items()
                 )
         # > default case: recursively check the dictionary
         if convert_to_type:
@@ -56,9 +51,7 @@ def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:
                     continue
                 if not isinstance(struct[key], val):
                     struct[key] = val(struct[key])
-        return all(
-            k in schema and validate_schema(struct[k], schema[k], convert_to_type) for k in struct
-        )
+        return all(k in schema and validate_schema(struct[k], schema[k], convert_to_type) for k in struct)
 
     if isinstance(struct, list) and isinstance(schema, list):
         # > single entry of type requires all elements to be of that type
