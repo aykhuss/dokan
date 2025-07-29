@@ -33,9 +33,7 @@ FF_antennae = [
 ]
 IF_antennae = ["Daleo:2006xa", "Daleo:2009yj"]
 II_antennae = ["Daleo:2006xa", "Boughezal:2010mc", "Gehrmann:2011wi", "Gehrmann-DeRidder:2012too"]
-IF_II_antennae = list(
-    dict.fromkeys(IF_antennae + II_antennae)
-)  # remove duplicate NLO antenna reference
+IF_II_antennae = list(dict.fromkeys(IF_antennae + II_antennae))  # remove duplicate NLO antenna reference
 
 procs = {
     "eeJJ": {

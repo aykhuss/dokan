@@ -54,9 +54,7 @@ class Monitor(DBTask):
                     part_order.append(ipt)
         part_order.sort(key=itemgetter(1))  # alphabetically by name
         part_order.sort(key=itemgetter(0))  # then finally by the order
-        self._map_col: dict[str, int] = dict(
-            (ipt[1], icol) for icol, ipt in enumerate(part_order, start=1)
-        )
+        self._map_col: dict[str, int] = dict((ipt[1], icol) for icol, ipt in enumerate(part_order, start=1))
         self._data: list[list[str]] = [
             ["-" for _ in range(len(part_order) + 1)] for _ in range(self._nchan + 1)
         ]
@@ -73,9 +71,7 @@ class Monitor(DBTask):
         display_mode: ExecutionMode = (
             ExecutionMode.WARMUP
             if any(
-                job.mode == ExecutionMode.WARMUP
-                for job in pt.jobs
-                if job.status in JobStatus.active_list()
+                job.mode == ExecutionMode.WARMUP for job in pt.jobs if job.status in JobStatus.active_list()
             )
             else ExecutionMode.PRODUCTION
         )
@@ -95,9 +91,7 @@ class Monitor(DBTask):
                 n_failed[idx] += 1
             if job.status == JobStatus.RUNNING:
                 n_running[idx] += 1
-        result: str = (
-            "[blue]WRM[/blue]" if display_mode == ExecutionMode.WARMUP else "[magenta]PRD[/magenta]"
-        )
+        result: str = "[blue]WRM[/blue]" if display_mode == ExecutionMode.WARMUP else "[magenta]PRD[/magenta]"
         if n_running[1] > 0:
             result = f"[bold]{result}[/bold]"
         else:
@@ -172,9 +166,7 @@ class Monitor(DBTask):
                         dt_str: str = datetime.datetime.fromtimestamp(log.timestamp).strftime(
                             "%Y-%m-%d %H:%M:%S"
                         )
-                        live.console.print(
-                            f"[dim][{dt_str}][/dim]({LogLevel(log.level)!r}): {log.message}"
-                        )
+                        live.console.print(f"[dim][{dt_str}][/dim]({LogLevel(log.level)!r}): {log.message}")
                         if log.level in [LogLevel.SIG_COMP, LogLevel.SIG_TERM]:
                             return
                         # time.sleep(0.01)

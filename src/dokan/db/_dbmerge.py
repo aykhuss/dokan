@@ -72,7 +72,7 @@ class MergeObs(Task):
     hdf5_path: list[str] = luigi.ListParameter()  # path to the observable group
     dat_out: GenericPath = luigi.Parameter()
 
-    priority = 150
+    priority = 130
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

@@ -242,9 +242,7 @@ def check_PDF(exe: GenericPath, PDF: str) -> bool:
         True is PDF set could be loaded successfully, False otherwise
     """
     try:
-        exe_out = subprocess.run(
-            [exe, "--checkpdf", PDF], capture_output=True, text=True, check=True
-        )
+        exe_out = subprocess.run([exe, "--checkpdf", PDF], capture_output=True, text=True, check=True)
     except subprocess.CalledProcessError:
         return False
     if exe_out.returncode != 0:
@@ -289,9 +287,7 @@ def get_lumi(exe: GenericPath, proc: str, use_default: bool = False) -> dict:
     if proc in _override_chan_list:
         chan_list = _override_chan_list[proc]
     else:
-        exe_out = subprocess.run(
-            [exe, "-listlumi", proc], capture_output=True, text=True, check=True
-        )
+        exe_out = subprocess.run([exe, "-listlumi", proc], capture_output=True, text=True, check=True)
         if exe_out.returncode != 0:
             raise RuntimeError(f"get_lumi: failed calling NNLOJET: {exe_out.stderr}")
         for line in exe_out.stdout.splitlines():
@@ -387,9 +383,7 @@ def parse_log_file(log_file: GenericPath) -> dict:
                 iteration["chi2dof"] = float(match_chi2it.group(1))
                 job_data["iterations"].append(iteration)
                 iteration = {}
-            match_elapsed_time = re.search(
-                r"\s*Elapsed\s+time\s*=\s*(\S+)\b\s*(\S+)\b", line, re.IGNORECASE
-            )
+            match_elapsed_time = re.search(r"\s*Elapsed\s+time\s*=\s*(\S+)\b\s*(\S+)\b", line, re.IGNORECASE)
             if match_elapsed_time:
                 unit_time: str = match_elapsed_time.group(2)
                 fac_time: float = 1.0
@@ -407,9 +401,7 @@ def parse_log_file(log_file: GenericPath) -> dict:
                 job_data["error"] = job_data["iterations"][-1]["error_acc"]
                 if math.isnan(job_data["result"]):
                     # > catch the case where the integral vanishes identically
-                    if all(
-                        it["result"] == 0.0 and it["error"] == 0.0 for it in job_data["iterations"]
-                    ):
+                    if all(it["result"] == 0.0 and it["error"] == 0.0 for it in job_data["iterations"]):
                         job_data["result"] = 0.0
                         job_data["error"] = 0.0
                 job_data["chi2dof"] = job_data["iterations"][-1]["chi2dof"]

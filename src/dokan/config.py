@@ -68,9 +68,9 @@ _schema: dict = {
         "timestamps": float,  # @todo list of timestamps when `run` was called
     },
     "ui": {
-        "monitor": bool,
-        "refresh_delay": float,
-        "log_level": LogLevel,
+        "monitor": bool,  # flag to switch on/off the live monitor
+        "refresh_delay": float,  # delay (in seconds) between refreshes of the monitor
+        "log_level": LogLevel,  # logging level to be displayed
     },
     "process": {
         "name": str,  # name of the process in NNLOJET
@@ -91,9 +91,10 @@ _schema: dict = {
         "min_increment_steps": int,  # must be > 2 and < max value
         "max_increment_steps": int,  # up to how many rounds of warmups we want to run
         "fac_increment": float,  # the factor by which we increment the statistics each round
-        "max_chi2dof": float,
-        "max_err_rel_var": float,
-        "scaling_window": float,
+        "max_chi2dof": float,  # maximum chi2/dof from iterations of the warmup to accept
+        "max_err_rel_var": float,  # maximum relative variation of the errors between iterations to accept
+        "scaling_window": float,  # the tolerance we allow for the scaling to follow the 1/sqrt(N) MC error scaling
+        "frozen": bool,  # flag to freeze the warmup stage
     },
     "production": {
         "ncores": int,  # #of cores to allocate to a single production run
@@ -155,10 +156,7 @@ class Config(UserDict):
             ):
                 return False
         if "production" in self.data:
-            if (
-                "min_number" in self.data["production"]
-                and self.data["production"]["min_number"] < 1
-            ):
+            if "min_number" in self.data["production"] and self.data["production"]["min_number"] < 1:
                 return False
         return True
 

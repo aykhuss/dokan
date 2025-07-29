@@ -41,6 +41,7 @@ class Entry(DBTask):
         preprods: list[PreProduction] = []
         with self.session as session:
             self._debug(session, "Entry::run")
+
             for pt in session.scalars(select(Part).where(Part.active.is_(True))):
                 # self.debug(str(pt))
                 preprod = self.clone(
@@ -48,24 +49,30 @@ class Entry(DBTask):
                     part_id=pt.id,
                 )
                 preprods.append(preprod)
-
+            # if self.resurrect:
+            #     preprods = [
+            #         self.clone(DBResurrect, rel_path=r[1]) for r in self.resurrect if r[0] == self.run_tag
+            #     ] + preprods
             self._logger(session, "Entry::run:  yield preprods")
             yield preprods
+
             self._logger(session, "Entry::run:  complete preprods -> MergeAll")
             yield self.clone(MergeAll, force=True)
+
             self._logger(session, "Entry::run:  complete MergeAll -> dispatch")
             # self.print_job()
             n_dispatch: int = max(len(preprods), self.config["run"]["jobs_max_concurrent"])
-            dispatch: list[luigi.Task] = [
-                self.clone(DBDispatch, id=0, _n=n) for n in range(n_dispatch)
-            ]
+            dispatch: list[luigi.Task] = [self.clone(DBDispatch, id=0, _n=n) for n in range(n_dispatch)]
             dispatch[0]._repopulate(session)
             if self.resurrect:
                 dispatch = [
-                    self.clone(DBResurrect, run_tag=r[0], rel_path=r[1]) for r in self.resurrect
+                    self.clone(DBResurrect, run_tag=r[0], rel_path=r[1])
+                    for r in self.resurrect
+                    if r[0] < self.run_tag
                 ] + dispatch
             self._debug(session, "Entry::run:  yield dispatch")
             yield dispatch
+
             self._logger(session, "Entry::run:  complete dispatch -> MergeFinal")
             yield self.clone(MergeFinal, force=True)
             # yield self.clone(MergeFinal, force=True, reset_tag=time.time(), grids=True)

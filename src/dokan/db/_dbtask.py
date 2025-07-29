@@ -120,9 +120,7 @@ class DBTask(Task, metaclass=ABCMeta):
         njobs_alloc: int = query_alloc.count()
         njobs_rem: int = self.config["run"]["jobs_max_total"] - njobs_alloc
         T_alloc: float = sum(job.elapsed_time for job in query_alloc)
-        T_rem: float = (
-            self.config["run"]["jobs_max_total"] * self.config["run"]["job_max_runtime"] - T_alloc
-        )
+        T_rem: float = self.config["run"]["jobs_max_total"] * self.config["run"]["job_max_runtime"] - T_alloc
         return njobs_rem, T_rem
 
     # @todo make return a UserDict class with a schema?
@@ -203,9 +201,7 @@ class DBTask(Task, metaclass=ABCMeta):
             tot_error += cache[pt.id]["error"] ** 2
         # > at this point, `pt_avg_error` = sum_{pt}(|result_pt|)
         pt_max_error = max(pt_max_error, self.config["run"]["target_rel_acc"] * pt_avg_error)
-        pt_avg_error = (
-            self.config["run"]["target_rel_acc"] * pt_avg_error / math.sqrt(len(cache) + 1.0)
-        )
+        pt_avg_error = self.config["run"]["target_rel_acc"] * pt_avg_error / math.sqrt(len(cache) + 1.0)
         tot_error = math.sqrt(tot_error)
 
         # > adjusted errors
@@ -316,9 +312,7 @@ class DBTask(Task, metaclass=ABCMeta):
                 result["tot_adj_error"] += cache[part_id]["error"] ** 2
             else:
                 result["tot_adj_error"] += cache[part_id]["adj_error"] ** 2
-            result["tot_error_estimate_opt"] += (
-                cache[part_id]["error"] ** 2 * i_T / (i_T + ires["T_opt"])
-            )
+            result["tot_error_estimate_opt"] += cache[part_id]["error"] ** 2 * i_T / (i_T + ires["T_opt"])
         result["tot_error"] = math.sqrt(result["tot_error"])
         result["tot_adj_error"] = math.sqrt(result["tot_adj_error"])
         result["tot_error_estimate_opt"] = math.sqrt(result["tot_error_estimate_opt"])
@@ -350,8 +344,7 @@ class DBTask(Task, metaclass=ABCMeta):
             else:
                 if ires["T_opt"] > 0.0:
                     ntot_min: int = (
-                        self.config["production"]["niter"]
-                        * self.config["production"]["ncall_start"]
+                        self.config["production"]["niter"] * self.config["production"]["ncall_start"]
                     )
                     ntot_max: int = int(T_max_job / ires["tau"])
                     njobs: int = int(ires["T_opt"] / T_max_job) + 1
@@ -429,9 +422,7 @@ class DBInit(DBTask):
                 db_pt = session.scalars(stmt).first()
                 active: bool = Order(self.channels[pt].get("order")).is_in(Order(self.order))
                 if not db_pt:
-                    session.add(
-                        Part(name=pt, active=active, timestamp=time.time(), **self.channels[pt])
-                    )
+                    session.add(Part(name=pt, active=active, timestamp=time.time(), **self.channels[pt]))
                 else:
                     db_pt.active = active
             self._safe_commit(session)

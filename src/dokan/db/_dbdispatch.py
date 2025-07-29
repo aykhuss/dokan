@@ -65,10 +65,7 @@ class DBDispatch(DBTask):
 
     def complete(self) -> bool:
         with self.session as session:
-            if (
-                session.scalars(self.select_job.where(Job.status == JobStatus.QUEUED)).first()
-                is not None
-            ):
+            if session.scalars(self.select_job.where(Job.status == JobStatus.QUEUED)).first() is not None:
                 self._debug(session, self._logger_prefix + "::complete:  False")
                 return False
         self._debug(session, self._logger_prefix + "::complete:  True")
@@ -178,7 +175,9 @@ class DBDispatch(DBTask):
             )
 
             # > termination condition based on #queued of individul jobs
-            qterm: bool = False  # separate variable avoid interfere with other termination conditions (rel acc, etc.)
+            qterm: bool = (
+                False  # separate variable avoid interfere with other termination conditions (rel acc, etc.)
+            )
             tot_nque: int = 0
             tot_nact: int = 0
             tot_nsuc: int = 0
@@ -208,9 +207,7 @@ class DBDispatch(DBTask):
                     #  break  # to get `tot_...` right, need to continue the loop
             qbreak = qbreak or qterm  # combine the two
             # > wait until # active jobs drops under max_concurrent with 25% buffer
-            if (tot_nact > tot_nque) and (
-                tot_nact > 1.25 * self.config["run"]["jobs_max_concurrent"]
-            ):
+            if (tot_nact > tot_nque) and (tot_nact > 1.25 * self.config["run"]["jobs_max_concurrent"]):
                 self._logger(
                     session,
                     self._logger_prefix
@@ -300,9 +297,7 @@ class DBDispatch(DBTask):
 
             # > register (at least one) job(s)
             tot_T: float = 0.0
-            for part_id, opt in sorted(
-                opt_dist["part"].items(), key=lambda x: x[1]["T_opt"], reverse=True
-            ):
+            for part_id, opt in sorted(opt_dist["part"].items(), key=lambda x: x[1]["T_opt"], reverse=True):
                 if tot_njobs == 0:
                     # > at least one job: pick largest T_opt one
                     opt["njobs"] = 1
@@ -328,9 +323,7 @@ class DBDispatch(DBTask):
             njobs_rem -= tot_njobs
             T_rem -= tot_T
 
-            estimate_rel_acc: float = abs(
-                opt_dist["tot_error_estimate_jobs"] / opt_dist["tot_result"]
-            )
+            estimate_rel_acc: float = abs(opt_dist["tot_error_estimate_jobs"] / opt_dist["tot_result"])
             if estimate_rel_acc <= self.config["run"]["target_rel_acc"]:
                 qbreak = True
                 continue
@@ -356,9 +349,7 @@ class DBDispatch(DBTask):
                     j.ncall = jobs[-1].ncall
                     j.niter = jobs[-1].niter
                     j.elapsed_time = jobs[-1].elapsed_time
-                if (
-                    self.id == 0
-                ):  # only for production dispatch @todo think about warmup & pre-production
+                if self.id == 0:  # only for production dispatch @todo think about warmup & pre-production
                     # > try to exhaust the batch with multiples of the batch unit size
                     nbatch_curr: int = min(len(jobs), self.config["run"]["jobs_batch_size"])
                     nbatch_unit: int = self.config["run"]["jobs_batch_unit_size"]
@@ -400,9 +391,7 @@ class DBDispatch(DBTask):
                     + "::run:  "
                     + f"submitting {pt.name} jobs with "
                     + (
-                        f"seeds: {jobs[0].seed}-{jobs[-1].seed}"
-                        if len(jobs) > 1
-                        else f"seed: {jobs[0].seed}"
+                        f"seeds: {jobs[0].seed}-{jobs[-1].seed}" if len(jobs) > 1 else f"seed: {jobs[0].seed}"
                     ),
                 )
                 yield self.clone(cls=DBRunner, ids=[job.id for job in jobs], part_id=self.part_id)

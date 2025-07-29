@@ -85,6 +85,4 @@ def is_outlier_IQR(points, thresh=1.5):
     upper_fence = upper_quartile + thresh * iqr
 
     # return (points < lower_fence) | (points > upper_fence)
-    return np.array(
-        [(pt < lower_fence) | (pt > upper_fence) if np.isfinite(pt) else False for pt in points]
-    )
+    return np.array([(pt < lower_fence) | (pt > upper_fence) if np.isfinite(pt) else False for pt in points])

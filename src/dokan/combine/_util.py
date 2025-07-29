@@ -171,9 +171,7 @@ class NNLOJETHistogram:
                 data = line.split()
                 if len(data) != ncols:
                     raise ValueError(
-                        "ncols mismatch in data: {} != {} (file: {})".format(
-                            len(data), ncols, self.filename
-                        )
+                        "ncols mismatch in data: {} != {} (file: {})".format(len(data), ncols, self.filename)
                     )
                 if self.nx > 0:
                     data_xval.append([float(data[idx]) for idx in range(self.nx)])
@@ -190,9 +188,7 @@ class NNLOJETHistogram:
 
         # > integer overflow?!
         if self._neval < 0:
-            print(
-                "negative neval = {} info: {}".format(self._neval, self.filename), file=sys.stderr
-            )
+            print("negative neval = {} info: {}".format(self._neval, self.filename), file=sys.stderr)
             raise ValueError("negative neval?!")
 
         # > step 3: rebin
@@ -226,15 +222,13 @@ class NNLOJETHistogram:
                 # print("data_xval[{}][0] = ".format(i_row), type(data_xval[i_row][0]), data_xval[i_row][0])
                 # print("rebin[i_rebin] = ".format(i_rebin), type(rebin[i_rebin]), rebin[i_rebin])
                 # find the first matching bin or deal with the trailing bins
-                if (
-                    data_xval[i_row][0] < rebin[i_rebin] and data_xval[i_row][2] <= rebin[i_rebin]
-                ) or (i_rebin >= len(rebin) - 1):
+                if (data_xval[i_row][0] < rebin[i_rebin] and data_xval[i_row][2] <= rebin[i_rebin]) or (
+                    i_rebin >= len(rebin) - 1
+                ):
                     # > these are "left-over" bins and should be accumulated into the overflow
                     delta = data_xval[i_row][2] - data_xval[i_row][0]
                     for i_col in range(len(rebin_yval[i_overflow])):
-                        rebin_yval[i_overflow][i_col] += (
-                            self._neval * delta * data_yval[i_row][i_col]
-                        )
+                        rebin_yval[i_overflow][i_col] += self._neval * delta * data_yval[i_row][i_col]
                         rebin_yerr[i_overflow][i_col] += (
                             self._neval * delta * data_yerr[i_row][i_col]
                         ) ** 2 + self._neval * (delta * data_yval[i_row][i_col]) ** 2
@@ -245,10 +239,7 @@ class NNLOJETHistogram:
                     rebin_row_err = [0.0] * len(data_yval[i_row])
                     xlow = data_xval[i_row][0]
                 # > accumulate data
-                if (
-                    data_xval[i_row][0] >= rebin[i_rebin]
-                    and data_xval[i_row][2] <= rebin[i_rebin + 1]
-                ):
+                if data_xval[i_row][0] >= rebin[i_rebin] and data_xval[i_row][2] <= rebin[i_rebin + 1]:
                     delta = data_xval[i_row][2] - data_xval[i_row][0]
                     for i_col in range(len(rebin_row_val)):
                         rebin_row_val[i_col] += self._neval * delta * data_yval[i_row][i_col]
@@ -265,9 +256,7 @@ class NNLOJETHistogram:
                     for i_col in range(len(rebin_row_val)):
                         rebin_row_val[i_col] /= self._neval
                         rebin_row_err[i_col] = (
-                            math.sqrt(
-                                rebin_row_err[i_col] - self._neval * rebin_row_val[i_col] ** 2
-                            )
+                            math.sqrt(rebin_row_err[i_col] - self._neval * rebin_row_val[i_col] ** 2)
                             / self._neval
                         )
                         # > differential:
@@ -286,8 +275,7 @@ class NNLOJETHistogram:
                 rebin_yval[i_overflow][i_col] /= self._neval
                 rebin_yerr[i_overflow][i_col] = (
                     math.sqrt(
-                        rebin_yerr[i_overflow][i_col]
-                        - self._neval * rebin_yval[i_overflow][i_col] ** 2
+                        rebin_yerr[i_overflow][i_col] - self._neval * rebin_yval[i_overflow][i_col] ** 2
                     )
                     / self._neval
                 )
@@ -324,9 +312,9 @@ class NNLOJETHistogram:
                 i_overflow = self._ioverflow
                 for i_col in range(len(data_yval[i_overflow])):
                     cum_row_val[i_col] += self._neval * data_yval[i_overflow][i_col]
-                    cum_row_err[i_col] += (
-                        self._neval * data_yerr[i_overflow][i_col]
-                    ) ** 2 + self._neval * (data_yval[i_overflow][i_col]) ** 2
+                    cum_row_err[i_col] += (self._neval * data_yerr[i_overflow][i_col]) ** 2 + self._neval * (
+                        data_yval[i_overflow][i_col]
+                    ) ** 2
                     # > used up => reset
                     data_yval[i_overflow][i_col] = 0.0
                     data_yerr[i_overflow][i_col] = 0.0
@@ -343,8 +331,7 @@ class NNLOJETHistogram:
                     # > overwrite
                     data_yval[i_row][i_col] = cum_row_val[i_col] / self._neval
                     data_yerr[i_row][i_col] = (
-                        math.sqrt(cum_row_err[i_col] - cum_row_val[i_col] ** 2 / self._neval)
-                        / self._neval
+                        math.sqrt(cum_row_err[i_col] - cum_row_val[i_col] ** 2 / self._neval) / self._neval
                     )
             # > cumulants only have one x-value: overwrite
             data_xval = cum_xval
@@ -361,9 +348,7 @@ class NNLOJETHistogram:
             logger.info("all entries zero for {}".format(self.filename))
 
         # > warning if nan or inf
-        if np.any(np.logical_not(np.isfinite(self._yval))) or np.any(
-            np.logical_not(np.isfinite(self._yerr))
-        ):
+        if np.any(np.logical_not(np.isfinite(self._yval))) or np.any(np.logical_not(np.isfinite(self._yerr))):
             logger.warn("NaN or Inf encountered in {}".format(self.filename))
 
     def _load_wgt(self):
@@ -409,8 +394,7 @@ class NNLOJETHistogram:
         lines = []
         # first the comments
         lines.append(
-            "#labels: "
-            + " ".join([lab + "[{}]".format(idx + 1) for (idx, lab) in enumerate(self._labels)])
+            "#labels: " + " ".join([lab + "[{}]".format(idx + 1) for (idx, lab) in enumerate(self._labels)])
         )
         lines.append("#neval: {}".format(self._neval))
         # overflow?
@@ -710,7 +694,8 @@ class NNLOJETContainer:
             # and makes it dynamically grow
             self._mask = (
                 np.logical_or(
-                    np.logical_not(np.isfinite(self._yval)), np.logical_not(np.isfinite(self._yerr))
+                    np.logical_not(np.isfinite(self._yval)),
+                    np.logical_not(np.isfinite(self._yerr)),
                 ).astype(int)
                 * 2
             )
@@ -892,13 +877,13 @@ class NNLOJETContainer:
         for i_row in range(n_rows):
             for i_col in range(n_cols):
                 if weighted:
-                    (result._yval[i_row, i_col], result._yerr[i_row, i_col], wgts) = (
-                        self._merge_weighted_bin(i_row, i_col)
+                    (result._yval[i_row, i_col], result._yerr[i_row, i_col], wgts) = self._merge_weighted_bin(
+                        i_row, i_col
                     )
 
                 else:
-                    (result._yval[i_row, i_col], result._yerr[i_row, i_col], wgts) = (
-                        self._merge_bin(i_row, i_col)
+                    (result._yval[i_row, i_col], result._yerr[i_row, i_col], wgts) = self._merge_bin(
+                        i_row, i_col
                     )
 
                 if self._qwgt:
@@ -967,9 +952,7 @@ class NNLOJETContainer:
             for i_col in range(n_cols):
                 # > copy data & mask with nan where necessary
                 bin_data = np.where(
-                    np.logical_and(
-                        self._yerr[i_row, i_col, :] != 0, self._mask[i_row, i_col, :] == 0
-                    ),
+                    np.logical_and(self._yerr[i_row, i_col, :] != 0, self._mask[i_row, i_col, :] == 0),
                     self._yval[i_row, i_col, :],
                     np.nan,
                 )
@@ -1072,9 +1055,7 @@ class NNLOJETContainer:
 
                 while n_unmasked > 1:
                     # do a weighted average over all runs
-                    (yval_wgt, yerr_wgt, wgts) = self._merge_weighted_bin(
-                        i_row, i_col, skip_wgt=True
-                    )
+                    (yval_wgt, yerr_wgt, wgts) = self._merge_weighted_bin(i_row, i_col, skip_wgt=True)
                     # save history
                     history.append((yval_wgt, yerr_wgt))
 

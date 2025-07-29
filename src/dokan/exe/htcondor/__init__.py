@@ -86,9 +86,7 @@ class HTCondorExec(Executor):
                 capture_output=True,
                 text=True,
             )
-            if condor_submit.returncode == 0 and (
-                match_id := re.match(re_cluster_id, condor_submit.stdout)
-            ):
+            if condor_submit.returncode == 0 and (match_id := re.match(re_cluster_id, condor_submit.stdout)):
                 cluster_id = int(match_id.group(1))
                 self.exe_data["policy_settings"]["htcondor_id"] = cluster_id
                 self.exe_data.write()
@@ -123,9 +121,7 @@ class HTCondorExec(Executor):
 
             condor_q_json: dict = {}
             for _ in range(nretry):
-                condor_q = subprocess.run(
-                    ["condor_q", "-json", str(job_id)], capture_output=True, text=True
-                )
+                condor_q = subprocess.run(["condor_q", "-json", str(job_id)], capture_output=True, text=True)
                 if condor_q.returncode == 0:
                     if condor_q.stdout == "":
                         return  # job terminated: no longer in queue
@@ -160,7 +156,5 @@ class HTCondorExec(Executor):
             # )
 
             if njobs == 0:
-                self._logger(
-                    f"HTCondorExec failed to query job {job_id} with njobs = {njobs}", LogLevel.WARN
-                )
+                self._logger(f"HTCondorExec failed to query job {job_id} with njobs = {njobs}", LogLevel.WARN)
                 return
