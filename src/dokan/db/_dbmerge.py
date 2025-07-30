@@ -1141,6 +1141,7 @@ class MergeFinal(DBMerge):
                 # > sum all `*.dat2` files
                 for obs, hist_info in self.config["run"]["histograms"].items():
                     out_file: Path = self.fin_path / f"{out_order}.{obs}.dat2"
+                    self._logger(session, f"{self._logger_prefix}::run:  merging {obs} to {out_file}", level=LogLevel.WARN)
                     nx: int = hist_info["nx"]
                     if len(in_files[obs]) == 0:
                         self._logger(
