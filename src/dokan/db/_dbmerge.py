@@ -648,7 +648,7 @@ class MergePart(DBMerge):
                                 maxshape=(nrows, ncols, None),
                                 # chunks=(nrows, ncols, 2),  # this is bad for many reads
                                 chunks=(1, 1, 42),  # aims for something slightly smaller than 1024 Bytes
-                                #compression="gzip",
+                                # compression="gzip",
                                 compression="lzf",  # faster (de-)compressions, only for h5py
                             )
                             # print(f"new data {(nrows, ncols, 0)}: chunks = {h5dat_data.chunks}")
@@ -987,6 +987,26 @@ class MergeAll(DBMerge):
                                 level=LogLevel.SIG_UPDXS,
                             )
                             break
+
+            # > sum all parts for `*.dat2`
+            for obs, hist_info in self.config["run"]["histograms"].items():
+                out_file: Path = self.mrg_path / f"{obs}.dat2"
+                self._logger(session, f"{self._logger_prefix}::run:  merging {obs} to {out_file}", level=LogLevel.WARN)
+                nx: int = hist_info["nx"]
+                if len(in_files[obs]) == 0:
+                    self._logger(
+                        session,
+                        self._logger_prefix + f"::run:  no files for {obs}",
+                        level=LogLevel.ERROR,
+                    )
+                    continue
+                hist = NNLOJETHistogram()
+                for in_file in in_files[obs]:
+                    try:
+                        hist = hist + NNLOJETHistogram(nx=nx, filename=self._path / (str(in_file) + "2"))
+                    except ValueError as e:
+                        self._logger(session, f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR)
+                hist.write_to_file(out_file)
 
 
 class MergeFinal(DBMerge):
