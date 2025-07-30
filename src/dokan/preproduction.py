@@ -344,7 +344,8 @@ class PreProduction(DBTask):
                 # > this is a resurrected warmup job
                 job: Job = session.get_one(Job, job_id)
                 self._logger(
-                    session, f"PreProduction::run[{pt.name}]:  resurrect warmup [dim](job_id = {job_id})[/dim]"
+                    session,
+                    f"PreProduction::run[{pt.name}]:  resurrect warmup [dim](job_id = {job_id})[/dim]",
                 )
                 yield self.clone(cls=DBResurrect, rel_path=job.rel_path)
             assert job_id < 0, f"PreProduction::run[{pt.name}]:  warmup job_id = {job_id} < 0 expected!"
@@ -361,7 +362,8 @@ class PreProduction(DBTask):
             if job_id > 0:
                 # > this is a resurrected warmup job
                 self._logger(
-                    session, f"PreProduction::run[{pt.name}]:  resurrect warmup [dim](job_id = {job_id})[/dim]"
+                    session,
+                    f"PreProduction::run[{pt.name}]:  resurrect warmup [dim](job_id = {job_id})[/dim]",
                 )
                 job: Job = session.get_one(Job, job_id)
                 yield self.clone(cls=DBResurrect, rel_path=job.rel_path)

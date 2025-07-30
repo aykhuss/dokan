@@ -1138,6 +1138,29 @@ class MergeFinal(DBMerge):
                                 level=LogLevel.ERROR,
                             )
 
+                # > sum all `*.dat2` files
+                for obs, hist_info in self.config["run"]["histograms"].items():
+                    out_file: Path = self.fin_path / f"{out_order}.{obs}.dat2"
+                    nx: int = hist_info["nx"]
+                    if len(in_files[obs]) == 0:
+                        self._logger(
+                            session,
+                            self._logger_prefix + f"::run:  no files for {obs}",
+                            level=LogLevel.ERROR,
+                        )
+                        continue
+                    hist = NNLOJETHistogram()
+                    for in_file in in_files[obs]:
+                        try:
+                            hist = hist + NNLOJETHistogram(nx=nx, filename=self._path / (str(in_file) + "2"))
+                        except ValueError as e:
+                            self._logger(
+                                session,
+                                self._logger_prefix + f"::run:  error reading file {in_file} ({e!r})",
+                                level=LogLevel.ERROR,
+                            )
+                    hist.write_to_file(out_file)
+
             # > shut down the monitor
             self._logger(session, "complete", level=LogLevel.SIG_COMP)
             time.sleep(2.0 * self.config["ui"]["refresh_delay"])
