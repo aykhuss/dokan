@@ -33,7 +33,6 @@ class Task(luigi.Task):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._path: Path = Path(self.config["run"]["path"]).joinpath(*self.local_path)
-        self._path.mkdir(parents=True, exist_ok=True)
 
     # @todo: maybe add a _post_init_ routine that can be overwritten on a task basis?
 
@@ -52,4 +51,6 @@ class Task(luigi.Task):
         Path
             resultant path relative to the task
         """
+        if not self._path.exists():
+            self._path.mkdir(parents=True, exist_ok=True)
         return self._path.joinpath(*path)
