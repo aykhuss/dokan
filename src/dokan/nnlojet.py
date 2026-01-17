@@ -359,52 +359,53 @@ def parse_log_file(log_file: GenericPath) -> dict:
     with open(log_file, "r") as lf:
         iteration = {}
         for line in lf:
-            match_iteration = re.search(r"\(\s*iteration\s+(\d+)\s*\)", line, re.IGNORECASE)
-            if match_iteration:
-                iteration["iteration"] = int(match_iteration.group(1))
-            match_integral = re.search(
+            if match := re.search(r"\(\s*iteration\s+(\d+)\s*\)", line, re.IGNORECASE):
+                iteration["iteration"] = int(match.group(1))
+
+            if match := re.search(
                 r"\bintegral\s*=\s*(\S+)\s+accum\.\s+integral\s*=\s*(\S+)\b",
                 line,
                 re.IGNORECASE,
-            )
-            if match_integral:
-                iteration["result"] = float(match_integral.group(1))
-                iteration["result_acc"] = float(match_integral.group(2))
-            match_stddev = re.search(
+            ):
+                iteration["result"] = float(match.group(1))
+                iteration["result_acc"] = float(match.group(2))
+
+            if match := re.search(
                 r"\bstd\.\s+dev\.\s*=\s*(\S+)\s+accum\.\s+std\.\s+dev\s*=\s*(\S+)\b",
                 line,
                 re.IGNORECASE,
-            )
-            if match_stddev:
-                iteration["error"] = float(match_stddev.group(1))
-                iteration["error_acc"] = float(match_stddev.group(2))
-            match_chi2it = re.search(r"\schi\*\*2/iteration\s*=\s*(\S+)\b", line, re.IGNORECASE)
-            if match_chi2it:
-                iteration["chi2dof"] = float(match_chi2it.group(1))
+            ):
+                iteration["error"] = float(match.group(1))
+                iteration["error_acc"] = float(match.group(2))
+
+            if match := re.search(r"\schi\*\*2/iteration\s*=\s*(\S+)\b", line, re.IGNORECASE):
+                iteration["chi2dof"] = float(match.group(1))
                 job_data["iterations"].append(iteration)
                 iteration = {}
-            match_elapsed_time = re.search(r"\s*Elapsed\s+time\s*=\s*(\S+)\b\s*(\S+)\b", line, re.IGNORECASE)
-            if match_elapsed_time:
-                unit_time: str = match_elapsed_time.group(2)
-                fac_time: float = 1.0
-                if unit_time == "seconds":
-                    fac_time = 1.0
-                elif unit_time == "minutes":
-                    fac_time = 60.0
-                elif unit_time == "hours":
-                    fac_time = 3600.0
-                else:
-                    raise RuntimeError("unknown time unit")
-                job_data["elapsed_time"] = fac_time * float(match_elapsed_time.group(1))
+
+            if match := re.search(r"\s*Elapsed\s+time\s*=\s*(\S+)\b\s*(\S+)\b", line, re.IGNORECASE):
+                unit_time: str = match.group(2).lower()
+                match unit_time:
+                    case "seconds":
+                        fac_time = 1.0
+                    case "minutes":
+                        fac_time = 60.0
+                    case "hours":
+                        fac_time = 3600.0
+                    case _:
+                        raise RuntimeError(f"unknown time unit: {unit_time}")
+
+                job_data["elapsed_time"] = fac_time * float(match.group(1))
                 # > the accumulated results
-                job_data["result"] = job_data["iterations"][-1]["result_acc"]
-                job_data["error"] = job_data["iterations"][-1]["error_acc"]
-                if math.isnan(job_data["result"]):
-                    # > catch the case where the integral vanishes identically
-                    if all(it["result"] == 0.0 and it["error"] == 0.0 for it in job_data["iterations"]):
-                        job_data["result"] = 0.0
-                        job_data["error"] = 0.0
-                job_data["chi2dof"] = job_data["iterations"][-1]["chi2dof"]
+                if job_data["iterations"]:
+                    job_data["result"] = job_data["iterations"][-1]["result_acc"]
+                    job_data["error"] = job_data["iterations"][-1]["error_acc"]
+                    if math.isnan(job_data["result"]):
+                        # > catch the case where the integral vanishes identically
+                        if all(it["result"] == 0.0 and it["error"] == 0.0 for it in job_data["iterations"]):
+                            job_data["result"] = 0.0
+                            job_data["error"] = 0.0
+                    job_data["chi2dof"] = job_data["iterations"][-1]["chi2dof"]
 
     return job_data
 
