@@ -5,7 +5,7 @@ from abc import ABCMeta, abstractmethod
 
 import luigi
 from rich.console import Console
-from sqlalchemy import Engine, create_engine, select
+from sqlalchemy import Engine, create_engine, select, text
 from sqlalchemy.orm import Session  # , scoped_session, sessionmaker
 
 from ..exe import ExecutionMode
@@ -34,9 +34,30 @@ class DBTask(Task, metaclass=ABCMeta):
         # @todo all DBTasks need to be started in the job root path: check?
         self.dbname: str = "sqlite:///" + str(self._local("db.sqlite").absolute())
         self.logname: str = "sqlite:///" + str(self._local("log.sqlite").absolute())
+        self.db_setup: bool = False
+        self._engines: dict[str, Engine] = {}
 
     def _create_engine(self, name: str) -> Engine:
-        return create_engine(name + "?timeout=1000&uri=true")
+        """Create a SQLite engine with WAL mode and concurrency settings."""
+        # > return cached engine if available
+        if name in self._engines:
+            return self._engines[name]
+
+        engine = create_engine(name, connect_args={"timeout": 1800})
+
+        # > Apply concurrency-friendly SQLite PRAGMAs
+        if self.db_setup:
+            with engine.connect() as conn:
+                conn.execute(text("PRAGMA journal_mode=WAL;"))
+                conn.execute(text("PRAGMA synchronous=NORMAL;"))
+                # conn.execute(text("PRAGMA wal_autocheckpoint=1000;"))
+                # conn.execute(text("PRAGMA busy_timeout=30000;"))
+                conn.execute(text("PRAGMA temp_store=MEMORY;"))
+
+        # > cache the engine
+        self._engines[name] = engine
+
+        return engine
 
     @property
     def session(self) -> Session:
@@ -49,16 +70,25 @@ class DBTask(Task, metaclass=ABCMeta):
         )
 
     def _safe_commit(self, session: Session) -> None:
-        # for _ in range(10):  # maximum number of tries
-        #     try:
-        #         session.commit()
-        #         return
-        #     except Exception as e:
-        #         self._logger(session, f"DBTask::_safe_commit: {e!r}", LogLevel.ERROR)
-        #         time.sleep(1.0)  # time delay between retries
-        # raise RuntimeError("DBTask::_safe_commit: ran out of retries")
-        # > the above did not work well, rely on the SQLite timeout instead
-        session.commit()
+        from sqlalchemy.exc import OperationalError
+
+        for i in range(10):  # maximum number of tries
+            try:
+                session.commit()
+                return
+            except OperationalError as e:
+                if "database is locked" in str(e):
+                    dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    _console.print(f"(c)[dim][{dt_str}][/dim](WARN): DBTask::_safe_commit locked, retrying...")
+                    time.sleep(1.0 + i * 0.5)  # exponential backoff
+                    continue
+                raise e
+            except Exception as e:
+                # > do NOT use self._logger here to avoid recursion loop
+                dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                _console.print(f"(c)[dim][{dt_str}][/dim](ERROR): DBTask::_safe_commit: {e!r}")
+                time.sleep(1.0)  # time delay between retries
+        raise RuntimeError("DBTask::_safe_commit: ran out of retries")
 
     def output(self):
         # > DBTask has no output files but uses the DB itself to track the status
@@ -125,11 +155,14 @@ class DBTask(Task, metaclass=ABCMeta):
 
     # @todo make return a UserDict class with a schema?
     def _distribute_time(self, session: Session, T: float) -> dict:
+        from sqlalchemy.orm import joinedload
+
         # > cache information for the E-L formula and populate
         # > accumulators for an estimate for time per event
         cache = {}
         select_job = (
             select(Job)
+            .options(joinedload(Job.part))
             .join(Part)
             .where(Part.active.is_(True))
             .where(Job.status.in_(JobStatus.success_list() + JobStatus.active_list()))
@@ -255,9 +288,7 @@ class DBTask(Task, metaclass=ABCMeta):
                     # > convert to time
                     # include estimate from the extra jobs already allocated
                     i_T: float = i_tau * (ic["ntot"] + ic["nextra"])
-                    ic["adj_error"] = math.sqrt(
-                        ic["adj_error"] ** 2 * ic["ntot"] / (ic["ntot"] + ic["nextra"])
-                    )
+                    ic["adj_error"] = math.sqrt(ic["adj_error"] ** 2 * ic["ntot"] / (ic["ntot"] + ic["nextra"]))
                     result["part"][part_id] = {
                         "tau": i_tau,
                         "tau_err": i_tau_err,
@@ -343,9 +374,7 @@ class DBTask(Task, metaclass=ABCMeta):
                 ntot_job: int = int(T_max_job / ires["tau"])
             else:
                 if ires["T_opt"] > 0.0:
-                    ntot_min: int = (
-                        self.config["production"]["niter"] * self.config["production"]["ncall_start"]
-                    )
+                    ntot_min: int = self.config["production"]["niter"] * self.config["production"]["ncall_start"]
                     ntot_max: int = int(T_max_job / ires["tau"])
                     njobs: int = int(ires["T_opt"] / T_max_job) + 1
                     ntot_job: int = int(ires["T_opt"] / float(njobs) / ires["tau"])
@@ -355,10 +384,7 @@ class DBTask(Task, metaclass=ABCMeta):
                     ntot_job: int = 0
 
             # > if we inflated the error of a count==1 part, we only want to register *one* job
-            if (
-                cache[part_id]["count"] <= self.config["production"]["min_number"]
-                and cache[part_id]["nextra"] <= 0
-            ):
+            if cache[part_id]["count"] <= self.config["production"]["min_number"] and cache[part_id]["nextra"] <= 0:
                 njobs = min(njobs, 1)
 
             # > update & store info for each part
@@ -396,6 +422,9 @@ class DBInit(DBTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # > init shall always run the setup block of the DB
+        self.db_setup = True
+        # > create the tables if they do not exist yet
         DokanDB.metadata.create_all(self._create_engine(self.dbname))
         DokanLog.metadata.create_all(self._create_engine(self.logname))
 
