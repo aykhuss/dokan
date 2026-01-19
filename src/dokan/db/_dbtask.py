@@ -35,13 +35,9 @@ class DBTask(Task, metaclass=ABCMeta):
         self.dbname: str = "sqlite:///" + str(self._local("db.sqlite").absolute())
         self.logname: str = "sqlite:///" + str(self._local("log.sqlite").absolute())
         self.db_setup: bool = False
-        self._engines: dict[str, Engine] = {}
 
     def _create_engine(self, name: str) -> Engine:
         """Create a SQLite engine with WAL mode and concurrency settings."""
-        # > return cached engine if available
-        if name in self._engines:
-            return self._engines[name]
 
         engine = create_engine(name, connect_args={"timeout": 1800})
 
@@ -53,9 +49,6 @@ class DBTask(Task, metaclass=ABCMeta):
                 # conn.execute(text("PRAGMA wal_autocheckpoint=1000;"))
                 # conn.execute(text("PRAGMA busy_timeout=30000;"))
                 conn.execute(text("PRAGMA temp_store=MEMORY;"))
-
-        # > cache the engine
-        self._engines[name] = engine
 
         return engine
 
@@ -79,7 +72,9 @@ class DBTask(Task, metaclass=ABCMeta):
             except OperationalError as e:
                 if "database is locked" in str(e):
                     dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    _console.print(f"(c)[dim][{dt_str}][/dim](WARN): DBTask::_safe_commit locked, retrying...")
+                    _console.print(
+                        f"(c)[dim][{dt_str}][/dim](WARN): DBTask::_safe_commit locked, retrying..."
+                    )
                     time.sleep(1.0 + i * 0.5)  # exponential backoff
                     continue
                 raise e
@@ -288,7 +283,9 @@ class DBTask(Task, metaclass=ABCMeta):
                     # > convert to time
                     # include estimate from the extra jobs already allocated
                     i_T: float = i_tau * (ic["ntot"] + ic["nextra"])
-                    ic["adj_error"] = math.sqrt(ic["adj_error"] ** 2 * ic["ntot"] / (ic["ntot"] + ic["nextra"]))
+                    ic["adj_error"] = math.sqrt(
+                        ic["adj_error"] ** 2 * ic["ntot"] / (ic["ntot"] + ic["nextra"])
+                    )
                     result["part"][part_id] = {
                         "tau": i_tau,
                         "tau_err": i_tau_err,
@@ -374,7 +371,9 @@ class DBTask(Task, metaclass=ABCMeta):
                 ntot_job: int = int(T_max_job / ires["tau"])
             else:
                 if ires["T_opt"] > 0.0:
-                    ntot_min: int = self.config["production"]["niter"] * self.config["production"]["ncall_start"]
+                    ntot_min: int = (
+                        self.config["production"]["niter"] * self.config["production"]["ncall_start"]
+                    )
                     ntot_max: int = int(T_max_job / ires["tau"])
                     njobs: int = int(ires["T_opt"] / T_max_job) + 1
                     ntot_job: int = int(ires["T_opt"] / float(njobs) / ires["tau"])
@@ -384,7 +383,10 @@ class DBTask(Task, metaclass=ABCMeta):
                     ntot_job: int = 0
 
             # > if we inflated the error of a count==1 part, we only want to register *one* job
-            if cache[part_id]["count"] <= self.config["production"]["min_number"] and cache[part_id]["nextra"] <= 0:
+            if (
+                cache[part_id]["count"] <= self.config["production"]["min_number"]
+                and cache[part_id]["nextra"] <= 0
+            ):
                 njobs = min(njobs, 1)
 
             # > update & store info for each part
