@@ -140,6 +140,10 @@ def main() -> None:
     parser_submit.add_argument("--seed-offset", type=int, help="seed offset")
     parser_submit.add_argument("--local-cores", type=int, help="maximum number of local cores")
 
+    # > subcommand: doctor
+    parser_doctor = subparsers.add_parser("doctor", help="your workflow wellness specialist 🩺")
+    parser_doctor.add_argument("run_path", metavar="RUN", help="run directory")
+
     # > subcommand: finalize
     parser_finalize = subparsers.add_parser("finalize", help="merge completed jobs into a final result")
     parser_finalize.add_argument("run_path", metavar="RUN", help="run directory")
@@ -683,6 +687,47 @@ def main() -> None:
         # console.print(luigi_result.summary_text)
 
         # @todo give an estimate in case target accuracy not reached.
+
+    # >-----
+    if args.action == "doctor":
+        config = Config(path=args.run_path, default_ok=False)
+
+        # > ensure DB initialized in a proper state
+        channels: dict = config["process"].pop("channels")
+        db_init = DBInit(
+            config=config,
+            channels=channels,
+            run_tag=time.time(),
+            order=config["run"]["order"],
+        )
+        luigi_result = luigi.build(
+            [db_init],
+            worker_scheduler_factory=WorkerSchedulerFactory(),
+            detailed_summary=True,
+            workers=1,
+            local_scheduler=True,
+            log_level="WARNING",
+        )  # 'WARNING', 'INFO', 'DEBUG''
+        if not luigi_result:
+            sys.exit("DBInit failed")
+        nactive_part: int = 0
+        nactive_job: int = 0
+        nfailed_job: int = 0
+        with db_init.session as session:
+            nactive_part = session.query(Part).filter(Part.active.is_(True)).count()
+            nactive_job = session.query(Job).filter(Job.status.in_(JobStatus.active_list())).count()
+            nfailed_job = session.query(Job).filter(Job.status.in_([JobStatus.FAILED])).count()
+            # > clear log(?), indicate new submission
+            last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
+            if last_log:
+                console.print(f"last log: {last_log!r}")
+
+        console.print(f"active parts: {nactive_part}")
+        if nactive_part == 0:
+            console.print("[red]calculation has no active part?![/red]")
+            sys.exit(0)
+        console.print(f"active jobs: {nactive_job}")
+        console.print(f"failed jobs: {nfailed_job}")
 
     # >-----
     if args.action == "finalize":
