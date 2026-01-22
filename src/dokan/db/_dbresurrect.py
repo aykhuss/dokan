@@ -20,18 +20,23 @@ from ._sqla import Job
 class DBResurrect(DBTask):
     """Task to resurrect and recover a running job.
 
-    This task re-attaches to an existing job directory, spawns an `Executor`
-    to ensure it completes (or collects existing results), and updates the
-    database status.
+    This task re-attaches to an existing job directory.
+    If `only_recover` is False (default), it spawns an `Executor` to ensure
+    completion.
+    If `only_recover` is True, it passively scans the directory to update
+    the database status without triggering execution.
 
     Attributes
     ----------
     rel_path : str
         Relative path to the job execution directory.
+    only_recover : bool
+        If True, only scan for results without re-executing (default: False).
 
     """
 
     rel_path: str = luigi.Parameter()
+    only_recover: bool = luigi.BoolParameter(default=False)
 
     priority = 200
 
@@ -42,6 +47,8 @@ class DBResurrect(DBTask):
 
     def requires(self):
         """Require an Executor to run/check the job."""
+        if self.only_recover:
+            return []
         with self.session as session:
             self._debug(session, f"DBResurrect::requires:  rel_path = {self.rel_path}")
         return [
@@ -52,32 +59,45 @@ class DBResurrect(DBTask):
         ]
 
     def complete(self) -> bool:
-        """Check if all jobs in this resurrection context are terminated."""
+        """Check if all jobs in this resurrection context are terminated.
+
+        Returns True if all associated jobs are in a terminated state (DONE, MERGED, FAILED)
+        in the database.
+        """
         with self.session as session:
-            self._debug(session, f"DBResurrect::complete:  rel_path = {self.rel_path}")
+            self._debug(session, f"DBResurrect::complete: {self.rel_path}")
             for job_id in self.exe_data["jobs"].keys():
-                job = session.get(Job, job_id)
-                if not job or job.status not in JobStatus.terminated_list():
-                    self._debug(
-                        session, f"DBResurrect::complete:  rel_path = {self.rel_path}: FALSE"
-                    )
-                    return False
-            self._debug(session, f"DBResurrect::complete:  rel_path = {self.rel_path}: TRUE")
+                job: Job | None = session.get(Job, job_id)
+
+                if self.only_recover:
+                    # > recovery:  clear out all RECOVER status jobs
+                    if not job:
+                        continue
+                    if job.status == JobStatus.RECOVER:
+                        return False
+                else:
+                    # > resurrection:  not terminated, we are not complete.
+                    if not job:
+                        return False
+                    if job.status not in JobStatus.terminated_list():
+                        return False
+
         return True
 
     def run(self):
         """Process the results of the resurrection execution."""
-        # > need to re-load as state can be cached & not reflect the result
+        # > Re-load to capture changes made by Executor (if any) or filesystem
         self.exe_data.load()
 
-        # > parse the Executor return data
-        if not self.exe_data.is_final:
+        if self.only_recover:
+            # Passive scan: update ExeData from logs found on disk
+            self.exe_data.scan_dir()
+        elif not self.exe_data.is_final:
+            # Active mode requires ExeData to be finalized by Executor
             raise RuntimeError(f"Job at {self.rel_path} did not finalize correctly.")
 
         with self.session as session:
-            self._logger(
-                session, f"DBResurrect::run:  rel_path = {self.rel_path}, run_tag = {self.run_tag}"
-            )
+            self._logger(session, f"DBResurrect::run:  {self.rel_path}, run_tag = {self.run_tag}")
 
             for job_id, job_entry in self.exe_data["jobs"].items():
                 db_job: Job | None = session.get(Job, job_id)
@@ -85,7 +105,7 @@ class DBResurrect(DBTask):
                     self._logger(
                         session,
                         f"Job {job_id} not found in DB during resurrection",
-                        level=LogLevel.DEBUG,
+                        level=LogLevel.WARN,
                     )
                     continue
 
@@ -101,8 +121,8 @@ class DBResurrect(DBTask):
                         db_job.elapsed_time = float(job_entry["elapsed_time"])
                         db_job.status = JobStatus.DONE
                 else:
-                    db_job.status = JobStatus.FAILED
+                    # Active mode: missing result implies failure
+                    # Passive mode: missing result implies still incomplete
+                    db_job.status = JobStatus.FAILED if not self.only_recover else JobStatus.RUNNING
 
             self._safe_commit(session)
-
-        # @todo add automatic re-merge trigger like in `DBRunner`?
