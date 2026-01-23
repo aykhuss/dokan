@@ -68,7 +68,7 @@ class HTCondorExec(Executor):
             "input_files": ", ".join(self.exe_data["input_files"]),
             "max_runtime": int(self.exe_data["policy_settings"]["max_runtime"]),
         }
-        with open(self.htcondor_template, "r") as t, open(self.file_sub, "w") as f:
+        with open(self.htcondor_template) as t, open(self.file_sub, "w") as f:
             f.write(string.Template(t.read()).substitute(condor_settings))
 
         job_env = os.environ.copy()

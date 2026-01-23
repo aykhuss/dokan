@@ -19,7 +19,7 @@ class Part(DokanDB):
     id: Mapped[int] = mapped_column(primary_key=True)
 
     # > same structure as nnlojet.get_lumi dictionary
-    name: Mapped[str]  # RRa_7, ...
+    name: Mapped[str] = mapped_column(index=True)  # RRa_7, ...
     string: Mapped[str]  # channels string
     part: Mapped[str]  # LO, R, V, RR, RV, VV
     part_num: Mapped[int]  # partonic channel id
@@ -28,7 +28,7 @@ class Part(DokanDB):
 
     # @todo: future features
     # variation: Mapped[int]  # <- to identify different setups (rewgt, etc)
-    active: Mapped[bool] = mapped_column(default=False)
+    active: Mapped[bool] = mapped_column(default=False, index=True)
     timestamp: Mapped[float] = mapped_column(default=0.0)
 
     # > result of the last merge
@@ -51,11 +51,11 @@ class Job(DokanDB):
     id: Mapped[int] = mapped_column(primary_key=True)
 
     # > every job is associated with a `Part`
-    part_id: Mapped[int] = mapped_column(ForeignKey("part.id"))
+    part_id: Mapped[int] = mapped_column(ForeignKey("part.id"), index=True)
     part: Mapped["Part"] = relationship(back_populates="jobs")
 
-    run_tag: Mapped[float] = mapped_column(default=0.0)
-    status: Mapped[int]
+    run_tag: Mapped[float] = mapped_column(default=0.0, index=True)
+    status: Mapped[int] = mapped_column(index=True)
     timestamp: Mapped[float] = mapped_column(default=0.0)
     rel_path: Mapped[str | None]  # relative path to the job directory (set by DBRunner)
 
@@ -83,7 +83,7 @@ class Log(DokanLog):
     __tablename__ = "log"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    level: Mapped[int]
+    level: Mapped[int] = mapped_column(index=True)
     timestamp: Mapped[float] = mapped_column(default=0.0)
     message: Mapped[str] = mapped_column(default="")
 

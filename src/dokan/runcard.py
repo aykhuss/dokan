@@ -53,7 +53,7 @@ class RuncardTemplate:
         **kwargs
             values for the variables in the template to be substituted.
         """
-        with open(template, "r") as t, open(runcard, "w") as f:
+        with open(template) as t, open(runcard, "w") as f:
             f.write(string.Template(t.read()).substitute(kwargs))
 
 
@@ -108,15 +108,15 @@ class Runcard:
         runcard_data["histograms"] = {}
         runcard_data["histograms"]["cross"] = {"nx": 0}
         runcard_data["PDFs"] = []
-        with open(runcard, "r") as f:
+        with open(runcard) as f:
             blk_flag: RuncardBlockFlag = RuncardBlockFlag(0)
             for ln in f:
                 # > keep track of the runcard hierarchy & what level/block we're in
                 ln_flag: RuncardBlockFlag = RuncardBlockFlag(0)  # accumulate @ end
                 for blk in RuncardBlockFlag:
-                    if re.match(r"^\s*{}\b".format(blk.name), ln, re.IGNORECASE):
+                    if re.match(rf"^\s*{blk.name}\b", ln, re.IGNORECASE):
                         ln_flag |= blk
-                    if re.match(r"^\s*END_{}\b".format(blk.name), ln, re.IGNORECASE):
+                    if re.match(rf"^\s*END_{blk.name}\b", ln, re.IGNORECASE):
                         blk_flag &= ~blk
                         ln = ""  # END_<...> never has options: consume
                         continue
@@ -219,7 +219,7 @@ class Runcard:
             re.compile(r"\bproduction\s*=\s*\d+\[(?:[^\]]+)\]", re.IGNORECASE),
         ]
         skiplines = False
-        with open(runcard, "r") as f, open(template, "w") as t:
+        with open(runcard) as f, open(template, "w") as t:
             for line in f:
                 # > deal with comment lines first (preserve them)
                 if re.match(r"^\s*!", line):
@@ -229,10 +229,10 @@ class Runcard:
                 while re.search(r"&", line):
                     line = re.sub(r"\s*&\s*(!.*)?$", "", line.rstrip())
                     if re.search(r"&", line):
-                        raise RuntimeError("invalid line continuation in {}".format(runcard))
+                        raise RuntimeError(f"invalid line continuation in {runcard}")
                     next_line = next(f)
                     if not re.match(r"^\s*&", next_line):
-                        raise RuntimeError("invalid line continuation in {}".format(runcard))
+                        raise RuntimeError(f"invalid line continuation in {runcard}")
                     line = line + re.sub(r"^\s*&\s*", " ", next_line)
                 # > patch lines to generate a template
                 if any(regex.search(line) for regex in kill_matches):
