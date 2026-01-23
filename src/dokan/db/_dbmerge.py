@@ -260,7 +260,7 @@ class MergeObs(Task):
                             if bin_buf1[itrim] > threshold * np.sqrt(avg_neval / bin_sumf["neval"][itrim]):
                                 bin_mask[itrim] = BinMask.TRIMMED
                                 ntrim += 1
-                                print(f" > trim {irow},{icol} [{itrim}] {bin_buf1[itrim]:.3f} > {threshold * np.sqrt(avg_neval / bin_sumf['neval'][itrim]):.3f} ({ntrim}/{ndat})")
+                                # print(f" > trim {irow},{icol} [{itrim}] {bin_buf1[itrim]:.3f} > {threshold * np.sqrt(avg_neval / bin_sumf['neval'][itrim]):.3f} ({ntrim}/{ndat})")
                         # > we will not discard the trimmed datasets but actually accumulate them into a mega "outlier" dataset
                         # > which will eventually be suppressed in the weighted average by the large error
                         _mask = bin_mask == BinMask.TRIMMED
@@ -348,7 +348,7 @@ class MergeObs(Task):
                                 for _inode in _nodes:
                                     weights[irow, _inode] = _iwgt * bin_data["neval"][_inode] / _neval
                         # print(f" > weights: {weights[irow,:]}")
-                        print(f" > sum of weights [{irow}] = {np.sum(weights[irow, :]):.3f}")
+                        # print(f" > sum of weights [{irow}] = {np.sum(weights[irow, :]):.3f}")
                         assert np.all(np.isfinite(weights[irow, :]))  # check that we have weights for all entries
                         if not np.all(np.isfinite(weights[irow, :])):
                             print(f" > mask: {bin_mask}")
