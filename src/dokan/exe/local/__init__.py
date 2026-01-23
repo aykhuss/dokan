@@ -10,7 +10,6 @@ from pathlib import Path
 import luigi
 
 from ...db._loglevel import LogLevel
-
 from .._executor import Executor
 
 
@@ -71,9 +70,11 @@ class SingleLocalExec(LocalExec):
         raise RuntimeError("SingleLocalExec::exe: should never be called")
 
     def run(self):
-        self._logger(f"SingleLocalExec::run: executing job {self.path} with seed {self.seed}", level=LogLevel.DEBUG)
+        self._logger(
+            f"SingleLocalExec::run: executing job {self.path} with seed {self.seed}", level=LogLevel.DEBUG
+        )
         job_env = os.environ.copy()
-        job_env["OMP_NUM_THREADS"] = "{}".format(self.local_ncores)
+        job_env["OMP_NUM_THREADS"] = f"{self.local_ncores}"
         job_env["OMP_STACKSIZE"] = "1024M"
 
         with open(self.file_out, "w") as of, open(self.file_err, "w") as ef:

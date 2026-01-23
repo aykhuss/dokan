@@ -177,14 +177,14 @@ class Config(UserDict):
         self["run"]["path"] = str(self.path.absolute())
 
     def load_defaults(self) -> None:
-        with open(_default_config, "rt") as tmp:
+        with open(_default_config) as tmp:
             self.data = json.load(tmp)
         if not self.is_valid(convert_to_type=True):
             raise RuntimeError("Config: load_defaults encountered conflict with schema")
 
     def load(self, default_ok: bool = True) -> None:
         if self.file_cfg and self.file_cfg.exists():
-            with open(self.file_cfg, "rt") as fin:
+            with open(self.file_cfg) as fin:
                 self.data = json.load(fin)
         else:
             if not default_ok:
@@ -202,7 +202,7 @@ class Config(UserDict):
                     raise RuntimeError("Template has been manually modified, this is not allowed.")
 
     def fill_defaults(self):
-        with open(_default_config, "rt") as tmp:
+        with open(_default_config) as tmp:
             defaults = json.load(tmp)
             fill_missing(self.data, defaults)
 

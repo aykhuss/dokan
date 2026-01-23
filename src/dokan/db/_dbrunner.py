@@ -251,7 +251,7 @@ class DBRunner(DBTask):
             # > check if there was an Executor log written out; if yes print it
             exe_log: Path = exe_data.path / Executor._file_log
             if exe_log.exists():
-                with open(exe_log, "r") as f:
+                with open(exe_log) as f:
                     self._logger(
                         session,
                         self._logger_prefix

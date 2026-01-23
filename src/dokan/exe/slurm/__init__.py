@@ -56,7 +56,7 @@ class SlurmExec(Executor):
             ),
             # "max_runtime": int(self.exe_data["policy_settings"]["max_runtime"]),
         }
-        with open(self.slurm_template, "r") as t, open(self.file_sub, "w") as f:
+        with open(self.slurm_template) as t, open(self.file_sub, "w") as f:
             f.write(string.Template(t.read()).substitute(slurm_settings))
 
         job_env = os.environ.copy()

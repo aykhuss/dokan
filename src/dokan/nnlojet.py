@@ -1,4 +1,4 @@
-"""NNLOJET interface
+"""NNLOJET interface.
 
 helperfunctions to extract information from NNLOJET
 """
@@ -211,7 +211,7 @@ def dry_run(exe: GenericPath, tmp: GenericPath, runcard: GenericPath) -> dict:
 
     # > returncode = 0 does not mean success
     success: bool = False
-    with open(file_out, "r") as f:
+    with open(file_out) as f:
         for ln in f:
             if re.search(r"Elapsed time", ln, re.IGNORECASE):
                 success = True
@@ -224,7 +224,7 @@ def dry_run(exe: GenericPath, tmp: GenericPath, runcard: GenericPath) -> dict:
 
 
 def check_PDF(exe: GenericPath, PDF: str) -> bool:
-    """check if NNLOJET can find the PDF set
+    """Check if NNLOJET can find the PDF set.
 
     use NNLOJET compiled with LHAPDF to init a PDF set and use the error
     return code to determine if the PDF set was available.
@@ -240,6 +240,7 @@ def check_PDF(exe: GenericPath, PDF: str) -> bool:
     -------
     bool
         True is PDF set could be loaded successfully, False otherwise
+
     """
     try:
         exe_out = subprocess.run([exe, "--checkpdf", PDF], capture_output=True, text=True, check=True)
@@ -252,7 +253,7 @@ def check_PDF(exe: GenericPath, PDF: str) -> bool:
 
 
 def get_lumi(exe: GenericPath, proc: str, use_default: bool = False) -> dict:
-    """get channels for an NNLOJET process
+    """Get channels for an NNLOJET process.
 
     get the channels with the "part" & "lumi" information collected in groups
     that correspond to independent PDF luminosities of the process.
@@ -282,6 +283,7 @@ def get_lumi(exe: GenericPath, proc: str, use_default: bool = False) -> dict:
     ------
     RuntimeError
         encountered parsing error of the -listobs output
+
     """
     chan_list = dict()
     if proc in _override_chan_list:
@@ -335,7 +337,7 @@ def get_lumi(exe: GenericPath, proc: str, use_default: bool = False) -> dict:
 
 
 def parse_log_file(log_file: GenericPath) -> dict:
-    """parse information from an NNLOJET log file
+    """Parse information from an NNLOJET log file.
 
     Parameters
     ----------
@@ -352,11 +354,12 @@ def parse_log_file(log_file: GenericPath) -> dict:
     ------
     RuntimeError
         encountered parsing error of log file
+
     """
     job_data: dict = {}
     job_data["iterations"] = []
     # > parse the output file to extract some information
-    with open(log_file, "r") as lf:
+    with open(log_file) as lf:
         iteration = {}
         for line in lf:
             if match := re.search(r"\(\s*iteration\s+(\d+)\s*\)", line, re.IGNORECASE):

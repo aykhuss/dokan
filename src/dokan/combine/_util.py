@@ -16,14 +16,14 @@ logger = logging.getLogger("luigi-interface")
 class NNLOJETHistogram:
     def __init__(self, **kwargs):
         # nx = None checks for empty Histograms
-        self._nx = kwargs.get("nx", None)
-        self._filename = kwargs.get("filename", None)
-        self._obs_name = kwargs.get("obs_name", None)
+        self._nx = kwargs.get("nx")
+        self._filename = kwargs.get("filename")
+        self._obs_name = kwargs.get("obs_name")
         # default value for nx in case we have a file attached to the object
         if self.filename is not None and self.nx is None:
             self._nx = 3
         if self._nx is not None and self._nx < 0:
-            raise ValueError("invaid number of x-columns:{}".format(self._nx))
+            raise ValueError(f"invaid number of x-columns:{self._nx}")
         self._neval = None  # set in `__parse_comments`
         self._labels = None  # set in `__parse_comments`
         # instead of saving labels, add a list of comments: __header, __footer
@@ -34,11 +34,11 @@ class NNLOJETHistogram:
         self._ioverflow = None  # set in `__load_data`
 
         if self.filename is not None:
-            columns = kwargs.get("columns", None)
-            rebin = kwargs.get("rebin", None)
+            columns = kwargs.get("columns")
+            rebin = kwargs.get("rebin")
             if rebin is not None and self.nx <= 0:
                 raise ValueError("rebinning requires x-columns!")
-            cumulant = kwargs.get("cumulant", None)
+            cumulant = kwargs.get("cumulant")
             self._read_dat(columns=columns, rebin=rebin, cumulant=cumulant)
 
         # > to keep track of weights
@@ -72,14 +72,14 @@ class NNLOJETHistogram:
     # def nx(self, nx): self._nx = nx
 
     def _read_dat(self, **kwargs):
-        columns = kwargs.get("columns", None)
-        rebin = kwargs.get("rebin", None)
-        cumulant = kwargs.get("cumulant", None)
+        columns = kwargs.get("columns")
+        rebin = kwargs.get("rebin")
+        cumulant = kwargs.get("cumulant")
 
         # > step 1: parse label line
         lines = []
         read_status = 0  # > for obs_name extraction
-        with open(self.filename, "rt") as histfile:
+        with open(self.filename) as histfile:
             for line in histfile:
                 if self._obs_name is None:
                     lines.append(line)
@@ -111,7 +111,7 @@ class NNLOJETHistogram:
 
         # > warning if no labels line could be found
         if self._labels is None:
-            logger.warn("couldn't find a labels line {}".format(self.filename))
+            logger.warn(f"couldn't find a labels line {self.filename}")
             return
 
         # > default init
@@ -156,9 +156,7 @@ class NNLOJETHistogram:
                     data = line.split()  # make a list
                     if len(data) != ncols:
                         raise ValueError(
-                            "ncols mismatch in overflow: {} != {} (file: {})".format(
-                                len(data), ncols, self.filename
-                            )
+                            f"ncols mismatch in overflow: {len(data)} != {ncols} (file: {self.filename})"
                         )
                     if self.nx > 0:
                         data_xval.append([0.0] * self.nx)
@@ -171,7 +169,7 @@ class NNLOJETHistogram:
                 data = line.split()
                 if len(data) != ncols:
                     raise ValueError(
-                        "ncols mismatch in data: {} != {} (file: {})".format(len(data), ncols, self.filename)
+                        f"ncols mismatch in data: {len(data)} != {ncols} (file: {self.filename})"
                     )
                 if self.nx > 0:
                     data_xval.append([float(data[idx]) for idx in range(self.nx)])
@@ -182,13 +180,13 @@ class NNLOJETHistogram:
 
         # > set neval to 1 if there was none
         if self._neval is None:
-            print("couldn't find the neval info: {}".format(self.filename), file=sys.stderr)
+            print(f"couldn't find the neval info: {self.filename}", file=sys.stderr)
             self._neval = 1
             raise ValueError("couldn't find the neval information")
 
         # > integer overflow?!
         if self._neval < 0:
-            print("negative neval = {} info: {}".format(self._neval, self.filename), file=sys.stderr)
+            print(f"negative neval = {self._neval} info: {self.filename}", file=sys.stderr)
             raise ValueError("negative neval?!")
 
         # > step 3: rebin
@@ -301,7 +299,7 @@ class NNLOJETHistogram:
                     self._labels.pop(0)
                     self._labels.pop(0)
             else:
-                raise ValueError("cumulant label invalid: {}".format(cumulant))
+                raise ValueError(f"cumulant label invalid: {cumulant}")
             # > cumulants only have one x-value
             self._nx = 1
             # > the accumulator & new x-values
@@ -345,11 +343,11 @@ class NNLOJETHistogram:
 
         # > warning if all entries are zero
         if (not np.any(self._yval)) and (not np.any(self._yerr)):
-            logger.info("all entries zero for {}".format(self.filename))
+            logger.info(f"all entries zero for {self.filename}")
 
         # > warning if nan or inf
         if np.any(np.logical_not(np.isfinite(self._yval))) or np.any(np.logical_not(np.isfinite(self._yerr))):
-            logger.warn("NaN or Inf encountered in {}".format(self.filename))
+            logger.warn(f"NaN or Inf encountered in {self.filename}")
 
     def _load_wgt(self):
         if self.filename_wgt is None:
@@ -394,9 +392,9 @@ class NNLOJETHistogram:
         lines = []
         # first the comments
         lines.append(
-            "#labels: " + " ".join([lab + "[{}]".format(idx + 1) for (idx, lab) in enumerate(self._labels)])
+            "#labels: " + " ".join([lab + f"[{idx + 1}]" for (idx, lab) in enumerate(self._labels)])
         )
-        lines.append("#neval: {}".format(self._neval))
+        lines.append(f"#neval: {self._neval}")
         # overflow?
         for irow, yarr in enumerate(self._yval):
             line = ""
@@ -408,11 +406,11 @@ class NNLOJETHistogram:
                         line += "#overflow:lower center upper "
                 else:
                     for x in self._xval[irow]:
-                        line += "{:.11E} ".format(x)
+                        line += f"{x:.11E} "
             for icol, y in enumerate(yarr):
-                line += "{:.11E} {:.11E} ".format(y, self._yerr[irow, icol])
+                line += f"{y:.11E} {self._yerr[irow, icol]:.11E} "
             lines.append(line)
-        lines.append("#nx: {}".format(self._nx))
+        lines.append(f"#nx: {self._nx}")
         return "\n".join(lines)
 
     def to_weights(self):
@@ -420,12 +418,12 @@ class NNLOJETHistogram:
         lines = []
 
         # x-bins
-        line = "#nx={} ".format(self.nx)
+        line = f"#nx={self.nx} "
         if self.nx > 0:
             for ix, xrow in enumerate(self._xval):
                 if ix == self._ioverflow:  # skipping overflow
                     continue
-                line += "[{:.11E},{:.11E}] ".format(xrow[0], xrow[-1])
+                line += f"[{xrow[0]:.11E},{xrow[-1]:.11E}] "
         lines.append(line)
 
         # files & weights
@@ -435,7 +433,7 @@ class NNLOJETHistogram:
             for iwgt, wgt in enumerate(self._wgt[:, 0, i_file]):  # only first column
                 if iwgt == self._ioverflow:  # skipping overflow
                     continue
-                line += " {:.11E}".format(wgt)
+                line += f" {wgt:.11E}"
             lines.append(line)
 
         return "\n".join(lines)
@@ -445,7 +443,7 @@ class NNLOJETHistogram:
         #     print("creating duplicate: {} > {}?".format(self.filename, filename))
 
         # write to the file
-        with open(filename, "wt") as fout:
+        with open(filename, "w") as fout:
             print(self, file=fout)
             # override internal filename
             self._filename = filename
@@ -590,7 +588,7 @@ class NNLOJETContainer:
 
         # it's much more efficient pre-allocating a sufficiently
         # big array, instead of dynamically adjusting it
-        self._buffer_size = kwargs.get("size", None)
+        self._buffer_size = kwargs.get("size")
         self._size = 0
 
         # flag to switch on/off weight tables in generated histograms
@@ -609,7 +607,7 @@ class NNLOJETContainer:
             raise ValueError("only flattened weight-tables can be appended to containers")
 
         if hist._labels is None:
-            print("skip appending {}".format(hist._filename))
+            print(f"skip appending {hist._filename}")
             return
 
         # use nx to check for initialisation
@@ -729,7 +727,7 @@ class NNLOJETContainer:
 
         for i_fail in fails:
             print("recursive_k_weights failed!")
-            print(" > file {}, [row,col] = [{},{}] ".format(self._filename[i_fail], i_row, i_col))
+            print(f" > file {self._filename[i_fail]}, [row,col] = [{i_row},{i_col}] ")
             target = i_fail
             i_chk = 0
             while self._mask[i_row, i_col, target] < 0:
@@ -738,9 +736,7 @@ class NNLOJETContainer:
                 else:
                     break
                 print(
-                    " > file {}[{}], mask = {}".format(
-                        self._filename[target], target, self._mask[i_row, i_col, target]
-                    )
+                    f" > file {self._filename[target]}[{target}], mask = {self._mask[i_row, i_col, target]}"
                 )
                 target = -self._mask[i_row, i_col, target] - 1
 
@@ -902,9 +898,9 @@ class NNLOJETContainer:
 
     def mask_outliers(self, thresh=3.5, maxfrac=0.01):
         if thresh <= 0.0:
-            raise ValueError("non-positive threshold value: {}".format(thresh))
+            raise ValueError(f"non-positive threshold value: {thresh}")
         if maxfrac <= 0.0 or maxfrac >= 1.0:
-            raise ValueError("invalid maxfrac range: {}".format(maxfrac))
+            raise ValueError(f"invalid maxfrac range: {maxfrac}")
 
         self.unmask()
 
@@ -1021,8 +1017,8 @@ class NNLOJETContainer:
 
     def optimise_k(self, **kwargs):
         # parse arguments for the merge settings
-        maxdev_unwgt = kwargs.get("maxdev_unwgt", None)
-        maxdev_steps = kwargs.get("maxdev_steps", None)
+        maxdev_unwgt = kwargs.get("maxdev_unwgt")
+        maxdev_steps = kwargs.get("maxdev_steps")
         nsteps = kwargs.get("nsteps", 0)
 
         # set up params

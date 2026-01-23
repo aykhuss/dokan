@@ -8,4 +8,4 @@ from ._exe_config import ExecutionMode, ExecutionPolicy
 from ._exe_data import ExeData
 from ._executor import Executor
 
-__all__ = ["ExeData", "ExecutionPolicy", "ExecutionMode", "Executor"]
+__all__ = ["ExeData", "ExecutionMode", "ExecutionPolicy", "Executor"]

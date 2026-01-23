@@ -177,14 +177,14 @@ class ExeData(UserDict):
         """
         self._mutable = True
         if self.file_fin.exists():
-            with open(self.file_fin, "rt") as fin:
+            with open(self.file_fin) as fin:
                 self.data = json.load(fin)
                 self._mutable = False
             # Warning: existence of both files might indicate a crash during finalization
             if self.file_tmp.exists():
                 pass  # print(f"Warning: both {self.file_fin} and {self.file_tmp} exist. Using final.")
         elif self.file_tmp.exists():
-            with open(self.file_tmp, "rt") as tmp:
+            with open(self.file_tmp) as tmp:
                 self.data = json.load(tmp)
         elif expect_tmp:
             raise RuntimeError(f"ExeData: tmp expected but not found {self.file_tmp}!")

@@ -8,8 +8,8 @@ import datetime
 import math
 import os
 import re
-import subprocess
 import shutil
+import subprocess
 import time
 from abc import ABCMeta
 from pathlib import Path
@@ -333,7 +333,7 @@ class MergePart(DBMerge):
 
                 res, err = 0.0, 0.0  # accumulate bins to "cross" (possible fac, selectors, ...)
                 if nx == 0:
-                    with open(out_file, "rt") as cross:
+                    with open(out_file) as cross:
                         for line in cross:
                             if line.startswith("#"):
                                 continue
@@ -342,7 +342,7 @@ class MergePart(DBMerge):
                             err = col[1] ** 2
                             break
                 elif nx == 3:
-                    with open(out_file, "rt") as diff:
+                    with open(out_file) as diff:
                         for line in diff:
                             if line.startswith("#overflow"):
                                 scol: list[str] = line.split()
@@ -517,7 +517,7 @@ class MergeAll(DBMerge):
                     weights_file = out_file.with_suffix(".weights.txt")
                     weights_file.write_text(hist.to_weights())
                 if obs == "cross":
-                    with open(out_file, "rt") as cross:
+                    with open(out_file) as cross:
                         for line in cross:
                             if line.startswith("#"):
                                 continue
@@ -675,7 +675,7 @@ class MergeFinal(DBMerge):
             # > parse merged cross section result
             mrg_all: MergeAll = self.requires()[0]
             dat_cross: Path = mrg_all.mrg_path / "cross.dat"
-            with open(dat_cross, "rt") as cross:
+            with open(dat_cross) as cross:
                 for line in cross:
                     if line.startswith("#"):
                         continue
