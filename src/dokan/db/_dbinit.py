@@ -88,5 +88,6 @@ class DBInit(DBTask):
                         name=name, active=is_active, timestamp=current_time, **channel_info
                     )
                     session.add(new_part)
+                    existing_parts[name] = new_part
 
             self._safe_commit(session)
