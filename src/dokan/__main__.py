@@ -23,7 +23,7 @@ from .config import Config
 
 # from .db._dbresurrect import DBResurrect
 from .db._dbmerge import MergeFinal
-from .db._dbtask import DBInit
+from .db._dbinit import DBInit
 from .db._jobstatus import JobStatus
 from .db._loglevel import LogLevel
 from .db._sqla import Job, Log, Part
