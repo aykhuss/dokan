@@ -1,3 +1,10 @@
+"""Database bootstrap task for Dokan workflow metadata.
+
+`DBInit` ensures both SQLite schemas exist and synchronizes the `part` table
+from the channel map discovered for the process. Synchronization is idempotent:
+re-running this task with the same inputs should produce no effective change.
+"""
+
 import time
 
 import luigi
@@ -42,9 +49,9 @@ class DBInit(DBTask):
         with self.session as session:
             # Fetch all existing parts that are in our channel list
             stmt = select(Part).where(Part.name.in_(self.channels.keys()))
-            existing_parts = {p.name: p for p in session.scalars(stmt)}
+            existing_parts: dict[str, Part] = {p.name: p for p in session.scalars(stmt)}
 
-            target_order = Order(self.order)
+            target_order: Order = Order(self.order)
 
             for name, _ in self.channels.items():
                 if name not in existing_parts:
