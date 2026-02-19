@@ -1,10 +1,16 @@
-"""dokan job dispatcher
+"""Dokan job dispatcher task.
 
-defines the task the dispatches NNLOJET jobs, which also serves the purpose
-of re-populating the queue with new jobs based on the current state of the
-calculation (available resources, target accuracy, etc.)
+`DBDispatch` is responsible for two related actions:
+1. Re-populate the queue with new production jobs when needed.
+2. Select queued jobs, assign seeds, and hand them over to `DBRunner`.
+
+The task can operate in three modes via `id`:
+- `id == 0`: dynamic dispatch (global scheduling logic).
+- `id > 0`: dispatch a specific job id.
+- `id < 0`: dispatch jobs restricted to one part (`abs(id)`).
 """
 
+import math
 import time
 
 import luigi
@@ -25,6 +31,14 @@ from ._sqla import Job, Part
 
 
 class DBDispatch(DBTask):
+    """Queue replenishment and job dispatch coordinator.
+
+    Notes
+    -----
+    Dynamic dispatch (`id == 0`) is serialized via an extra Luigi resource
+    (`DBDispatch`) to avoid concurrent queue mutation by multiple schedulers.
+    """
+
     # > dynamic selection: 0
     # > pick a specific `Job` by id: > 0
     # > restrict to specific `Part` by id: < 0 [take abs]
@@ -41,10 +55,11 @@ class DBDispatch(DBTask):
         self._logger_prefix: str = (
             self.__class__.__name__ + f"[{self.id}" + (f",{self._n}" if self.id == 0 else "") + "]"
         )
-        self.part_id: int = 0  # set in `repoopulate`
+        self.part_id: int = 0  # set in `_repopulate`
 
     @property
     def resources(self):
+        """Return Luigi resource locks for this dispatch instance."""
         if self.id == 0:
             return super().resources | {"DBDispatch": 1}
         else:
@@ -54,6 +69,7 @@ class DBDispatch(DBTask):
 
     @property
     def select_job(self):
+        """Build a base `SELECT Job` query constrained by `run_tag` and `id` mode."""
         # > define the selector for the jobs based on the id that was passed & filter by the run_tag
         slct = select(Job).where(Job.run_tag == self.run_tag)
         if self.id > 0:
@@ -64,6 +80,7 @@ class DBDispatch(DBTask):
             return slct
 
     def complete(self) -> bool:
+        """Return True when no matching jobs remain in `QUEUED` state."""
         with self.session as session:
             if session.scalars(self.select_job.where(Job.status == JobStatus.QUEUED)).first() is not None:
                 self._debug(session, self._logger_prefix + "::complete:  False")
@@ -72,6 +89,14 @@ class DBDispatch(DBTask):
         return True
 
     def _repopulate(self, session: Session):
+        """Populate queue and select the next part to dispatch.
+
+        Side effects
+        ------------
+        - May insert new `Job` rows (dynamic mode only, `id == 0`).
+        - Sets `self.part_id` to the part selected for dispatch.
+        - May remove queued jobs once target accuracy is reached.
+        """
         if self.id > 0:
             job: Job = session.get_one(Job, self.id)
             self.part_id = job.part_id
@@ -81,6 +106,18 @@ class DBDispatch(DBTask):
 
         if self.id != 0:
             return
+
+        def safe_rel_error(numerator: float, denominator: float) -> float:
+            """Return a robust |numerator / denominator| for convergence checks.
+
+            When the denominator is zero or non-finite, the relative error is
+            treated as `inf` (except the `0/0` case, which maps to `0.0`).
+            """
+            if not math.isfinite(numerator) or not math.isfinite(denominator):
+                return float("inf")
+            if denominator == 0.0:
+                return 0.0 if numerator == 0.0 else float("inf")
+            return abs(numerator / denominator)
 
         # > get the remaining resources but need to go into the loop
         # > to get the correct state of self.part_id
@@ -174,7 +211,7 @@ class DBDispatch(DBTask):
                 .all()
             )
 
-            # > termination condition based on #queued of individul jobs
+            # > termination condition based on #queued of individual jobs
             qterm: bool = (
                 False  # separate variable avoid interfere with other termination conditions (rel acc, etc.)
             )
@@ -242,8 +279,8 @@ class DBDispatch(DBTask):
 
             # > interrupt when target accuracy reached
             # @todo does not respect the optimization target yet?
-            rel_acc: float = abs(opt_dist["tot_error"] / opt_dist["tot_result"])
-            adj_rel_acc: float = abs(opt_dist["tot_adj_error"] / opt_dist["tot_result"])
+            rel_acc: float = safe_rel_error(opt_dist["tot_error"], opt_dist["tot_result"])
+            adj_rel_acc: float = safe_rel_error(opt_dist["tot_adj_error"], opt_dist["tot_result"])
             if adj_rel_acc <= self.config["run"]["target_rel_acc"]:
                 self._debug(
                     session,
@@ -288,7 +325,7 @@ class DBDispatch(DBTask):
                         max_njobs = opt["njobs"]
                         max_njobs_ipt = ipt
                         max_njobs_T_opt = opt["T_opt"]
-                # > make sure every iteration decements so termination is guaranteed
+                # > make sure every iteration decrements so termination is guaranteed
                 # > picking max njobs ensures we don't mess up the min-production-parts (njobs==1)
                 if del_njobs == 0:
                     opt_dist["part"][max_njobs_ipt]["njobs"] -= 1
@@ -307,7 +344,7 @@ class DBDispatch(DBTask):
                 self._debug(session, f"{part_id}: {opt}")
                 if opt["njobs"] <= 0:
                     continue
-                # > regiser njobs new jobs with ncall,niter and time estime to DB
+                # > register `njobs` new jobs with ncall/niter and time estimate in DB
                 ids = queue_production(part_id, opt)
                 pt: Part = session.get_one(Part, part_id)
                 self._logger(
@@ -323,12 +360,19 @@ class DBDispatch(DBTask):
             njobs_rem -= tot_njobs
             T_rem -= tot_T
 
-            estimate_rel_acc: float = abs(opt_dist["tot_error_estimate_jobs"] / opt_dist["tot_result"])
+            estimate_rel_acc: float = safe_rel_error(
+                opt_dist["tot_error_estimate_jobs"], opt_dist["tot_result"]
+            )
             if estimate_rel_acc <= self.config["run"]["target_rel_acc"]:
                 qbreak = True
                 continue
 
     def run(self):
+        """Dispatch a batch of queued jobs by spawning one `DBRunner`.
+
+        The selected batch receives contiguous seeds and is transitioned from
+        `QUEUED` to `DISPATCHED` before yielding the runner task.
+        """
         with self.session as session:
             self._debug(session, self._logger_prefix + "::run:  " + f"part_id = {self.part_id}")
             self._repopulate(session)
@@ -369,14 +413,15 @@ class DBDispatch(DBTask):
                     # determine upper bound by the max number of jobs? -> seems like a good idea
                     .order_by(Job.seed.desc())
                 ).first()
+                seed_start: int = -1
                 if last_job and last_job.seed:
                     self._debug(
                         session,
                         self._logger_prefix + "::run:  " + f"{self.id} last job:  {last_job!r}",
                     )
-                    seed_start: int = last_job.seed + 1
+                    seed_start = last_job.seed + 1
                 else:
-                    seed_start: int = self.config["run"]["seed_offset"] + 1
+                    seed_start = self.config["run"]["seed_offset"] + 1
 
                 for iseed, job in enumerate(jobs, seed_start):
                     job.seed = iseed
