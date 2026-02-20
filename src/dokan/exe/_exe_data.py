@@ -243,7 +243,7 @@ class ExeData(UserDict):
         skip_files : list[str], optional
             List of filenames to ignore.
         force : bool
-            Force scan even if immutable (will temporarily make mutable?). Currently no-op if immutable.
+            Force scan even if immutable (will temporarily make mutable?). Currently no-op if immutable. @todo
         **kwargs :
             reset_output (bool): Clear existing output_files list.
             fs_max_retry (int): Number of retries for filesystem scan.
@@ -304,7 +304,4 @@ class ExeData(UserDict):
         """Check if all defined jobs have a result."""
         if not self.data.get("jobs", {}):
             return False
-        for job_data in self.data.get("jobs", {}).values():
-            if "result" not in job_data:
-                return False
-        return True
+        return all("result" in job_data for job_data in self.data.get("jobs", {}).values())

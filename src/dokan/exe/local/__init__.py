@@ -50,7 +50,6 @@ class SingleLocalExec(LocalExec):
     def resources(self):
         return {
             "local_ncores": self.local_ncores,
-            # "jobs_concurrent": self.local_ncores,
             "jobs_concurrent": 1,
         }
 

@@ -113,14 +113,13 @@ class DBTask(Task, metaclass=ABCMeta):
         if level >= 0 and level < self.config["ui"]["log_level"]:
             return
         # > print out
+        dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if not self.config["ui"]["monitor"]:
-            dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             _console.print(f"(c)[dim][{dt_str}][/dim]({level!r}): {message}")
             return
         # > general case: monitor is ON: store messages in DB
         last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
         if last_log and last_log.level in [LogLevel.SIG_COMP]:
-            dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             _console.print(f"(c)[dim][{dt_str}][/dim]({level!r}): {message}")
         elif level >= 0:
             session.add(Log(level=level, timestamp=time.time(), message=message))

@@ -64,9 +64,10 @@ class DBRunner(DBTask):
             assert all(j.mode == self.mode for j in jobs)
             self.policy: ExecutionPolicy = ExecutionPolicy(jobs[0].policy)
             assert all(j.policy == self.policy for j in jobs)
-            # > sequential seed range
+            # > all seeds set?
             seeds: list[int] = sorted(j.seed for j in jobs if j.seed is not None)
             assert len(seeds) == len(jobs)
+            # > sequential list of seeds? @todo: should we enforce this? (might interfere with resurrection)
             min_seed: int = min(seeds)
             max_seed: int = max(seeds)
             assert len(jobs) == (max_seed - min_seed + 1)
@@ -265,7 +266,7 @@ class DBRunner(DBTask):
             if self.mode == ExecutionMode.PRODUCTION:
                 mrg_part = self.clone(MergePart, force=False, part_id=self.part_id)
                 if mrg_part.complete():
-                    self._debug(session, self._logger_prefix + "::run:  MergePart complete")
+                    self._debug(session, self._logger_prefix + "::run:  MergePart skip")
                     return
                 else:
                     self._logger(session, self._logger_prefix + "::run:  yield MergePart")
