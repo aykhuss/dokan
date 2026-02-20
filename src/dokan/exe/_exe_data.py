@@ -1,8 +1,8 @@
-"""Data format for an `Executor`.
+"""Execution metadata container used by backend executors.
 
-We use a custom dictionary class to define the data structure
-for the NNLOJET execution (`Executor`). This class also manages the
-mutability and implements an atomic copy from temporary files.
+`ExeData` wraps the on-disk job metadata (`job.tmp` / `job.json`) and provides
+helpers for scanning output directories, parsing per-seed logs, and managing
+mutable vs. finalized state.
 """
 
 import json
@@ -195,16 +195,24 @@ class ExeData(UserDict):
             # print("ExeData load encountered conflict with schema")
             pass
 
-    def write(self) -> None:
-        """Write current data to the temporary file atomically."""
-        if not self._mutable:
+    def write(self, force: bool = False) -> None:
+        """Write current data atomically.
+
+        Parameters
+        ----------
+        force : bool, optional
+            If True, allow writing even when finalized. In that case data is
+            written directly to `job.json`; otherwise writes target `job.tmp`.
+
+        """
+        if not force and not self._mutable:
             raise RuntimeError("ExeData can't write after finalize!")
 
-        # Atomic write: write to .tmp.swp then rename to .tmp
-        temp_swp = self.file_tmp.with_suffix(".tmp.swp")
+        # Atomic write: write to a swap file first, then move into place.
+        temp_swp = self.file_tmp.with_suffix(".swp")
         with open(temp_swp, "w") as tmp:
             json.dump(self.data, tmp, indent=2)
-        shutil.move(temp_swp, self.file_tmp)
+        shutil.move(temp_swp, self.file_tmp if self._mutable else self.file_fin)
 
     def finalize(self) -> None:
         """Finalize the data: write to disk and move to final filename."""
@@ -243,7 +251,8 @@ class ExeData(UserDict):
         skip_files : list[str], optional
             List of filenames to ignore.
         force : bool
-            Force scan even if immutable (will temporarily make mutable?). Currently no-op if immutable. @todo
+            Force scan even if immutable. This updates in-memory data only;
+            call `write(force=True)` to persist in finalized mode.
         **kwargs :
             reset_output (bool): Clear existing output_files list.
             fs_max_retry (int): Number of retries for filesystem scan.
@@ -264,16 +273,21 @@ class ExeData(UserDict):
         if reset_output:
             self.data["output_files"] = []
 
-        # Ensure 'output_files' exists
-        if "output_files" not in self.data:
-            self.data["output_files"] = []
+        self.data.setdefault("output_files", [])
+        self.data.setdefault("jobs", {})
+        timestamp = self.timestamp
 
         found_new = False
         for _ in range(fs_max_retry):
             for entry in os.scandir(self.path):
                 if entry.name in skip_entries:
                     continue
-                if self.timestamp > 0 and entry.stat().st_mtime < self.timestamp:
+                try:
+                    entry_mtime = entry.stat().st_mtime
+                except FileNotFoundError:
+                    # File was removed between scandir listing and stat call.
+                    continue
+                if timestamp > 0 and entry_mtime < timestamp:
                     continue
 
                 if entry.name not in self.data["output_files"]:
@@ -284,14 +298,11 @@ class ExeData(UserDict):
                 break
             time.sleep(fs_delay)
 
-        # > parse logs and populate dictionary
-        for _, job_data in self.data["jobs"].items():
-            log_matches = [
-                of for of in self.data["output_files"] if of.endswith(f".s{job_data['seed']}.log")
-            ]
+        # Parse per-seed logs and populate job entries.
+        for job_data in self.data["jobs"].values():
+            log_matches = [of for of in self.data["output_files"] if of.endswith(f".s{job_data['seed']}.log")]
             if len(log_matches) != 1:
                 continue
-
             try:
                 parsed_data = parse_log_file(Path(self.path) / log_matches[0])
                 for key in parsed_data:
@@ -299,9 +310,35 @@ class ExeData(UserDict):
             except Exception:
                 continue
 
+    def remove_job(self, job_id: int, force: bool = False) -> None:
+        """Remove one job entry and associated seed-tagged output files.
+
+        Parameters
+        ----------
+        job_id : int
+            Job id key in `data["jobs"]`.
+        force : bool, optional
+            Allow modification in finalized state (writes to `job.json`).
+
+        """
+        if not force and not self._mutable:
+            raise RuntimeError("ExeData can't modify after finalize!")
+        jobs = self.data.get("jobs", {})
+        output_files: list[str] = self.data.setdefault("output_files", [])
+        if job_id in jobs:
+            seed: int = jobs[job_id]["seed"]
+            del_list: list[str] = [of for of in output_files if f".s{seed}." in of]
+            for del_file in del_list:
+                del_path = self.path / del_file
+                if del_path.exists():
+                    del_path.unlink()
+                output_files.remove(del_file)
+            del jobs[job_id]
+        self.write(force)
+
     @property
     def is_complete(self) -> bool:
-        """Check if all defined jobs have a result."""
+        """Return True if there is at least one job and all jobs have `result`."""
         if not self.data.get("jobs", {}):
             return False
         return all("result" in job_data for job_data in self.data.get("jobs", {}).values())
