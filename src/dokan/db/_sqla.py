@@ -74,6 +74,9 @@ class Job(DokanDB):
     def __repr__(self) -> str:
         return f"Job(id={self.id!r}, part_id={self.part_id!r}, status={(self.status)!r}, timestamp={self.timestamp!r}, rel_path={self.rel_path}, mode={ExecutionMode(self.mode)!r}, policy={ExecutionPolicy(self.policy)!r})"
 
+    def to_dict(self) -> dict:
+        return {column.name: getattr(self, column.name) for column in self.__table__.columns}
+
 
 class DokanLog(DeclarativeBase):
     pass
