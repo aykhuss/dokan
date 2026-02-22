@@ -45,7 +45,7 @@ class DBResurrect(DBTask):
         super().__init__(*args, **kwargs)
         # > pick up from where we left off
         self.exe_data: ExeData = ExeData(self._local(self.rel_path))
-        self._logger_prefix: str = self.__class__.__name__
+        self._logger_prefix: str = self.__class__.__name__ + f"[dim]({self.run_tag})[/dim]"
         self._recover_jobs: dict[int, dict] = {}
         for job_id, payload in self.recover_jobs.items():
             self._recover_jobs[int(job_id)] = payload

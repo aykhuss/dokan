@@ -35,37 +35,30 @@ class DBRemoveJob(DBTask):
             job: Job | None = session.get(Job, self.job_id)
             return bool(not job)
 
-    def _cleanup_exe_data(self, job: Job) -> None:
-        """Remove job artifacts from the associated execution directory.
-
-        This cleanup is best-effort: failures are logged but do not block
-        database deletion of the job.
-        """
-        if not job.rel_path:
-            return
-        job_path: Path = self._local(job.rel_path)
-        if not job_path.exists():
-            return
-        try:
-            exe_data = ExeData(job_path)
-            exe_data.remove_job(self.job_id, force=True)
-        except Exception as exc:
-            with self.session as session:
-                self._logger(
-                    session,
-                    f"{self._logger_prefix}::run: failed ExeData cleanup at {job_path}: {exc!r}",
-                    level=LogLevel.WARN,
-                )
-
     def run(self) -> None:
-        """Delete the job row and clean associated on-disk metadata."""
+        """Delete the job row and clean associated on-disk results.
+
+        Cleanup is attempted first so `ExeData` can still resolve seed/path
+        metadata from the DB row. DB deletion is always attempted afterwards.
+        """
         with self.session as session:
             self._logger(session, f"{self._logger_prefix}::run")
             job: Job | None = session.get(Job, self.job_id)
             if not job:
                 return
 
-            self._cleanup_exe_data(job)
+            if job.rel_path:
+                job_path: Path = self._local(job.rel_path)
+                if job_path.exists():
+                    try:
+                        exe_data = ExeData(job_path)
+                        exe_data.remove_job(self.job_id, force=True)
+                    except Exception as exc:
+                        self._logger(
+                            session,
+                            f"{self._logger_prefix}::run: failed ExeData cleanup at {job_path}: {exc!r}",
+                            level=LogLevel.WARN,
+                        )
 
             session.delete(job)
             self._safe_commit(session)
