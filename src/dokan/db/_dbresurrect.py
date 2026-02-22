@@ -54,9 +54,7 @@ class DBResurrect(DBTask):
             self._logger_prefix += "[dim](recover)[/dim]"
             for job_id, job_entry in self._recover_jobs.items():
                 if "status" not in job_entry:
-                    raise RuntimeError(
-                        f"{self._logger_prefix}::init: missing status for job {job_id}"
-                    )
+                    raise RuntimeError(f"{self._logger_prefix}::init: missing status for job {job_id}")
                 # if JobStatus(job_entry["status"]) == JobStatus.RECOVER:
                 #     raise RuntimeError(
                 #         f"{self._logger_prefix}::init: recover_jobs[{job_id}] has RECOVER status"

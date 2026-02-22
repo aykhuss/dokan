@@ -253,7 +253,5 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         else:
             self._logger("Executor::run: skipped exe()", level=LogLevel.DEBUG)
 
-        self.exe_data.scan_dir(
-            [self._file_log], fs_max_retry=self.FS_MAX_RETRY, fs_delay=self.FS_DELAY
-        )
+        self.exe_data.scan_dir([self._file_log], fs_max_retry=self.FS_MAX_RETRY, fs_delay=self.FS_DELAY)
         self.exe_data.finalize()

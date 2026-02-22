@@ -162,7 +162,9 @@ class PreProduction(DBTask):
         # ):
         #     raise RuntimeError(f"missing data in {LW!r}")
         LW_ntot: int = LW.ncall * LW.niter
-        if (LW.result == 0.0 and LW.error == 0.0) or abs(LW.error / LW.result) <= self.config["run"]["target_rel_acc"]:
+        if (LW.result == 0.0 and LW.error == 0.0) or abs(LW.error / LW.result) <= self.config["run"][
+            "target_rel_acc"
+        ]:
             wflag |= WarmupFlag.RELACC
         if LW.chi2dof < self.config["warmup"]["max_chi2dof"]:
             wflag |= WarmupFlag.CHI2DOF

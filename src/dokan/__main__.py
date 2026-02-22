@@ -20,15 +20,15 @@ from sqlalchemy import select
 from .__about__ import __version__
 from .bib import make_bib
 from .config import Config
-
-# from .db._dbresurrect import DBResurrect
+from .db._dbinit import DBInit
 from .db._dbmerge import MergeFinal
-from .db._dbtask import DBInit
+from .db._dbremovejob import DBRemoveJob
+from .db._dbresurrect import DBResurrect
 from .db._jobstatus import JobStatus
 from .db._loglevel import LogLevel
 from .db._sqla import Job, Log, Part
 from .entry import Entry
-from .exe import ExecutionPolicy, ExecutionMode, Executor
+from .exe import ExecutionMode, ExecutionPolicy, Executor
 from .monitor import Monitor
 from .nnlojet import check_PDF, dry_run, get_lumi
 from .order import Order
@@ -91,8 +91,8 @@ class LogLevelPrompt(PromptBase[LogLevel]):
 
 def main() -> None:
     # > some action-global variables
-    config = Config(default_ok=True)
-    console = Console()
+    config: Config = Config(default_ok=True)
+    console: Console = Console()
     cpu_count: int = multiprocessing.cpu_count()
 
     parser = argparse.ArgumentParser(description="dokan: an automated NNLOJET workflow")
@@ -143,6 +143,7 @@ def main() -> None:
     # > subcommand: doctor
     parser_doctor = subparsers.add_parser("doctor", help="your workflow wellness specialist 🩺")
     parser_doctor.add_argument("run_path", metavar="RUN", help="run directory")
+    parser_doctor.add_argument("--recover", action="store_true", help="recover started but incomplete jobs")
 
     # > subcommand: finalize
     parser_finalize = subparsers.add_parser("finalize", help="merge completed jobs into a final result")
@@ -162,11 +163,12 @@ def main() -> None:
         parser.print_help()
         sys.exit("please specify a subcommand")
 
-    nnlojet_exe = None
+    nnlojet_exe: str | None = None
+    path_exe: Path
     if args.action == "init":
         nnlojet_exe = shutil.which("NNLOJET")
     if args.exe is not None:
-        path_exe: Path = Path(args.exe)
+        path_exe = Path(args.exe)
         if path_exe.is_file() and os.access(path_exe, os.X_OK):
             nnlojet_exe = str(path_exe.absolute())
         else:
@@ -177,21 +179,18 @@ def main() -> None:
         runcard = Runcard(runcard=args.runcard)
         if nnlojet_exe is None:
             prompt_exe = Prompt.ask("Could not find an NNLOJET executable. Please specify path")
-            path_exe: Path = Path(prompt_exe)
+            path_exe = Path(prompt_exe)
             if path_exe.is_file() and os.access(path_exe, os.X_OK):
                 nnlojet_exe = str(path_exe.absolute())
             else:
-                sys.exit(f"invalid executable {str(path_exe.absolute())}")
+                sys.exit(f"invalid executable {path_exe.absolute()!s}")
 
         # > save all to the run config file
-        if args.run_path:
-            target_path = args.run_path
-        else:
-            target_path = os.path.relpath(runcard.data["run_name"])
-        if Path(target_path).exists():
-            if not Confirm.ask(f"The folder {target_path} already exists, do you want to continue?"):
-                sys.exit("Please select a different output folder.")
-
+        target_path: str = args.run_path if args.run_path else os.path.relpath(runcard.data["run_name"])
+        if Path(target_path).exists() and not Confirm.ask(
+            f"The folder {target_path} already exists, do you want to continue?"
+        ):
+            sys.exit("Please select a different output folder.")
         config.set_path(target_path)
 
         console.print(f"run folder: [italic]{(config.path).absolute()}[/italic]")
@@ -208,9 +207,9 @@ def main() -> None:
         config["process"]["channels"] = get_lumi(
             config["exe"]["path"], config["process"]["name"], use_default=args.no_lumi
         )
-        for PDF in runcard.data["PDFs"]:
-            if not check_PDF(config["exe"]["path"], PDF):
-                raise RuntimeError(f'PDF set: "{PDF}" not found')
+        for pdf in runcard.data["PDFs"]:
+            if not check_PDF(config["exe"]["path"], pdf):
+                raise RuntimeError(f'PDF set: "{pdf}" not found')
         run_template: RuncardTemplate = runcard.to_template(config.path / config["run"]["template"])
         config["run"]["md5"] = run_template.to_md5_hash()
         config.write()
@@ -233,7 +232,7 @@ def main() -> None:
         if not dry_exe["success"]:
             console.print(f"error in dry run at {tmp_path}")
             if Confirm.ask("see output?"):
-                with open(dry_exe["file_out"], "r") as of:
+                with open(dry_exe["file_out"]) as of:
                     syntx = Syntax(of.read(), "text", word_wrap=True)
                     console.print(syntx)
             sys.exit("invalid input runcard?!")
@@ -248,7 +247,7 @@ def main() -> None:
             # with open(bibout, "r") as bib:
             #     syntx = Syntax(bib.read(), "bibtex")
             #     console.print(syntx)
-            with open(bibtex, "r") as bib:
+            with open(bibtex) as bib:
                 syntx = Syntax(bib.read(), "tex", word_wrap=True)
                 console.print(syntx)
             console.print(
@@ -260,7 +259,7 @@ def main() -> None:
             console.print(f"error encountered in writing bibliography files:\n{e}")
 
     # >-----
-    if args.action == "init" or args.action == "config":
+    if args.action in ["init", "config"]:
         if args.action == "config":  # load!
             config = Config(path=args.run_path, default_ok=False)
 
@@ -383,7 +382,7 @@ def main() -> None:
                 return
 
         console.print(
-            f"setting default values for the run configuration at [italic]{str(config.path.absolute())}[/italic]"
+            f"setting default values for the run configuration at [italic]{config.path.absolute()!s}[/italic]"
         )
         console.print(
             'these defaults can be reconfigured later with the [italic]"config"[/italic] subcommand'
@@ -444,12 +443,14 @@ def main() -> None:
         config["run"]["jobs_max_total"] = new_jobs_max_total
         console.print(f"[dim]jobs_max_total = {config['run']['jobs_max_total']!r}[/dim]")
 
+        max_concurrent_msg: str
+        max_concurrent_def: int
         if config["exe"]["policy"] == ExecutionPolicy.LOCAL:
-            max_concurrent_msg: str = f"maximum number of concurrent jobs [CPU count: {cpu_count}]"
-            max_concurrent_def: int = min(cpu_count, config["run"]["jobs_max_concurrent"])
+            max_concurrent_msg = f"maximum number of concurrent jobs [CPU count: {cpu_count}]"
+            max_concurrent_def = min(cpu_count, config["run"]["jobs_max_concurrent"])
         else:
-            max_concurrent_msg: str = "maximum number of concurrent jobs"
-            max_concurrent_def: int = config["run"]["jobs_max_concurrent"]
+            max_concurrent_msg = "maximum number of concurrent jobs"
+            max_concurrent_def = config["run"]["jobs_max_concurrent"]
         while True:
             new_jobs_max_concurrent: int = IntPrompt.ask(max_concurrent_msg, default=max_concurrent_def)
             if new_jobs_max_concurrent > 0:
@@ -461,8 +462,9 @@ def main() -> None:
         # @todo policy settings
 
         # > common cluster settings
+        cluster: str
         if config["exe"]["policy"] in [ExecutionPolicy.HTCONDOR, ExecutionPolicy.SLURM]:
-            cluster: str = str(config["exe"]["policy"]).lower()
+            cluster = str(config["exe"]["policy"]).lower()
             max_runtime: float = config["run"]["job_max_runtime"]
             # > polling time intervals (aim for polling every 10% of job run but at least 10s)
             default_poll_time: float = max(10.0, max_runtime / 10.0)
@@ -486,7 +488,7 @@ def main() -> None:
 
         # > executor templates
         if len(exe_templates := Executor.get_cls(policy=config["exe"]["policy"]).templates()) > 0:
-            cluster: str = str(config["exe"]["policy"]).lower()
+            cluster = str(config["exe"]["policy"]).lower()
             # console.print(f"execution policy \"[bold]{cluster}[/bold]\" requires templates!")
             exe_template: Path = Path(exe_templates[0])
             if len(exe_templates) > 1:
@@ -503,7 +505,7 @@ def main() -> None:
             dst = config.path / config["exe"]["policy_settings"][f"{cluster}_template"]
             shutil.copyfile(exe_template, dst)
             console.print(f"{cluster} template: [italic]{exe_template.name}[/italic] copied to run folder:")
-            with open(dst, "r") as run_exe_template:
+            with open(dst) as run_exe_template:
                 syntx = Syntax(run_exe_template.read(), "shell", word_wrap=True)
                 console.print(syntx)
             console.print("please edit this file to your needs")
@@ -511,35 +513,65 @@ def main() -> None:
         config.write()
 
     # >-----
-    if args.action == "submit":
-        config = Config(path=args.run_path, default_ok=False)
+    # > common settings & DBInit task
+    channels: dict
+    db_init: DBInit | None = None
+    nactive_part: int = -1
+    nactive_job: int = -1
+    nfailed_job: int = -1
 
-        # > CLI overrides
+    if args.action in ["submit", "doctor", "finalize"]:
+        config = Config(path=args.run_path, default_ok=False)
+        channels = config["process"].pop("channels")
+
+        # > CLI overrides: persistent overwrite --> config
         if nnlojet_exe is not None:
             config["exe"]["path"] = nnlojet_exe
-        if args.policy is not None:
-            config["exe"]["policy"] = args.policy
-        if args.order is not None:
-            config["run"]["order"] = args.order
-        if args.target_rel_acc is not None:
-            config["run"]["target_rel_acc"] = args.target_rel_acc
-        if args.job_max_runtime is not None:
-            config["run"]["job_max_runtime"] = args.job_max_runtime
-        if args.jobs_max_total is not None:
-            config["run"]["jobs_max_total"] = args.jobs_max_total
-        if args.jobs_max_concurrent is not None:
-            config["run"]["jobs_max_concurrent"] = args.jobs_max_concurrent
-        if args.seed_offset is not None:
-            config["run"]["seed_offset"] = args.seed_offset
+        match args.action:
+            case "submit":
+                if args.policy is not None:
+                    config["exe"]["policy"] = args.policy
+                if args.order is not None:
+                    config["run"]["order"] = args.order
+                if args.target_rel_acc is not None:
+                    config["run"]["target_rel_acc"] = args.target_rel_acc
+                if args.job_max_runtime is not None:
+                    config["run"]["job_max_runtime"] = args.job_max_runtime
+                if args.jobs_max_total is not None:
+                    config["run"]["jobs_max_total"] = args.jobs_max_total
+                if args.jobs_max_concurrent is not None:
+                    config["run"]["jobs_max_concurrent"] = args.jobs_max_concurrent
+                if args.seed_offset is not None:
+                    config["run"]["seed_offset"] = args.seed_offset
+            case "doctor":
+                # > no monitor needed for doctor
+                config["ui"]["monitor"] = False
+            case "finalize":
+                # > merge settings
+                if args.trim_threshold is not None:
+                    config["merge"]["trim_threshold"] = args.trim_threshold
+                if args.trim_max_fraction is not None:
+                    config["merge"]["trim_max_fraction"] = args.trim_max_fraction
+                if args.k_scan_nsteps is not None:
+                    config["merge"]["k_scan_nsteps"] = args.k_scan_nsteps
+                if args.k_scan_maxdev_steps is not None:
+                    config["merge"]["k_scan_maxdev_steps"] = args.k_scan_maxdev_steps
+                # > no monitor needed for finalize
+                config["ui"]["monitor"] = False
+                console.print(config["merge"])
 
-        # > create the DB skeleton & activate parts
-        channels: dict = config["process"].pop("channels")
+        # > create the master Init task that also defines the `run_tag` for this execution round
+        sav_monitor: bool = config["ui"]["monitor"]
+        config["ui"]["monitor"] = False
         db_init = DBInit(
-            config=config,
+            config=config,  # override in "submit" action with `config`
             channels=channels,
             run_tag=time.time(),
             order=config["run"]["order"],
         )
+        config["ui"]["monitor"] = sav_monitor
+
+        # > make sure that the DB is initialised
         luigi_result = luigi.build(
             [db_init],
             worker_scheduler_factory=WorkerSchedulerFactory(),
@@ -550,91 +582,145 @@ def main() -> None:
         )  # 'WARNING', 'INFO', 'DEBUG''
         if not luigi_result:
             sys.exit("DBInit failed")
-        nactive_part: int = 0
-        nactive_job: int = 0
-        nfailed_job: int = 0
+
+        # > clear any old logs as well as jobs that were not assigned a run path
         with db_init.session as session:
-            nactive_part = session.query(Part).filter(Part.active.is_(True)).count()
-            nactive_job = session.query(Job).filter(Job.status.in_(JobStatus.active_list())).count()
-            nfailed_job = session.query(Job).filter(Job.status.in_([JobStatus.FAILED])).count()
             # > clear log(?), indicate new submission
             last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
             if last_log:
                 console.print(f"last log: {last_log!r}")
-                if last_log.level in [LogLevel.SIG_COMP] or Confirm.ask("clear log?", default=True):
+                if last_log.level in [LogLevel.SIG_COMP, LogLevel.SIG_SUB] or Confirm.ask(
+                    "clear log?", default=True
+                ):
                     for log in session.scalars(select(Log)):
                         session.delete(log)
                     db_init._safe_commit(session)
-            db_init._logger(session, "submit", level=LogLevel.SIG_SUB)
+            db_init._logger(session, args.action, level=LogLevel.SIG_SUB)
+            # > clear pre-dispatched jobs
+            console.print("purge all jobs that never started...")
+            for job in session.scalars(select(Job)):
+                if job.rel_path is None:
+                    # > jobs that were not assigned a run path can be safely removed
+                    # > should be jobs in the `QUEUED` status
+                    assert job.status == JobStatus.QUEUED
+                    console.print(f" > {job!r}")
+                    session.delete(job)
+            db_init._safe_commit(session)
 
+        # > do a passive `DBRessurect` on active/failed jobs to update the DB according to the file system
+        # > we include FAILED, because resurecction will also update FAILED jobs if data is found on disk
+        # > we only need a list of run paths and DBResurrect does the rest
+        recover_jobs: dict = {}
+        with db_init.session as session:
+            for job in session.scalars(
+                select(Job).where(Job.status.in_([*JobStatus.active_list(), JobStatus.FAILED]))
+            ):
+                if job.rel_path is None:
+                    console.print(f" > active w/o path?! {job!r}")
+                    continue
+                recover_jobs[job.id] = job.to_dict()  # save original state for recovery
+                job.status = JobStatus.RECOVER  # mark for recovery
+            db_init._safe_commit(session)
+        # > launch resurrection jobs
+        # > (the way we construct it, guanranteed that `recover_jobs` not empty <=> passive mode)
+        luigi_result = luigi.build(
+            [
+                db_init.clone(
+                    DBResurrect,
+                    rel_path=rp,
+                    recover_jobs={k: v for k, v in recover_jobs.items() if v.get("rel_path") == rp},
+                )
+                for rp in {jd["rel_path"] for jd in recover_jobs.values()}
+            ],
+            worker_scheduler_factory=WorkerSchedulerFactory(),
+            detailed_summary=True,
+            workers=1,
+            local_scheduler=True,
+            log_level="WARNING",
+        )  # 'WARNING', 'INFO', 'DEBUG''
+        if not luigi_result:
+            sys.exit("DBResurrect failed")
+
+        # > clean up failed jobs
+        failed_jobs: dict = {}
+        with db_init.session as session:
+            for job in session.scalars(select(Job).where(Job.status.in_([JobStatus.FAILED]))):
+                if job.rel_path is None:
+                    console.print(f" > failed w/o path?! {job!r}")
+                    continue
+                failed_jobs[job.id] = job.to_dict()  # store full job entry
+        if failed_jobs:
+            console.print(f"there are {len(failed_jobs)} [bold][red]FAILED[/red][/bold] jobs in the database")
+            if Confirm.ask("remove them from the database?", default=True):
+                # > launch job deletion tasks
+                luigi_result = luigi.build(
+                    [db_init.clone(DBRemoveJob, job_id=job_id) for job_id in failed_jobs],
+                    worker_scheduler_factory=WorkerSchedulerFactory(),
+                    detailed_summary=True,
+                    workers=1,
+                    local_scheduler=True,
+                    log_level="WARNING",
+                )  # 'WARNING', 'INFO', 'DEBUG''
+                if not luigi_result:
+                    sys.exit("DBRemoveJob failed")
+
+        # > collect job statistics
+        with db_init.session as session:
+            nactive_part = session.query(Part).filter(Part.active.is_(True)).count()
+            nactive_job = session.query(Job).filter(Job.status.in_(JobStatus.active_list())).count()
+            nfailed_job = session.query(Job).filter(Job.status.in_([JobStatus.FAILED])).count()
         console.print(f"active parts: {nactive_part}")
-        # console.print(f"active jobs: {nactive_job}")
         if nactive_part == 0:
             console.print("[red]calculation has no active part?![/red]")
             sys.exit(0)
+        console.print(f"active jobs: {nactive_job}")
+        console.print(f"failed jobs: {nfailed_job}")
 
-        # @todo checks of the DB and ask for recovery mode?
-        resurrect: list[tuple[float, str]] = []
-        if nactive_job > 0:
-            select_active_jobs = select(Job).where(Job.status.in_(JobStatus.active_list()))
-            console.print(f"there appear to be {nactive_job} active jobs in the database")
+    # sys.exit(0)
+
+    # >-----
+    if args.action == "submit":
+        if db_init is None:
+            raise ValueError("DBInit is not initialized")
+
+        # > resurrect active jobs that did not terminate properly in a past run
+        resurrect_jobs: dict = {}
+        with db_init.session as session:
+            for job in session.scalars(select(Job).where(Job.status.in_(JobStatus.active_list()))):
+                if job.rel_path is None:
+                    console.print(f" > active w/o path?! {job!r}")
+                    continue
+                resurrect_jobs[job.id] = job.to_dict()  # store full job entry
+        if resurrect_jobs:
+            console.print(
+                f"there are {len(resurrect_jobs)} [bold][green]ACTIVE[/green][/bold] jobs in the database"
+            )
             if Confirm.ask("attempt to recover/restart them?", default=True):
-                with db_init.session as session:
-                    for job in session.scalars(select_active_jobs):
-                        if job.status in [JobStatus.QUEUED, JobStatus.DISPATCHED]:
-                            # > queued/dispatched jobs did not execute yet:
-                            # > just delete, no advantage in restoring
-                            # > (possible seed gaps from dispatched but ok)
-                            console.print(f" > remove (never started): {job!r}")
-                            if job.rel_path is not None and Path(job.rel_path).exists():
-                                shutil.rmtree(db_init._local(job.rel_path))
-                            session.delete(job)
-                        elif job.status == JobStatus.RUNNING:
-                            # console.print(f" > resurrect: {job!r}")
-                            # if all(r[1] != job.rel_path for r in resurrect if r[0] == job.run_tag):
-                            #     if job.rel_path:
-                            #         resurrect.append((job.run_tag, job.rel_path))
-                            if ExecutionMode(job.mode) == ExecutionMode.WARMUP:
-                                # > absorb to current job by updating run_tag if it's a warmup job
-                                job.run_tag = db_init.run_tag
-                            console.print(f" > resurrect: {job!r}")
-                            if all(r[1] != job.rel_path for r in resurrect if r[0] == job.run_tag):
-                                if job.rel_path:
-                                    resurrect.append((job.run_tag, job.rel_path))
-                        else:
-                            raise RuntimeError(f"unexpected job status in recovery: {job.status}")
-                    db_init._safe_commit(session)
-            else:
-                if Confirm.ask("remove them from the database?", default=False):
-                    with db_init.session as session:
-                        for job in session.scalars(select_active_jobs):
-                            console.print(f" > removing: {job!r}")
-                            if job.rel_path is not None and (jpath := db_init._local(job.rel_path)).exists():
-                                shutil.rmtree(jpath)
-                            session.delete(job)
-                        db_init._safe_commit(session)
-
-        if nfailed_job > 0:
-            select_failed_jobs = select(Job).where(Job.status.in_([JobStatus.FAILED]))
-            console.print(f"there appear to be {nfailed_job} failed jobs in the database")
-            if Confirm.ask("remove them from the database?", default=True):
-                with db_init.session as session:
-                    for job in session.scalars(select_failed_jobs):
-                        console.print(f" > removing: {job!r}")
-                        if job.rel_path is not None and (jpath := db_init._local(job.rel_path)).exists():
-                            shutil.rmtree(jpath)
-                        session.delete(job)
-                    db_init._safe_commit(session)
+                pass
+            elif Confirm.ask("remove them from the database?", default=False):
+                # > launch job deletion tasks
+                luigi_result = luigi.build(
+                    [db_init.clone(DBRemoveJob, job_id=job_id) for job_id in resurrect_jobs],
+                    worker_scheduler_factory=WorkerSchedulerFactory(),
+                    detailed_summary=True,
+                    workers=1,
+                    local_scheduler=True,
+                    log_level="WARNING",
+                )  # 'WARNING', 'INFO', 'DEBUG''
+                if not luigi_result:
+                    sys.exit("DBRemoveJob failed")
+                resurrect_jobs = {}
 
         # @todo skip warmup?
 
         # > determine resources and dynamic job settings
         jobs_max: int = min(config["run"]["jobs_max_concurrent"], config["run"]["jobs_max_total"])
         console.print(f"# CPU cores: {cpu_count}")
+        local_ncores: int
         if config["exe"]["policy"] == ExecutionPolicy.LOCAL:
-            local_ncores: int = jobs_max + 1
+            local_ncores = jobs_max + 1
         else:
-            local_ncores: int = cpu_count
+            local_ncores = cpu_count
         # > CLI override
         if args.local_cores is not None:
             local_ncores = max(2, args.local_cores)
@@ -657,9 +743,8 @@ def main() -> None:
         # > pass config since it changed w.r.t. db_init
         luigi_result = luigi.build(
             [
-                db_init.clone(Entry, config=config, resurrect=resurrect),
+                db_init.clone(Entry, config=config, resurrect_jobs=resurrect_jobs),
                 db_init.clone(Monitor, config=config),
-                # *resurrects,
             ],
             worker_scheduler_factory=WorkerSchedulerFactory(
                 # @todo properly set resources according to config
@@ -690,64 +775,58 @@ def main() -> None:
 
     # >-----
     if args.action == "doctor":
-        config = Config(path=args.run_path, default_ok=False)
+        if db_init is None:
+            raise ValueError("DBInit is not initialized")
 
-        # > ensure DB initialized in a proper state
-        channels: dict = config["process"].pop("channels")
-        db_init = DBInit(
-            config=config,
-            channels=channels,
-            run_tag=time.time(),
-            order=config["run"]["order"],
-        )
-        luigi_result = luigi.build(
-            [db_init],
-            worker_scheduler_factory=WorkerSchedulerFactory(),
-            detailed_summary=True,
-            workers=1,
-            local_scheduler=True,
-            log_level="WARNING",
-        )  # 'WARNING', 'INFO', 'DEBUG''
-        if not luigi_result:
-            sys.exit("DBInit failed")
-        nactive_part: int = 0
-        nactive_job: int = 0
-        nfailed_job: int = 0
-        with db_init.session as session:
-            nactive_part = session.query(Part).filter(Part.active.is_(True)).count()
-            nactive_job = session.query(Job).filter(Job.status.in_(JobStatus.active_list())).count()
-            nfailed_job = session.query(Job).filter(Job.status.in_([JobStatus.FAILED])).count()
-            # > clear log(?), indicate new submission
-            last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
-            if last_log:
-                console.print(f"last log: {last_log!r}")
+        if args.recover:
+            resurrect_tasks = []
+            with db_init.session as session:
+                # Traverse all jobs in a status that indicates the run has started
+                # DISPATCHED means it was sent to the executor, RUNNING means it started execution
+                select_started_jobs = select(Job).where(
+                    Job.status.in_([JobStatus.RUNNING, JobStatus.DISPATCHED])
+                )
+                seen_paths = set()
+                for job in session.scalars(select_started_jobs):
+                    # Flag jobs as under recovery
+                    job.status = JobStatus.RECOVER
 
-        console.print(f"active parts: {nactive_part}")
-        if nactive_part == 0:
-            console.print("[red]calculation has no active part?![/red]")
-            sys.exit(0)
-        console.print(f"active jobs: {nactive_job}")
-        console.print(f"failed jobs: {nfailed_job}")
+                    if job.rel_path and job.rel_path not in seen_paths:
+                        resurrect_tasks.append(
+                            db_init.clone(
+                                DBResurrect,
+                                run_tag=job.run_tag,
+                                rel_path=job.rel_path,
+                                only_recover=True,
+                            )
+                        )
+                        seen_paths.add(job.rel_path)
+
+                db_init._safe_commit(session)
+
+            if resurrect_tasks:
+                console.print(f"yielding {len(resurrect_tasks)} recovery tasks")
+                luigi.build(
+                    resurrect_tasks,
+                    worker_scheduler_factory=WorkerSchedulerFactory(),
+                    detailed_summary=True,
+                    workers=cpu_count,
+                    local_scheduler=True,
+                    log_level="WARNING",
+                )
+
+            # Report final status
+            with db_init.session as session:
+                nactive_job = session.query(Job).filter(Job.status.in_(JobStatus.active_list())).count()
+                nfailed_job = session.query(Job).filter(Job.status.in_([JobStatus.FAILED])).count()
+            console.print("after recovery:")
+            console.print(f"active jobs: {nactive_job}")
+            console.print(f"failed jobs: {nfailed_job}")
 
     # >-----
     if args.action == "finalize":
-        config = Config(path=args.run_path, default_ok=False)
-
-        # > CLI overrides: persistent overwrite --> config
-        if nnlojet_exe is not None:
-            config["exe"]["path"] = nnlojet_exe
-        # > merge settings
-        if args.trim_threshold is not None:
-            config["merge"]["trim_threshold"] = args.trim_threshold
-        if args.trim_max_fraction is not None:
-            config["merge"]["trim_max_fraction"] = args.trim_max_fraction
-        if args.k_scan_nsteps is not None:
-            config["merge"]["k_scan_nsteps"] = args.k_scan_nsteps
-        if args.k_scan_maxdev_steps is not None:
-            config["merge"]["k_scan_maxdev_steps"] = args.k_scan_maxdev_steps
-        # > no monitor needed for finalize
-        config["ui"]["monitor"] = False
-        console.print(config["merge"])
+        if db_init is None:
+            raise ValueError("DBInit is not initialized")
 
         # > launch the finalization task
         mrg_final = MergeFinal(
@@ -756,9 +835,7 @@ def main() -> None:
             run_tag=time.time(),
             grids=True,
         )
-        nactive_part: int = 0
         with mrg_final.session as session:
-            nactive_part = session.query(Part).filter(Part.active.is_(True)).count()
             mrg_final._logger(session, "finalize", level=LogLevel.SIG_FINI)
 
         luigi_result = luigi.build(

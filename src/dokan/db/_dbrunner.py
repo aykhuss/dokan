@@ -217,9 +217,7 @@ class DBRunner(DBTask):
         exe_data = ExeData(self.job_path)
 
         with self.session as session:
-            self._logger(
-                session, self._logger_prefix + f"::run:  [dim](job_ids = {self.ids})[/dim]"
-            )
+            self._logger(session, self._logger_prefix + f"::run:  [dim](job_ids = {self.ids})[/dim]")
 
             # > DBDispatch takes care to stay within batch size
             db_jobs: list[Job] = [session.get_one(Job, job_id) for job_id in self.ids]
