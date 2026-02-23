@@ -325,15 +325,31 @@ class ExeData(UserDict):
             raise RuntimeError("ExeData can't modify after finalize!")
         jobs = self.data.get("jobs", {})
         output_files: list[str] = self.data.setdefault("output_files", [])
-        if job_id in jobs:
-            seed: int = jobs[job_id]["seed"]
+
+        def remove_artifact(path: Path) -> None:
+            """Remove one artifact path, deleting symlink source before link."""
+            if path.is_symlink():
+                try:
+                    source = path.resolve(strict=True)
+                    if source.exists() and (source.is_file() or source.is_symlink()):
+                        source.unlink()
+                except FileNotFoundError:
+                    # broken link; still remove link itself below
+                    pass
+                path.unlink(missing_ok=True)
+                return
+            if path.exists():
+                path.unlink()
+
+        job_key = job_id if job_id in jobs else str(job_id)
+        if job_key in jobs:
+            seed: int = jobs[job_key]["seed"]
             del_list: list[str] = [of for of in output_files if f".s{seed}." in of]
             for del_file in del_list:
                 del_path = self.path / del_file
-                if del_path.exists():
-                    del_path.unlink()
+                remove_artifact(del_path)
                 output_files.remove(del_file)
-            del jobs[job_id]
+            del jobs[job_key]
         self.write(force)
 
     @property
