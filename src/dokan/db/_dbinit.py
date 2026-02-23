@@ -24,18 +24,25 @@ class DBInit(DBTask):
 
     Attributes
     ----------
+    channels : dict
+        Full channel definition map (`name -> channel metadata`) from process
+        discovery.
     order : int
         The target order of the calculation (e.g., LO, NLO, NNLO).
-    channels : dict
-        Channel definitions dictionary (name -> properties).
+    select_channels : list
+        Optional explicit channel-name allowlist. When non-empty, this takes
+        precedence over `order`.
 
     """
 
+    channels: dict = luigi.DictParameter()  # all channels
     order: int = luigi.IntParameter(default=Order.NNLO)
-    channels: dict = luigi.DictParameter()
+    # if select_channels is non-empty, we ignore the order
+    select_channels: list[str] = luigi.ListParameter(default=[])
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._logger_prefix: str = self.__class__.__name__
         # > init shall always run the setup block of the DB
         self.db_setup = True
         # > create the tables if they do not exist yet
@@ -43,56 +50,84 @@ class DBInit(DBTask):
         # complete() to function.
         DokanDB.metadata.create_all(self._create_engine(self.dbname))
         DokanLog.metadata.create_all(self._create_engine(self.logname))
+        # > determine the channels that should be activated
+        self.activate_channels: list[str] = self._resolve_activate_channels()
+
+    def _resolve_activate_channels(self) -> list[str]:
+        """Build the normalized activation list for this DBInit instance.
+
+        Raises
+        ------
+        ValueError
+            If `select_channels` contains unknown names or if a channel has an
+            invalid/missing `order` field.
+
+        """
+        if self.select_channels:
+            unknown = [name for name in self.select_channels if name not in self.channels]
+            if unknown:
+                raise ValueError(
+                    f"{self._logger_prefix}::init: select_channels contains unknown entries: {unknown}"
+                )
+            return self.select_channels
+
+        target_order: Order = Order(self.order)
+        activate: list[str] = []
+        for name, channel_info in self.channels.items():
+            if "order" not in channel_info:
+                raise ValueError(
+                    f"{self._logger_prefix}::init: channel {name!r} has no 'order' entry"
+                )
+            channel_order = Order(channel_info["order"])
+            if channel_order.is_in(target_order):
+                activate.append(name)
+        return activate
 
     def complete(self) -> bool:
-        """Check if the database parts match the requested configuration."""
+        """Check if DB activation flags match the requested channel selection."""
         with self.session as session:
-            # Fetch all existing parts that are in our channel list
-            stmt = select(Part).where(Part.name.in_(self.channels.keys()))
-            existing_parts: dict[str, Part] = {p.name: p for p in session.scalars(stmt)}
+            # > Fetch all parts in the database
+            db_parts: dict[str, Part] = {p.name: p for p in session.scalars(select(Part))}
 
-            target_order: Order = Order(self.order)
+            # > there are channels not yet added to the DB
+            if any(ac not in db_parts for ac in self.activate_channels):
+                return False
 
-            for name, _ in self.channels.items():
-                if name not in existing_parts:
-                    return False
-
-                part = existing_parts[name]
-                # Check if the active state matches the target order logic
-                should_be_active = Order(part.order).is_in(target_order)
-                if part.active != should_be_active:
+            for name, part in db_parts.items():
+                if part.active != (name in self.activate_channels):
                     return False
 
         return True
 
     def run(self) -> None:
-        """Populate or update the parts table."""
+        """Synchronize `Part.active` for all known channels.
+
+        Existing rows are deactivated first, then channels selected in
+        `activate_channels` are activated (and inserted if missing).
+        """
         with self.session as session:
-            # self._logger(session, f"DBInit::run order = {Order(self.order)!r}")
+            self._logger(session, f"{self._logger_prefix}::run activate: {self.activate_channels}")
 
             # > Fetch all existing parts to update/insert efficiently
-            stmt = select(Part)
-            existing_parts: dict[str, Part] = {p.name: p for p in session.scalars(stmt)}
+            db_parts: dict[str, Part] = {p.name: p for p in session.scalars(select(Part))}
 
             # > First, deactivate everything to ensure clean state
-            for p in existing_parts.values():
+            for p in db_parts.values():
                 p.active = False
 
-            target_order: Order = Order(self.order)
             current_time: float = time.time()
 
-            for name, channel_info in self.channels.items():
-                channel_order: Order = Order(channel_info.get("order"))
-                is_active: bool = channel_order.is_in(target_order)
+            for name in self.activate_channels:
+                channel_info: dict = self.channels[name]
 
-                if name in existing_parts:
+                if name in db_parts:
                     # > Update existing part
-                    part = existing_parts[name]
-                    part.active = is_active
+                    part = db_parts[name]
+                    part.active = True
                 else:
                     # > Insert new part
-                    new_part = Part(name=name, active=is_active, timestamp=current_time, **channel_info)
+                    new_part = Part(name=name, active=True, timestamp=current_time, **channel_info)
                     session.add(new_part)
-                    existing_parts[name] = new_part
+                    db_parts[name] = new_part
 
             self._safe_commit(session)

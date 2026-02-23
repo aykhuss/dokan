@@ -63,14 +63,13 @@ class DBTask(Task, metaclass=ABCMeta):
 
     def _safe_commit(self, session: Session) -> None:
         from sqlalchemy.exc import OperationalError
-
+        dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         for i in range(10):  # maximum number of tries
             try:
                 session.commit()
                 return
             except OperationalError as e:
                 if "database is locked" in str(e):
-                    dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     _console.print(
                         f"(c)[dim][{dt_str}][/dim](WARN): DBTask::_safe_commit locked, retrying..."
                     )
@@ -79,7 +78,6 @@ class DBTask(Task, metaclass=ABCMeta):
                 raise e
             except Exception as e:
                 # > do NOT use self._logger here to avoid recursion loop
-                dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 _console.print(f"(c)[dim][{dt_str}][/dim](ERROR): DBTask::_safe_commit: {e!r}")
                 time.sleep(1.0)  # time delay between retries
         raise RuntimeError("DBTask::_safe_commit: ran out of retries")
