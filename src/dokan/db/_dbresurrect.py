@@ -130,16 +130,6 @@ class DBResurrect(DBTask):
         """Return True when result/error are finite NNLOJET outputs."""
         return math.isfinite(result) and math.isfinite(error)
 
-    def _update_job_from_entry(self, db_job: Job, job_entry: dict) -> None:
-        """Copy parsed execution values from `ExeData` into a DB row."""
-        db_job.result = float(job_entry["result"])
-        db_job.error = float(job_entry["error"])
-        db_job.chi2dof = float(job_entry["chi2dof"])
-        elapsed: float = float(job_entry["elapsed_time"])
-        # > keep DB estimates if runtime metadata is broken/missing
-        if elapsed > 0.0:
-            db_job.elapsed_time = elapsed
-
     def _all_jobs_terminated(self, session, job_ids: list[int] | None = None) -> bool:
         """Return True if all selected jobs are terminated in DB."""
         ids = job_ids if job_ids is not None else list(self.exe_data["jobs"])
@@ -200,7 +190,20 @@ class DBResurrect(DBTask):
                     if not self._is_valid_result(res, err):
                         db_job.status = JobStatus.FAILED
                     else:
-                        self._update_job_from_entry(db_job, job_entry)
+                        db_job.result = float(job_entry["result"])
+                        db_job.error = float(job_entry["error"])
+                        db_job.chi2dof = float(job_entry["chi2dof"])
+                        if "elapsed_time" in job_entry:
+                            elapsed: float = float(job_entry["elapsed_time"])
+                            # > keep DB estimates if runtime metadata is broken/missing
+                            if elapsed > 0.0:
+                                db_job.elapsed_time = elapsed
+                        else:
+                            # > premature termination of job:  re-scale by iterations that completed
+                            niter_completed: int = len(job_entry.get("iterations", []))
+                            scale: float = float(niter_completed) / float(db_job.niter) if db_job.niter > 0 else 0.0
+                            db_job.niter = niter_completed
+                            db_job.elapsed_time = scale * db_job.elapsed_time
                         db_job.status = JobStatus.DONE
                 else:
                     # Active mode: missing result implies failure.

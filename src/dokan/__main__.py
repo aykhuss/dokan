@@ -681,7 +681,7 @@ def main() -> None:
                     # > jobs that were not assigned a run path can be safely removed
                     # > should be jobs in the `QUEUED` status
                     console.print(f" > {job!r}")
-                    assert job.status in [JobStatus.QUEUED, JobStatus.DISPATCHED]
+                    assert job.status in [JobStatus.QUEUED, JobStatus.DISPATCHED, JobStatus.FAILED]
                     session.delete(job)
             db_init._safe_commit(session)
 

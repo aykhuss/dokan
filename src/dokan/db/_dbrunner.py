@@ -194,19 +194,26 @@ class DBRunner(DBTask):
                     db_job.error = err
                     db_job.chi2dof = job_data["chi2dof"]
 
-                    elapsed = job_data["elapsed_time"]
-                    if elapsed > 0:
-                        db_job.elapsed_time = elapsed
+                    if "elapsed_time" in job_data:
+                        elapsed: float = float(job_data["elapsed_time"])
+                        if elapsed > 0.0:
+                            db_job.elapsed_time = elapsed
+                        else:
+                            # > issue warning and keep estimated runtime in database
+                            self._logger(
+                                session,
+                                self._logger_prefix
+                                + f"::run:  job {db_job.id} at {exe_data.path} has"
+                                + f" elapsed time: {elapsed}"
+                                + f" -> keeping estimate {db_job.elapsed_time}",
+                                LogLevel.DEBUG,
+                            )
                     else:
-                        # > issue warning and keep estimated runtime in database
-                        self._logger(
-                            session,
-                            self._logger_prefix
-                            + f"::run:  job {db_job.id} at {exe_data.path} has"
-                            + f" elapsed time: {elapsed}"
-                            + f" -> keeping estimate {db_job.elapsed_time}",
-                            LogLevel.DEBUG,
-                        )
+                        # > premature termination of job:  re-scale by iterations that completed
+                        niter_completed: int = len(job_data.get("iterations", []))
+                        scale: float = float(niter_completed) / float(db_job.niter) if db_job.niter > 0 else 0.0
+                        db_job.niter = niter_completed
+                        db_job.elapsed_time = scale * db_job.elapsed_time
                     db_job.status = JobStatus.DONE
             else:
                 db_job.status = JobStatus.FAILED
