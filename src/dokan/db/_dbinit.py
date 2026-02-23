@@ -75,9 +75,7 @@ class DBInit(DBTask):
         activate: list[str] = []
         for name, channel_info in self.channels.items():
             if "order" not in channel_info:
-                raise ValueError(
-                    f"{self._logger_prefix}::init: channel {name!r} has no 'order' entry"
-                )
+                raise ValueError(f"{self._logger_prefix}::init: channel {name!r} has no 'order' entry")
             channel_order = Order(channel_info["order"])
             if channel_order.is_in(target_order):
                 activate.append(name)

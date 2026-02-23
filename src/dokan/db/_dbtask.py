@@ -63,6 +63,7 @@ class DBTask(Task, metaclass=ABCMeta):
 
     def _safe_commit(self, session: Session) -> None:
         from sqlalchemy.exc import OperationalError
+
         dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         for i in range(10):  # maximum number of tries
             try:

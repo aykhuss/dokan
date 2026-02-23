@@ -1,4 +1,10 @@
-"""The main execution of the NNLOJET workflow"""
+"""Command-line entrypoint for the dokan workflow.
+
+This module defines:
+- argparse conversion helpers (for booleans and structured prompt inputs),
+- interactive prompt wrappers used by the `config` flow,
+- the top-level `main()` command dispatcher.
+"""
 
 # from luigi.execution_summary import LuigiRunResult
 import argparse
@@ -38,7 +44,11 @@ from .util import parse_time_interval
 
 
 def str2bool(value: object) -> bool:
-    """Parse CLI boolean values robustly for argparse."""
+    """Parse CLI boolean values robustly for argparse.
+
+    Accepts common textual forms (`yes/no`, `on/off`, `true/false`) and
+    numeric `0/1`. Raises `argparse.ArgumentTypeError` for invalid input.
+    """
     if isinstance(value, bool):
         return value
 
@@ -59,15 +69,19 @@ def str2bool(value: object) -> bool:
             raise argparse.ArgumentTypeError("Boolean value expected.")
 
 
-def reset_and_exit(sig, frame) -> None:
+def reset_and_exit(sig: int, frame) -> None:
+    """Restore terminal cursor and exit on SIGINT."""
     print("\x1b[?25h", end="", flush=True)
     sys.exit(f'\ncaught signal: "{signal.Signals(sig).name}", exiting')
 
 
+# Keep Ctrl-C behavior consistent across CLI subcommands.
 signal.signal(signal.SIGINT, reset_and_exit)
 
 
 class TimeIntervalPrompt(PromptBase[float]):
+    """Prompt parser that converts human-readable durations to seconds."""
+
     response_type = float
     validate_error_message = "[prompt.invalid]Please enter a valid time interval"
 
@@ -76,6 +90,8 @@ class TimeIntervalPrompt(PromptBase[float]):
 
 
 class OrderPrompt(PromptBase[Order]):
+    """Prompt parser for perturbative order values."""
+
     response_type = Order
     validate_error_message = "[prompt.invalid]Please enter a valid order"
 
@@ -83,11 +99,13 @@ class OrderPrompt(PromptBase[Order]):
         try:
             parsed: Order = Order.parse(value.strip())
         except KeyError:
-            raise InvalidResponse(self.validate_error_message)
+            raise InvalidResponse(self.validate_error_message) from KeyError
         return parsed
 
 
 class ExecutionPolicyPrompt(PromptBase[ExecutionPolicy]):
+    """Prompt parser for execution backend policy values."""
+
     response_type = ExecutionPolicy
     validate_error_message = "[prompt.invalid]Please enter a valid policy"
 
@@ -95,11 +113,13 @@ class ExecutionPolicyPrompt(PromptBase[ExecutionPolicy]):
         try:
             parsed: ExecutionPolicy = ExecutionPolicy.parse(value.strip())
         except KeyError:
-            raise InvalidResponse(self.validate_error_message)
+            raise InvalidResponse(self.validate_error_message) from KeyError
         return parsed
 
 
 class LogLevelPrompt(PromptBase[LogLevel]):
+    """Prompt parser for Dokan log-level values."""
+
     response_type = LogLevel
     validate_error_message = "[prompt.invalid]Please enter a valid log level"
 
@@ -107,11 +127,12 @@ class LogLevelPrompt(PromptBase[LogLevel]):
         try:
             parsed: LogLevel = LogLevel.parse(value.strip())
         except KeyError:
-            raise InvalidResponse(self.validate_error_message)
+            raise InvalidResponse(self.validate_error_message) from KeyError
         return parsed
 
 
 def main() -> None:
+    """Run the Dokan CLI dispatcher and selected subcommand workflow."""
     # > some action-global variables
     config: Config = Config(default_ok=True)
     console: Console = Console()
@@ -125,9 +146,7 @@ def main() -> None:
     # > subcommand: init
     parser_init = subparsers.add_parser("init", help="initialise a run")
     parser_init.add_argument("runcard", metavar="RUNCARD", help="NNLOJET runcard")
-    parser_init.add_argument(
-        "-o", "--output", dest="run_path", help="destination of the run directory"
-    )
+    parser_init.add_argument("-o", "--output", dest="run_path", help="destination of the run directory")
     parser_init.add_argument("--no-lumi", action="store_true", help="skip the luminosity breakdown")
 
     # > subcommand: config
@@ -181,14 +200,10 @@ def main() -> None:
     # > subcommand: doctor
     parser_doctor = subparsers.add_parser("doctor", help="your workflow wellness specialist 🩺")
     parser_doctor.add_argument("run_path", metavar="RUN", help="run directory")
-    parser_doctor.add_argument(
-        "--recover", action="store_true", help="recover started but incomplete jobs"
-    )
+    parser_doctor.add_argument("--recover", action="store_true", help="recover started but incomplete jobs")
 
     # > subcommand: finalize
-    parser_finalize = subparsers.add_parser(
-        "finalize", help="merge completed jobs into a final result"
-    )
+    parser_finalize = subparsers.add_parser("finalize", help="merge completed jobs into a final result")
     parser_finalize.add_argument("run_path", metavar="RUN", help="run directory")
     parser_finalize.add_argument("--trim-threshold", type=float, help="threshold to flag outliers")
     parser_finalize.add_argument(
@@ -228,9 +243,7 @@ def main() -> None:
                 sys.exit(f"invalid executable {path_exe.absolute()!s}")
 
         # > save all to the run config file
-        target_path: str = (
-            args.run_path if args.run_path else os.path.relpath(runcard.data["run_name"])
-        )
+        target_path: str = args.run_path if args.run_path else os.path.relpath(runcard.data["run_name"])
         if Path(target_path).exists() and not Confirm.ask(
             f"The folder {target_path} already exists, do you want to continue?"
         ):
@@ -310,9 +323,7 @@ def main() -> None:
             # > advanced settings
             if args.advanced:
                 while True:
-                    new_seed_offset: int = IntPrompt.ask(
-                        "seed offset", default=config["run"]["seed_offset"]
-                    )
+                    new_seed_offset: int = IntPrompt.ask("seed offset", default=config["run"]["seed_offset"])
                     if new_seed_offset >= 0:
                         break
                     console.print("please enter a non-negative value")
@@ -401,9 +412,7 @@ def main() -> None:
                         break
                     console.print("please enter a value between 0 and 1")
                 config["merge"]["trim_max_fraction"] = new_trim_max_fraction
-                console.print(
-                    f"[dim]trim_max_fraction = {config['merge']['trim_max_fraction']!r}[/dim]"
-                )
+                console.print(f"[dim]trim_max_fraction = {config['merge']['trim_max_fraction']!r}[/dim]")
 
                 while True:
                     new_k_scan_nsteps: int = IntPrompt.ask(
@@ -423,9 +432,7 @@ def main() -> None:
                         break
                     console.print("please enter a positive value")
                 config["merge"]["k_scan_maxdev_steps"] = new_k_scan_maxdev_steps
-                console.print(
-                    f"[dim]k_scan_maxdev_steps = {config['merge']['k_scan_maxdev_steps']!r}[/dim]"
-                )
+                console.print(f"[dim]k_scan_maxdev_steps = {config['merge']['k_scan_maxdev_steps']!r}[/dim]")
 
                 # > config with flags skip the default config options
                 config.write()
@@ -481,9 +488,7 @@ def main() -> None:
             default=config["run"]["job_fill_max_runtime"],
         )
         config["run"]["job_fill_max_runtime"] = new_job_fill_max_runtime
-        console.print(
-            f"[dim]job_fill_max_runtime = {config['run']['job_fill_max_runtime']!r}[/dim]"
-        )
+        console.print(f"[dim]job_fill_max_runtime = {config['run']['job_fill_max_runtime']!r}[/dim]")
 
         while True:
             new_jobs_max_total: int = IntPrompt.ask(
@@ -504,9 +509,7 @@ def main() -> None:
             max_concurrent_msg = "maximum number of concurrent jobs"
             max_concurrent_def = config["run"]["jobs_max_concurrent"]
         while True:
-            new_jobs_max_concurrent: int = IntPrompt.ask(
-                max_concurrent_msg, default=max_concurrent_def
-            )
+            new_jobs_max_concurrent: int = IntPrompt.ask(max_concurrent_msg, default=max_concurrent_def)
             if new_jobs_max_concurrent > 0:
                 break
             console.print("please enter a positive value")
@@ -531,9 +534,7 @@ def main() -> None:
                 )
                 if new_poll_time > 10.0 and new_poll_time < max_runtime / 2:
                     break
-                console.print(
-                    f"please enter a positive value between [10, {max_runtime / 2}] seconds"
-                )
+                console.print(f"please enter a positive value between [10, {max_runtime / 2}] seconds")
             config["exe"]["policy_settings"][f"{cluster}_poll_time"] = new_poll_time
             console.print(
                 f"[dim]poll_time = {config['exe']['policy_settings'][f'{cluster}_poll_time']!r}s[/dim]"
@@ -560,9 +561,7 @@ def main() -> None:
             config["exe"]["policy_settings"][f"{cluster}_template"] = exe_template.name
             dst = config.path / config["exe"]["policy_settings"][f"{cluster}_template"]
             shutil.copyfile(exe_template, dst)
-            console.print(
-                f"{cluster} template: [italic]{exe_template.name}[/italic] copied to run folder:"
-            )
+            console.print(f"{cluster} template: [italic]{exe_template.name}[/italic] copied to run folder:")
             with open(dst) as run_exe_template:
                 syntx = Syntax(run_exe_template.read(), "shell", word_wrap=True)
                 console.print(syntx)
@@ -619,7 +618,7 @@ def main() -> None:
                         else:
                             console.print(f" > channel {ch!r} did not match, skipping")
                     if not select_channels:
-                        console.print(f"no channels selected with \"{args.channels}\", exiting")
+                        console.print(f'no channels selected with "{args.channels}", exiting')
                         sys.exit(0)
             case "doctor":
                 # > no monitor needed for doctor
@@ -729,9 +728,7 @@ def main() -> None:
                     continue
                 failed_jobs[job.id] = job.to_dict()  # store full job entry
         if failed_jobs:
-            console.print(
-                f"there are {len(failed_jobs)} [bold][red]FAILED[/red][/bold] jobs in the database"
-            )
+            console.print(f"there are {len(failed_jobs)} [bold][red]FAILED[/red][/bold] jobs in the database")
             if Confirm.ask("remove them from the database?", default=True):
                 # > launch job deletion tasks
                 luigi_result = luigi.build(
@@ -798,10 +795,7 @@ def main() -> None:
         jobs_max: int = min(config["run"]["jobs_max_concurrent"], config["run"]["jobs_max_total"])
         console.print(f"# CPU cores: {cpu_count}")
         local_ncores: int
-        if config["exe"]["policy"] == ExecutionPolicy.LOCAL:
-            local_ncores = jobs_max + 1
-        else:
-            local_ncores = cpu_count
+        local_ncores = jobs_max + 1 if config["exe"]["policy"] == ExecutionPolicy.LOCAL else cpu_count
         # > CLI override
         if args.local_cores is not None:
             local_ncores = max(2, args.local_cores)
@@ -852,8 +846,6 @@ def main() -> None:
         # console.print(luigi_result.status)
         # console.print(luigi_result.summary_text)
 
-        # @todo give an estimate in case target accuracy not reached.
-
     # >-----
     if args.action == "doctor":
         if db_init is None:
@@ -898,9 +890,7 @@ def main() -> None:
 
             # Report final status
             with db_init.session as session:
-                nactive_job = (
-                    session.query(Job).filter(Job.status.in_(JobStatus.active_list())).count()
-                )
+                nactive_job = session.query(Job).filter(Job.status.in_(JobStatus.active_list())).count()
                 nfailed_job = session.query(Job).filter(Job.status.in_([JobStatus.FAILED])).count()
             console.print("after recovery:")
             console.print(f"active jobs: {nactive_job}")
