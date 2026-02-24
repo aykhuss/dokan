@@ -9,7 +9,6 @@ from sqlalchemy import Engine, create_engine, select, text
 from sqlalchemy.orm import Session  # , scoped_session, sessionmaker
 
 from ..exe import ExecutionMode
-from ..order import Order
 from ..task import Task
 from ._jobstatus import JobStatus
 from ._loglevel import LogLevel
@@ -23,10 +22,7 @@ class DBTask(Task, metaclass=ABCMeta):
 
     run_tag: float = luigi.FloatParameter()
 
-    # > threadsafety using resource = 1, where read/write needed
-    resources = {"DBTask": 1}
     # > database queries should jump the scheduler queue?
-
     # priority = 1
 
     def __init__(self, *args, **kwargs):
@@ -35,6 +31,11 @@ class DBTask(Task, metaclass=ABCMeta):
         self.dbname: str = "sqlite:///" + str(self._local("db.sqlite").absolute())
         self.logname: str = "sqlite:///" + str(self._local("log.sqlite").absolute())
         self.db_setup: bool = False
+
+    # > threadsafety using resource = 1, where read/write needed
+    @property
+    def resources(self):
+        return super().resources | {"DBTask": 1}
 
     def _create_engine(self, name: str) -> Engine:
         """Create a SQLite engine with WAL mode and concurrency settings."""

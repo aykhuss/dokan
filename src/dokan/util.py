@@ -64,7 +64,7 @@ def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:
             return all(validate_schema(e, elt, convert_to_type) for e in struct)
         # > default case: match the length and each element
         return len(struct) == len(schema) and all(
-            validate_schema(st, sc, convert_to_type) for st, sc in zip(struct, schema)
+            validate_schema(st, sc, convert_to_type) for st, sc in zip(struct, schema, strict=True)
         )
 
     # @todo: case for a tuple? -> list with fixed length & types

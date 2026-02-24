@@ -38,13 +38,13 @@ IF_II_antennae = list(dict.fromkeys(IF_antennae + II_antennae))  # remove duplic
 procs = {
     "eeJJ": {
         "ORIGINAL CALCULATIONS": [],
-        "ANTENNA SUBTRACTION": FF_antennae + [],
+        "ANTENNA SUBTRACTION": FF_antennae,
         "AMPLITUDES": [],
         "EXTERNAL TOOLS": ["Buckley:2014ana"],
     },
     "eeJJJ": {
         "ORIGINAL CALCULATIONS": ["Gehrmann:2017xfb"],
-        "ANTENNA SUBTRACTION": FF_antennae + [],
+        "ANTENNA SUBTRACTION": FF_antennae,
         "AMPLITUDES": [
             "Hagiwara:1988pp",
             "Berends:1988yn",
@@ -58,43 +58,43 @@ procs = {
     },
     "epLJ": {
         "ORIGINAL CALCULATIONS": [],
-        "ANTENNA SUBTRACTION": IF_antennae + ["Gehrmann-DeRidder:2005btv"],
+        "ANTENNA SUBTRACTION": [*IF_antennae, "Gehrmann-DeRidder:2005btv"],
         "AMPLITUDES": [],
         "EXTERNAL TOOLS": ["Buckley:2014ana"],
     },
     "epLJJ": {
         "ORIGINAL CALCULATIONS": ["Currie:2017tpe"],
-        "ANTENNA SUBTRACTION": FF_antennae + IF_antennae + ["Currie:2013vh"],
+        "ANTENNA SUBTRACTION": [*FF_antennae, *IF_antennae, "Currie:2013vh"],
         "AMPLITUDES": [],
         "EXTERNAL TOOLS": ["Buckley:2014ana"],
     },
     "epNJ": {
         "ORIGINAL CALCULATIONS": [],
-        "ANTENNA SUBTRACTION": IF_antennae + ["Gehrmann-DeRidder:2005btv"],
+        "ANTENNA SUBTRACTION": [*IF_antennae, "Gehrmann-DeRidder:2005btv"],
         "AMPLITUDES": [],
         "EXTERNAL TOOLS": ["Buckley:2014ana"],
     },
     "epNJJ": {
         "ORIGINAL CALCULATIONS": ["Niehues:2018was"],
-        "ANTENNA SUBTRACTION": FF_antennae + IF_antennae + ["Currie:2013vh"],
+        "ANTENNA SUBTRACTION": [*FF_antennae, *IF_antennae, "Currie:2013vh"],
         "AMPLITUDES": [],
         "EXTERNAL TOOLS": ["Buckley:2014ana"],
     },
     "epNbJ": {
         "ORIGINAL CALCULATIONS": [],
-        "ANTENNA SUBTRACTION": FF_antennae + IF_antennae + ["Currie:2013vh"],
+        "ANTENNA SUBTRACTION": [*FF_antennae, *IF_antennae, "Currie:2013vh"],
         "AMPLITUDES": [],
         "EXTERNAL TOOLS": ["Buckley:2014ana"],
     },
     "epNbJJ": {
         "ORIGINAL CALCULATIONS": ["Niehues:2018was"],
-        "ANTENNA SUBTRACTION": FF_antennae + IF_antennae + ["Currie:2013vh"],
+        "ANTENNA SUBTRACTION": [*FF_antennae, *IF_antennae, "Currie:2013vh"],
         "AMPLITUDES": [],
         "EXTERNAL TOOLS": ["Buckley:2014ana"],
     },
     "Z": {
         "ORIGINAL CALCULATIONS": ["Gehrmann-DeRidder:2023urf"],
-        "ANTENNA SUBTRACTION": II_antennae + ["Gehrmann-DeRidder:2005btv"],
+        "ANTENNA SUBTRACTION": [*II_antennae, "Gehrmann-DeRidder:2005btv"],
         "AMPLITUDES": [],
         "EXTERNAL TOOLS": ["Buckley:2014ana"],
     },
@@ -108,7 +108,7 @@ procs = {
             "Gauld:2021pkr",
             "Gehrmann-DeRidder:2023urf",
         ],
-        "ANTENNA SUBTRACTION": FF_antennae + IF_II_antennae + ["Currie:2013vh"],
+        "ANTENNA SUBTRACTION": [*FF_antennae, *IF_II_antennae, "Currie:2013vh"],
         "AMPLITUDES": [
             "Hagiwara:1988pp",
             "Berends:1988yn",
@@ -122,13 +122,13 @@ procs = {
     },
     "W": {
         "ORIGINAL CALCULATIONS": [],
-        "ANTENNA SUBTRACTION": II_antennae + ["Gehrmann-DeRidder:2005btv"],
+        "ANTENNA SUBTRACTION": [*II_antennae, "Gehrmann-DeRidder:2005btv"],
         "AMPLITUDES": [],
         "EXTERNAL TOOLS": ["Buckley:2014ana"],
     },
     "WJ": {
         "ORIGINAL CALCULATIONS": ["Gehrmann-DeRidder:2017mvr", "Gehrmann-DeRidder:2019avi"],
-        "ANTENNA SUBTRACTION": FF_antennae + IF_II_antennae + ["Currie:2013vh"],
+        "ANTENNA SUBTRACTION": [*FF_antennae, *IF_II_antennae, "Currie:2013vh"],
         "AMPLITUDES": [
             "Hagiwara:1988pp",
             "Berends:1988yn",
@@ -142,13 +142,13 @@ procs = {
     },
     "H": {
         "ORIGINAL CALCULATIONS": [],
-        "ANTENNA SUBTRACTION": II_antennae + ["Gehrmann-DeRidder:2005btv"],
+        "ANTENNA SUBTRACTION": [*II_antennae, "Gehrmann-DeRidder:2005btv"],
         "AMPLITUDES": [],
         "EXTERNAL TOOLS": ["Buckley:2014ana"],
     },
     "HJ": {
         "ORIGINAL CALCULATIONS": ["Chen:2014gva"],
-        "ANTENNA SUBTRACTION": FF_antennae + IF_II_antennae + ["Currie:2013vh"],
+        "ANTENNA SUBTRACTION": [*FF_antennae, *IF_II_antennae, "Currie:2013vh"],
         "AMPLITUDES": [
             "DelDuca:2004wt",
             "Dixon:2009uk",
@@ -160,7 +160,7 @@ procs = {
     },
     "H2J": {
         "ORIGINAL CALCULATIONS": ["Chen:2016zka"],
-        "ANTENNA SUBTRACTION": FF_antennae + IF_II_antennae + ["Currie:2013vh"],
+        "ANTENNA SUBTRACTION": [*FF_antennae, *IF_II_antennae, "Currie:2013vh"],
         "AMPLITUDES": [
             "DelDuca:2004wt",
             "Dixon:2009uk",
@@ -172,7 +172,7 @@ procs = {
     },
     "H3J": {
         "ORIGINAL CALCULATIONS": ["Chen:2021ibm"],
-        "ANTENNA SUBTRACTION": FF_antennae + IF_II_antennae + ["Currie:2013vh"],
+        "ANTENNA SUBTRACTION": [*FF_antennae, *IF_II_antennae, "Currie:2013vh"],
         "AMPLITUDES": [
             "DelDuca:2004wt",
             "Dixon:2009uk",
@@ -184,7 +184,7 @@ procs = {
     },
     "H4J": {
         "ORIGINAL CALCULATIONS": ["Chen:2019wxf"],
-        "ANTENNA SUBTRACTION": FF_antennae + IF_II_antennae + ["Currie:2013vh"],
+        "ANTENNA SUBTRACTION": [*FF_antennae, *IF_II_antennae, "Currie:2013vh"],
         "AMPLITUDES": [
             "DelDuca:2004wt",
             "Dixon:2009uk",
@@ -196,13 +196,13 @@ procs = {
     },
     "GJ": {
         "ORIGINAL CALCULATIONS": ["Chen:2019zmr"],
-        "ANTENNA SUBTRACTION": FF_antennae + IF_II_antennae + ["Currie:2013vh"],
+        "ANTENNA SUBTRACTION": [*FF_antennae, *IF_II_antennae, "Currie:2013vh"],
         "AMPLITUDES": ["DelDuca:1999pa", "Signer:1995np", "Anastasiou:2002zn"],
         "EXTERNAL TOOLS": ["Buckley:2014ana"],
     },
     "GG": {
         "ORIGINAL CALCULATIONS": ["Gehrmann:2020oec"],
-        "ANTENNA SUBTRACTION": II_antennae + ["Currie:2013vh", "Chen:2022clm"],
+        "ANTENNA SUBTRACTION": [*II_antennae, "Currie:2013vh", "Chen:2022clm"],
         "AMPLITUDES": [],
         "EXTERNAL TOOLS": ["Buckley:2014ana"],
     },
@@ -214,9 +214,9 @@ procs = {
             "Gehrmann-DeRidder:2019ibf",
             "Chen:2022tpk",
         ],
-        "ANTENNA SUBTRACTION": FF_antennae
-        + IF_II_antennae
-        + [
+        "ANTENNA SUBTRACTION": [
+            *FF_antennae,
+            *IF_II_antennae,
             "NigelGlover:2010kwr",
             "Gehrmann-DeRidder:2011jwo",
             "Gehrmann-DeRidder:2012dog",
@@ -324,13 +324,13 @@ def make_bib(proc: str, destination: GenericPath) -> tuple[Path, Path]:
     bibtex: Path = dest_path / f"NNLOJET_references_{original_proc}.tex"
 
     with open(bibout, "w") as bib:
-        for type in entry.keys():
+        for type in entry:
             for ref in entry[type]:
                 bib.write(references[ref])
 
     with open(bibtex, "w") as bib:
         bib.write("%%% Please cite:\n")
-        for type in entry.keys():
+        for type in entry:
             if not entry[type]:
                 continue
             bib.write("\n%%% " + type + "\n")

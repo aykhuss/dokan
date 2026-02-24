@@ -253,7 +253,7 @@ class Runcard:
                             r"(?<=CHANNELS)\b",
                             "  ${channels_region}",
                             line,
-                            re.IGNORECASE,
+                            flags=re.IGNORECASE,
                         )
                     t.write(line)
                     skiplines = True

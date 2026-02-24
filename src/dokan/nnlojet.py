@@ -405,7 +405,9 @@ def parse_log_file(log_file: GenericPath) -> dict:
                 job_data["result"] = job_data["iterations"][-1]["result_acc"]
                 job_data["error"] = job_data["iterations"][-1]["error_acc"]
                 # > catch the case where the integral vanishes identically
-                if math.isnan(job_data["result"]) and all(it["result"] == 0.0 and it["error"] == 0.0 for it in job_data["iterations"]):
+                if math.isnan(job_data["result"]) and all(
+                    it["result"] == 0.0 and it["error"] == 0.0 for it in job_data["iterations"]
+                ):
                     job_data["result"] = 0.0
                     job_data["error"] = 0.0
                 job_data["chi2dof"] = job_data["iterations"][-1]["chi2dof"]

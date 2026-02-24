@@ -74,14 +74,10 @@ class DBRemoveJob(DBTask):
                         # > find all jobs in the DB that have the same `rel_path`
                         other_jobs = [
                             oj.id
-                            for oj in session.scalars(
-                                select(Job).where(Job.rel_path == rm_job.rel_path)
-                            )
+                            for oj in session.scalars(select(Job).where(Job.rel_path == rm_job.rel_path))
                         ]
                         # > find files that match job execution results in the same folder
-                        other_files = [
-                            p for p in job_path.iterdir() if re.match(r".*\.s\d+\..*", p.name)
-                        ]
+                        other_files = [p for p in job_path.iterdir() if re.match(r".*\.s\d+\..*", p.name)]
                         # > only delete directory tree if there really is no potential "left overs"
                         if set(other_jobs) == {self.job_id} and not other_files:
                             try:

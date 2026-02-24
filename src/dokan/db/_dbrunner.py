@@ -85,7 +85,7 @@ class DBRunner(DBTask):
             assert all(j.ncall == self.ncall for j in jobs)
             assert all(j.niter == self.niter for j in jobs)
             if (self.niter * self.ncall) == 0:
-                raise RuntimeError(f"job {jobs[0].id} has ntot={self.ncall}×{self.niter}==0")
+                raise RuntimeError(f"job {jobs[0].id} has ntot={self.ncall}x{self.niter}==0")
 
     def complete(self) -> bool:
         """Check if all jobs in this runner have terminated."""
@@ -211,7 +211,9 @@ class DBRunner(DBTask):
                     else:
                         # > premature termination of job:  re-scale by iterations that completed
                         niter_completed: int = len(job_data.get("iterations", []))
-                        scale: float = float(niter_completed) / float(db_job.niter) if db_job.niter > 0 else 0.0
+                        scale: float = (
+                            float(niter_completed) / float(db_job.niter) if db_job.niter > 0 else 0.0
+                        )
                         db_job.niter = niter_completed
                         db_job.elapsed_time = scale * db_job.elapsed_time
                     db_job.status = JobStatus.DONE

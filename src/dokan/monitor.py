@@ -34,6 +34,7 @@ class Monitor(DBTask):
     - Completion is signal-driven (`SIG_COMP` / `SIG_TERM`), not output-target
       driven, so `complete()` is always False.
     """
+
     # @todo: poll_rate? --> config
 
     def __init__(self, *args, **kwargs):

@@ -201,7 +201,9 @@ class DBResurrect(DBTask):
                         else:
                             # > premature termination of job:  re-scale by iterations that completed
                             niter_completed: int = len(job_entry.get("iterations", []))
-                            scale: float = float(niter_completed) / float(db_job.niter) if db_job.niter > 0 else 0.0
+                            scale: float = (
+                                float(niter_completed) / float(db_job.niter) if db_job.niter > 0 else 0.0
+                            )
                             db_job.niter = niter_completed
                             db_job.elapsed_time = scale * db_job.elapsed_time
                         db_job.status = JobStatus.DONE
