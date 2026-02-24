@@ -24,6 +24,7 @@ from ._exe_config import ExecutionMode, ExecutionPolicy
 # both these cases map to tuples as JSON only has lists
 _schema: dict = {
     "exe": str,
+    "part_id": int,
     "timestamp": float,
     "mode": ExecutionMode,
     "policy": ExecutionPolicy,

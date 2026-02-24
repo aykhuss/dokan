@@ -103,6 +103,7 @@ class DBRunner(DBTask):
         exe_data["exe"] = self.config["exe"]["path"]
         exe_data["mode"] = self.mode
         exe_data["policy"] = self.policy
+        exe_data["part_id"] = self.part_id
 
         # > add policy settings
         exe_data["policy_settings"] = {"max_runtime": self.config["run"]["job_max_runtime"]}
