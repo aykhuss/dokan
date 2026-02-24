@@ -152,16 +152,20 @@ class ExeData(UserDict):
         super().__setitem__(key, item)
 
     @property
+    def st_mtime(self) -> float:
+        """Get the modification timestamp of the underlying storage."""
+        target = self.file_tmp if self._mutable else self.file_fin
+        if target.exists():
+            return target.stat().st_mtime
+        return 0.0
+
+    @property
     def timestamp(self) -> float:
         """Get the modification timestamp of the active data file."""
         if self._mutable and "timestamp" in self.data:
             # > when mutable this indicates the time `exe` was called
             return self.data["timestamp"]
-
-        target = self.file_tmp if self._mutable else self.file_fin
-        if target.exists():
-            return target.stat().st_mtime
-        return 0.0
+        return self.st_mtime
 
     def load(self, expect_tmp: bool = False) -> None:
         """Load data from disk.
