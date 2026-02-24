@@ -45,9 +45,7 @@ class SlurmExec(Executor):
         slurm_settings: dict = {
             "exe": self.exe_data["exe"],
             "job_path": str(self.exe_data.path.absolute()),
-            "ncores": self.exe_data["policy_settings"]["slurm_ncores"]
-            if "slurm_ncores" in self.exe_data["policy_settings"]
-            else 1,
+            "ncores": self.exe_data["policy_settings"].get("slurm_ncores", 1),
             "start_seed": min(job["seed"] for job in self.exe_data["jobs"].values()),
             "nseed": len(self.exe_data["jobs"]),
             "input_files": ", ".join(self.exe_data["input_files"]),

@@ -10,10 +10,7 @@ def is_outlier_MAD(points, thresh=3.5):
     abs_diff = np.abs(points - median)
 
     mad = np.nanmedian(abs_diff)
-    if mad == 0.0:
-        modified_z_score = 0.0 * abs_diff
-    else:
-        modified_z_score = 0.6745 * abs_diff / mad
+    modified_z_score = 0.0 * abs_diff if mad == 0.0 else 0.6745 * abs_diff / mad
 
     return modified_z_score > thresh
 

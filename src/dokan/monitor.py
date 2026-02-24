@@ -42,9 +42,7 @@ class Monitor(DBTask):
         super().__init__(*args, **kwargs)
         _console.print(f"Monitor::init:  {time.ctime(self.run_tag)}")
 
-        self._refresh_delay = (
-            self.config["ui"]["refresh_delay"] if "refresh_delay" in self.config["ui"] else 1.0
-        )
+        self._refresh_delay = self.config["ui"].get("refresh_delay", 1.5)
 
         self._log_id: int = 0
         with self.session as session:
@@ -104,10 +102,7 @@ class Monitor(DBTask):
             if job.status == JobStatus.RUNNING:
                 n_running[idx] += 1
         result: str = "[blue]WRM[/blue]" if display_mode == ExecutionMode.WARMUP else "[magenta]PRD[/magenta]"
-        if n_running[1] > 0:
-            result = f"[bold]{result}[/bold]"
-        else:
-            result = f"[dim]{result}[/dim]"
+        result = f"[bold]{result}[/bold]" if n_running[1] > 0 else f"[dim]{result}[/dim]"
         result += f" [yellow]A[dim][{n_running[1]}/{n_active[0] + n_active[1]}][/dim][/yellow]"
         result += f" [green]D[dim][{n_success[0] + n_success[1]}][/dim][/green]"
         if any(n > 0 for n in n_failed):

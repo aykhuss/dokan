@@ -227,7 +227,7 @@ class MergePart(DBMerge):
             if single_file:
                 in_files[single_file] = []  # all hist in single file
             else:
-                in_files = dict((obs, []) for obs in self.config["run"]["histograms"].keys())
+                in_files = dict((obs, []) for obs in self.config["run"]["histograms"])
             # > collect histograms from all jobs
             pt.Ttot = 0.0
             pt.ntot = 0
@@ -267,7 +267,7 @@ class MergePart(DBMerge):
             if single_file:
                 # > unroll the single histogram to all registered observables
                 singles: list[GenericPath] = in_files.pop(single_file)
-                in_files = dict((obs, singles) for obs in self.config["run"]["histograms"].keys())
+                in_files = dict((obs, singles) for obs in self.config["run"]["histograms"])
 
             # > commit merged status and timestamp before yielding
             pt.timestamp = time.time()
@@ -471,7 +471,7 @@ class MergeAll(DBMerge):
             mrg_parent: Path = self._path.joinpath("result", "part")
 
             # > collect all input files
-            in_files = dict((obs, []) for obs in self.config["run"]["histograms"].keys())
+            in_files = dict((obs, []) for obs in self.config["run"]["histograms"])
             # > reconstruct optimisation target
             opt_target: str = self.config["run"]["opt_target"]
             opt_target_ref: float = 0.0
@@ -604,7 +604,7 @@ class MergeFinal(DBMerge):
                     + f"::run:  {out_order}: {list(map(lambda x: (x.id, x.ntot), matched_parts))}",
                 )
 
-                in_files = dict((obs, []) for obs in self.config["run"]["histograms"].keys())
+                in_files = dict((obs, []) for obs in self.config["run"]["histograms"])
                 for pt in matched_parts:
                     for obs in self.config["run"]["histograms"]:
                         in_file: Path = mrg_parent / pt.name / f"{obs}.dat"

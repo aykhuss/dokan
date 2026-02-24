@@ -179,7 +179,7 @@ class Runcard:
         if not runcard_data["PDFs"]:
             raise RuntimeError(f"{runcard}: could not find any PDF set")
         # > observable names with a dot can conflict with how we parse files later
-        if any(obs.find(".") != -1 for obs in runcard_data["histograms"].keys()):
+        if any(obs.find(".") != -1 for obs in runcard_data["histograms"]):
             raise RuntimeError(f"{runcard}: observable names with '.' are not supported")
 
         return runcard_data

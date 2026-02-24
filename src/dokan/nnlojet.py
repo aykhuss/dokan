@@ -246,10 +246,7 @@ def check_PDF(exe: GenericPath, PDF: str) -> bool:
         exe_out = subprocess.run([exe, "--checkpdf", PDF], capture_output=True, text=True, check=True)
     except subprocess.CalledProcessError:
         return False
-    if exe_out.returncode != 0:
-        return False
-    else:
-        return True
+    return exe_out.returncode == 0
 
 
 def get_lumi(exe: GenericPath, proc: str, use_default: bool = False) -> dict:

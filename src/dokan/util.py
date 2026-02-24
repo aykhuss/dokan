@@ -37,7 +37,7 @@ def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:
             key, val = next(iter(schema.items()))
             if isinstance(key, type):
                 # > try to  convert the key back to the desired type (JSON only has str keys)
-                if convert_to_type and key is not str and all(isinstance(k, str) for k in struct.keys()):
+                if convert_to_type and key is not str and all(isinstance(k, str) for k in struct):
                     struct_keys: list = list(struct.keys())
                     for k in struct_keys:
                         struct[key(k)] = struct.pop(k)
