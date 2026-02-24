@@ -39,8 +39,19 @@ def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:
                 # > try to  convert the key back to the desired type (JSON only has str keys)
                 if convert_to_type and key is not str and all(isinstance(k, str) for k in struct):
                     struct_keys: list = list(struct.keys())
+                    converted_keys: dict = {}
                     for k in struct_keys:
-                        struct[key(k)] = struct.pop(k)
+                        try:
+                            new_key = key(k)
+                        except Exception:
+                            return False
+                        # > detect collisions, e.g. "1" and "01" -> int(1)
+                        if new_key in converted_keys and converted_keys[new_key] != k:
+                            return False
+                        converted_keys[new_key] = k
+                    for old_key in struct_keys:
+                        new_key = key(old_key)
+                        struct[new_key] = struct.pop(old_key)
                 return all(
                     isinstance(k, key) and validate_schema(v, val, convert_to_type) for k, v in struct.items()
                 )
@@ -50,7 +61,10 @@ def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:
                 if key not in struct or not isinstance(val, type):
                     continue
                 if not isinstance(struct[key], val):
-                    struct[key] = val(struct[key])
+                    try:
+                        struct[key] = val(struct[key])
+                    except Exception:
+                        return False
         return all(k in schema and validate_schema(struct[k], schema[k], convert_to_type) for k in struct)
 
     if isinstance(struct, list) and isinstance(schema, list):
@@ -60,7 +74,10 @@ def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:
             if convert_to_type and isinstance(elt, type):
                 for i, e in enumerate(struct):
                     if not isinstance(e, elt):
-                        struct[i] = elt(e)
+                        try:
+                            struct[i] = elt(e)
+                        except Exception:
+                            return False
             return all(validate_schema(e, elt, convert_to_type) for e in struct)
         # > default case: match the length and each element
         return len(struct) == len(schema) and all(
