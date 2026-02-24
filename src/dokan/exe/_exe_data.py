@@ -51,6 +51,7 @@ _schema: dict = {
     # ---
     "input_files": [str],  # first entry must be runcard?
     "output_files": [str],
+    "lost_files": [str],
     "jobs": {
         int: {
             # "job_id": int, # <-- now the key in a dict
@@ -132,6 +133,8 @@ class ExeData(UserDict):
 
         # > load in order of precedence & set mutable state
         self.load(expect_tmp)
+        if not self.is_valid(convert_to_type=True):
+            raise ValueError(f"ExeData loaded data does not conform to schema at {path}!")
 
     def is_valid(self, convert_to_type: bool = False) -> bool:
         """Validate current data against the schema.
@@ -242,6 +245,8 @@ class ExeData(UserDict):
         """
         if not force and not self._mutable:
             raise RuntimeError("ExeData can't write after finalize!")
+        if not self.is_valid(convert_to_type=True):
+            raise ValueError("ExeData can't write data in an invalid state!")
 
         # Atomic write: write to a swap file first, then move into place.
         temp_swp = self.file_tmp.with_suffix(".swp")
@@ -317,14 +322,21 @@ class ExeData(UserDict):
 
         if reset_output:
             self.data["output_files"] = []
+            self.data["lost_files"] = []
 
         self.data.setdefault("output_files", [])
+        self.data.setdefault("lost_files", [])
         self.data.setdefault("jobs", {})
         timestamp = self.timestamp
 
+        old_output_files: set[str] = set(self.data["output_files"])
         found_new = False
         for _ in range(fs_max_retry):
             for entry in os.scandir(self.path):
+                if not entry.is_file():
+                    continue
+                if entry.name in old_output_files:
+                    old_output_files.remove(entry.name)
                 if entry.name in skip_entries:
                     continue
                 try:
@@ -343,7 +355,12 @@ class ExeData(UserDict):
                 break
             time.sleep(fs_delay)
 
-        # Parse per-seed logs and populate job entries.
+        # > Some files disappeared? keep track
+        if old_output_files:
+            lost_files = set(self.data["lost_files"]) | old_output_files
+            self.data["lost_files"] = list(lost_files)
+
+        # > Parse per-seed logs and populate job entries.
         for job_data in self.data["jobs"].values():
             log_matches = [of for of in self.data["output_files"] if of.endswith(f".s{job_data['seed']}.log")]
             if len(log_matches) != 1:
