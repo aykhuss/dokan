@@ -77,9 +77,13 @@ _schema: dict = {
 class ExeData(UserDict):
     """Execution Data Manager.
 
-    Manages the state and persistence of execution data for NNLOJET jobs.
-    It handles transitions between mutable (temporary) and immutable (final) states
-    backed by JSON files.
+    Manages state and persistence of execution metadata for NNLOJET jobs.
+
+    Storage lifecycle
+    -----------------
+    - Mutable state is stored in `job.tmp`.
+    - Finalized state is stored in `job.json`.
+    - `load()` prefers `job.json` when both files exist.
 
     Attributes
     ----------
@@ -105,6 +109,10 @@ class ExeData(UserDict):
             Path to the job directory.
         expect_tmp : bool, optional
             If True, raises an error if the temporary file is missing (default: False).
+
+        Notes
+        -----
+        The target directory is created automatically when missing.
 
         """
         expect_tmp: bool = kwargs.pop("expect_tmp", False)
@@ -153,15 +161,32 @@ class ExeData(UserDict):
 
     @property
     def st_mtime(self) -> float:
-        """Get the modification timestamp of the underlying storage."""
+        """Return `st_mtime` of the active on-disk metadata file."""
         target = self.file_tmp if self._mutable else self.file_fin
         if target.exists():
             return target.stat().st_mtime
         return 0.0
 
     @property
+    def touch(self) -> float:
+        """Update the active metadata file mtime and return the new value.
+
+        The active file is `job.tmp` in mutable state and `job.json` in final
+        state.
+        """
+        target = self.file_tmp if self._mutable else self.file_fin
+        if not target.exists():
+            raise RuntimeError(f"ExeData::touch: file does not exist: {target}")
+        target.touch(exist_ok=True)
+        return target.stat().st_mtime
+
+    @property
     def timestamp(self) -> float:
-        """Get the modification timestamp of the active data file."""
+        """Return the execution timestamp used for output-file filtering.
+
+        In mutable state, `data["timestamp"]` (if present) takes precedence.
+        Otherwise falls back to `st_mtime` of the active metadata file.
+        """
         if self._mutable and "timestamp" in self.data:
             # > when mutable this indicates the time `exe` was called
             return self.data["timestamp"]
@@ -177,6 +202,12 @@ class ExeData(UserDict):
         ----------
         expect_tmp : bool
             If True, raise RuntimeError if no temporary file is found when no final file exists.
+
+        Notes
+        -----
+        This method updates internal mutability state:
+        - `job.json` found -> immutable (`is_final == True`)
+        - otherwise `job.tmp` found -> mutable
 
         """
         self._mutable = True
@@ -219,7 +250,11 @@ class ExeData(UserDict):
         shutil.move(temp_swp, self.file_tmp if self._mutable else self.file_fin)
 
     def finalize(self) -> None:
-        """Finalize the data: write to disk and move to final filename."""
+        """Finalize metadata by moving from `job.tmp` to `job.json`.
+
+        This operation is idempotent; calling it on already-finalized data is
+        a no-op.
+        """
         if not self._mutable:
             # Idempotent: if already final, do nothing or check?
             # raise RuntimeError("ExeData already finalized?!")
@@ -230,7 +265,7 @@ class ExeData(UserDict):
         self._mutable = False
 
     def make_mutable(self) -> None:
-        """Revert final status to mutable (moves json -> tmp)."""
+        """Revert finalized state to mutable (`job.json` -> `job.tmp`)."""
         if self._mutable:
             return
         if self.file_fin.exists():
@@ -258,9 +293,15 @@ class ExeData(UserDict):
             Force scan even if immutable. This updates in-memory data only;
             call `write(force=True)` to persist in finalized mode.
         **kwargs :
-            reset_output (bool): Clear existing output_files list.
-            fs_max_retry (int): Number of retries for filesystem scan.
-            fs_delay (float): Delay between retries.
+            reset_output (bool): Clear existing `output_files` list first.
+            fs_max_retry (int): Number of scan retries before giving up.
+            fs_delay (float): Delay between retries in seconds.
+
+        Notes
+        -----
+        - New output files are filtered by `timestamp` (older files are ignored).
+        - Parsed log payloads are merged into corresponding `jobs` entries.
+        - Parsing failures are ignored to keep recovery best-effort.
 
         """
         if not self._mutable and not force:
@@ -323,6 +364,12 @@ class ExeData(UserDict):
             Job id key in `data["jobs"]`.
         force : bool, optional
             Allow modification in finalized state (writes to `job.json`).
+
+        Notes
+        -----
+        Removes files associated with the job seed (pattern `*.s<seed>.*` in
+        tracked outputs). If an artifact is a symlink, its target is removed
+        first, then the symlink itself.
 
         """
         if not force and not self._mutable:
