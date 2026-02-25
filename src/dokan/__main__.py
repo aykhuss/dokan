@@ -10,6 +10,7 @@ This module defines:
 import argparse
 import multiprocessing
 import os
+import re
 import resource
 import shutil
 import signal
@@ -26,6 +27,7 @@ from sqlalchemy import select
 from .__about__ import __version__
 from .bib import make_bib
 from .config import Config
+from .db._dbdoctor import DBDoctor
 from .db._dbinit import DBInit
 from .db._dbmerge import MergeFinal
 from .db._dbremovejob import DBRemoveJob
@@ -200,6 +202,9 @@ def main() -> None:
     # > subcommand: doctor
     parser_doctor = subparsers.add_parser("doctor", help="your workflow wellness specialist 🩺")
     parser_doctor.add_argument("run_path", metavar="RUN", help="run directory")
+    parser_doctor.add_argument(
+        "--scan-dir", action="store_true", help="re-scan execution directory for job output"
+    )
     parser_doctor.add_argument("--recover", action="store_true", help="recover started but incomplete jobs")
 
     # > subcommand: finalize
@@ -660,6 +665,7 @@ def main() -> None:
         )  # 'WARNING', 'INFO', 'DEBUG''
         if not luigi_result:
             sys.exit("DBInit failed")
+        db_init.db_setup = False  # reset DB setup flag to allow re-use of DBInit for other tasks
 
         # > clear any old logs as well as jobs that were not assigned a run path
         with db_init.session as session:
@@ -789,8 +795,6 @@ def main() -> None:
                     sys.exit("DBRemoveJob failed")
                 resurrect_jobs = {}
 
-        # @todo skip warmup?
-
         # > determine resources and dynamic job settings
         jobs_max: int = min(config["run"]["jobs_max_concurrent"], config["run"]["jobs_max_total"])
         console.print(f"# CPU cores: {cpu_count}")
@@ -851,50 +855,77 @@ def main() -> None:
         if db_init is None:
             raise ValueError("DBInit is not initialized")
 
-        if args.recover:
-            resurrect_tasks = []
-            with db_init.session as session:
-                # Traverse all jobs in a status that indicates the run has started
-                # DISPATCHED means it was sent to the executor, RUNNING means it started execution
-                select_started_jobs = select(Job).where(
-                    Job.status.in_([JobStatus.RUNNING, JobStatus.DISPATCHED])
+        raw_dir: Path = db_init._local("raw")
+        exe_dir_pat = re.compile(r"^s\d+(?:-\d+)?$")
+        rel_paths_disk: set[str] = set()
+        for dirpath, dirnames, _filenames in os.walk(raw_dir):
+            for d in dirnames:
+                if exe_dir_pat.fullmatch(d):
+                    full_path: Path = Path(dirpath) / d
+                    rel_path: str = str(full_path.relative_to(db_init._local()))
+                    if full_path.is_dir() and not any(full_path.iterdir()):
+                        console.print(f"delete empty directory: {rel_path}")
+                        full_path.rmdir()
+                        continue
+                    rel_paths_disk.add(rel_path)
+
+        # > populate jobs and deal with unknown paths
+        rel_paths_db: set[str] = set()
+        rel_paths_db_missing: set[str] = set()
+        with db_init.session as session:
+            for job in session.scalars(select(Job).where(Job.rel_path.is_not(None)).order_by(Job.rel_path)):
+                if (
+                    job.rel_path is None
+                    or job.rel_path in rel_paths_db
+                    or job.rel_path in rel_paths_db_missing
+                ):
+                    continue
+                if job.rel_path in rel_paths_disk:
+                    rel_paths_db.add(job.rel_path)
+                else:
+                    rel_paths_db_missing.add(job.rel_path)
+
+            # > clean up jobs with paths that do not exist on disk
+            if rel_paths_db_missing:
+                console.print(
+                    f"there are {len(rel_paths_db_missing)} paths in the database that do not exist on disk:"
                 )
-                seen_paths = set()
-                for job in session.scalars(select_started_jobs):
-                    # Flag jobs as under recovery
-                    job.status = JobStatus.RECOVER
+                for rp in rel_paths_db_missing:
+                    console.print(f" > {rp}")
+                if Confirm.ask("remove jobs with these paths from the database?", default=True):
+                    for rp in rel_paths_db_missing:
+                        for job in session.scalars(select(Job).where(Job.rel_path == rp)):
+                            console.print(f" > removing {job!r}")
+                            session.delete(job)
+                    db_init._safe_commit(session)
 
-                    if job.rel_path and job.rel_path not in seen_paths:
-                        resurrect_tasks.append(
-                            db_init.clone(
-                                DBResurrect,
-                                run_tag=job.run_tag,
-                                rel_path=job.rel_path,
-                                only_recover=True,
-                            )
-                        )
-                        seen_paths.add(job.rel_path)
+        # > helper to split up paths in batches
+        def pop_batch(items: set, batch_size: int):
+            assert batch_size > 0
+            while items:
+                print(f"BATCH ({len(items)} items left)")
+                yield {items.pop() for _ in range(min(batch_size, len(items)))}
 
-                db_init._safe_commit(session)
-
-            if resurrect_tasks:
-                console.print(f"yielding {len(resurrect_tasks)} recovery tasks")
-                luigi.build(
-                    resurrect_tasks,
-                    worker_scheduler_factory=WorkerSchedulerFactory(),
-                    detailed_summary=True,
-                    workers=cpu_count,
-                    local_scheduler=True,
-                    log_level="WARNING",
-                )
-
-            # Report final status
-            with db_init.session as session:
-                nactive_job = session.query(Job).filter(Job.status.in_(JobStatus.active_list())).count()
-                nfailed_job = session.query(Job).filter(Job.status.in_([JobStatus.FAILED])).count()
-            console.print("after recovery:")
-            console.print(f"active jobs: {nactive_job}")
-            console.print(f"failed jobs: {nfailed_job}")
+        # > process jobs in batches
+        # @todo allow `-j` flag for user to pick?
+        luigi_result = luigi.build(
+            [
+                db_init.clone(DBDoctor, rel_paths=list(chunk_jobs))
+                for chunk_jobs in pop_batch(rel_paths_disk, len(rel_paths_disk) // cpu_count + 1)
+            ],
+            worker_scheduler_factory=WorkerSchedulerFactory(
+                resources={
+                    "local_ncores": cpu_count,
+                    "DBTask": cpu_count + 1,
+                }
+            ),
+            detailed_summary=True,
+            workers=cpu_count + 1,
+            local_scheduler=True,
+            log_level="WARNING",
+        )  # 'WARNING', 'INFO', 'DEBUG''
+        if not luigi_result:
+            sys.exit("DBDoctor failed")
 
     # >-----
     if args.action == "finalize":
