@@ -44,8 +44,10 @@ class DBTask(Task, metaclass=ABCMeta):
         # > Apply concurrency-friendly SQLite PRAGMAs
         if self.db_setup:
             with engine.connect() as conn:
-                conn.execute(text("PRAGMA journal_mode=WAL;"))
-                conn.execute(text("PRAGMA synchronous=NORMAL;"))
+                # conn.execute(text("PRAGMA journal_mode=WAL;"))  # <- bad for network/shared FS
+                conn.execute(text("PRAGMA journal_mode=DELETE;"))
+                # conn.execute(text("PRAGMA synchronous=NORMAL;"))  # <- riskier on crashes
+                conn.execute(text("PRAGMA synchronous=FULL"))
                 # conn.execute(text("PRAGMA wal_autocheckpoint=1000;"))
                 # conn.execute(text("PRAGMA busy_timeout=30000;"))
                 conn.execute(text("PRAGMA temp_store=MEMORY;"))

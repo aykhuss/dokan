@@ -665,7 +665,7 @@ def main() -> None:
         )  # 'WARNING', 'INFO', 'DEBUG''
         if not luigi_result:
             sys.exit("DBInit failed")
-        db_init.db_setup = False  # reset DB setup flag to allow re-use of DBInit for other tasks
+        # db_init.db_setup = False  # reset DB setup flag to allow re-use of DBInit for other tasks
 
         # > clear any old logs as well as jobs that were not assigned a run path
         with db_init.session as session:
@@ -910,12 +910,12 @@ def main() -> None:
         luigi_result = luigi.build(
             [
                 db_init.clone(DBDoctor, rel_paths=list(chunk_jobs))
-                for chunk_jobs in pop_batch(rel_paths_disk, len(rel_paths_disk) // cpu_count + 1)
+                for chunk_jobs in pop_batch(rel_paths_disk, len(rel_paths_disk) // min(cpu_count, nactive_part) + 1)
             ],
             worker_scheduler_factory=WorkerSchedulerFactory(
                 resources={
                     "local_ncores": cpu_count,
-                    "DBTask": cpu_count + 1,
+                    "DBTask": min(cpu_count, nactive_part) + 1,
                 }
             ),
             detailed_summary=True,
