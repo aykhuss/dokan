@@ -5,8 +5,6 @@ from an old run. A previous run might have been cancelled or failed due
 to the loss of a ssh connection or process termination.
 """
 
-import math
-
 import luigi
 
 from dokan.db._loglevel import LogLevel
@@ -126,10 +124,6 @@ class DBResurrect(DBTask):
 
         return True
 
-    def _is_valid_result(self, result: float, error: float) -> bool:
-        """Return True when result/error are finite NNLOJET outputs."""
-        return math.isfinite(result) and math.isfinite(error)
-
     def _all_jobs_terminated(self, session, job_ids: list[int] | None = None) -> bool:
         """Return True if all selected jobs are terminated in DB."""
         ids = job_ids if job_ids is not None else list(self.exe_data["jobs"])
@@ -171,46 +165,16 @@ class DBResurrect(DBTask):
         with self.session as session:
             self._logger(
                 session,
-                f"{self._logger_prefix}::run:  {self.rel_path}, run_tag = {self.run_tag}",
+                f"{self._logger_prefix}::run:  {self.rel_path}",
             )
 
-            for job_id, job_entry in self.exe_data["jobs"].items():
-                db_job: Job | None = session.get(Job, job_id)
-                if not db_job:
-                    self._logger(
-                        session,
-                        f"Job {job_id} not found in DB during resurrection",
-                        level=LogLevel.WARN,
-                    )
-                    continue
-
-                if "result" in job_entry:
-                    res = float(job_entry["result"])
-                    err = float(job_entry["error"])
-                    if not self._is_valid_result(res, err):
-                        db_job.status = JobStatus.FAILED
-                    else:
-                        db_job.result = float(job_entry["result"])
-                        db_job.error = float(job_entry["error"])
-                        db_job.chi2dof = float(job_entry["chi2dof"])
-                        if "elapsed_time" in job_entry:
-                            elapsed: float = float(job_entry["elapsed_time"])
-                            # > keep DB estimates if runtime metadata is broken/missing
-                            if elapsed > 0.0:
-                                db_job.elapsed_time = elapsed
-                        else:
-                            # > premature termination of job:  re-scale by iterations that completed
-                            niter_completed: int = len(job_entry.get("iterations", []))
-                            scale: float = (
-                                float(niter_completed) / float(db_job.niter) if db_job.niter > 0 else 0.0
-                            )
-                            db_job.niter = niter_completed
-                            db_job.elapsed_time = scale * db_job.elapsed_time
-                        db_job.status = JobStatus.DONE
-                else:
-                    # Active mode: missing result implies failure.
-                    # Recovery-only mode: restore original pre-recovery status (default: RUNNING).
-                    restored_status: JobStatus = self._recover_jobs.get(job_id, {}).get(
+            jobs: dict[int, Job | None] = {
+                job_id: session.get(Job, job_id) for job_id in self.exe_data["jobs"]
+            }
+            self._update_job(session, self.exe_data, jobs)
+            for job_id, job in jobs.items():
+                if job and job.status == JobStatus.RECOVER:
+                    restored_status: JobStatus = self._recover_jobs.get(job.id, {}).get(
                         "status", JobStatus.RUNNING
                     )
                     if restored_status == JobStatus.RECOVER:
@@ -221,7 +185,7 @@ class DBResurrect(DBTask):
                             level=LogLevel.WARN,
                         )
                         restored_status = JobStatus.RUNNING
-                    db_job.status = JobStatus.FAILED if not self._recover_jobs else restored_status
+                    job.status = JobStatus.FAILED if not self._recover_jobs else restored_status
 
             self._safe_commit(session)
 

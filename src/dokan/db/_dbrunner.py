@@ -5,7 +5,6 @@ backend as specified by the job policy. It is responsible for populating
 the database with the results of each execution.
 """
 
-import math
 import re
 import shutil
 from pathlib import Path
@@ -19,7 +18,6 @@ from ..runcard import RuncardTemplate
 from ._dbmerge import MergePart
 from ._dbtask import DBTask
 from ._jobstatus import JobStatus
-from ._loglevel import LogLevel
 from ._sqla import Job, Part
 
 
@@ -178,50 +176,6 @@ class DBRunner(DBTask):
             db_job.status = JobStatus.RUNNING
         self._safe_commit(session)
 
-    def _process_results(self, session: Session, db_jobs: list[Job], exe_data: ExeData) -> None:
-        """Parse execution results and update database job entries."""
-        for db_job in db_jobs:
-            if db_job.status in JobStatus.terminated_list():
-                continue
-
-            job_data = exe_data["jobs"].get(db_job.id)
-            if job_data and "result" in job_data:
-                res = float(job_data["result"])
-                err = float(job_data["error"])
-                if math.isnan(res * err):
-                    db_job.status = JobStatus.FAILED
-                else:
-                    db_job.result = res
-                    db_job.error = err
-                    db_job.chi2dof = job_data["chi2dof"]
-
-                    if "elapsed_time" in job_data:
-                        elapsed: float = float(job_data["elapsed_time"])
-                        if elapsed > 0.0:
-                            db_job.elapsed_time = elapsed
-                        else:
-                            # > issue warning and keep estimated runtime in database
-                            self._logger(
-                                session,
-                                self._logger_prefix
-                                + f"::run:  job {db_job.id} at {exe_data.path} has"
-                                + f" elapsed time: {elapsed}"
-                                + f" -> keeping estimate {db_job.elapsed_time}",
-                                LogLevel.DEBUG,
-                            )
-                    else:
-                        # > premature termination of job:  re-scale by iterations that completed
-                        niter_completed: int = len(job_data.get("iterations", []))
-                        scale: float = (
-                            float(niter_completed) / float(db_job.niter) if db_job.niter > 0 else 0.0
-                        )
-                        db_job.niter = niter_completed
-                        db_job.elapsed_time = scale * db_job.elapsed_time
-                    db_job.status = JobStatus.DONE
-            else:
-                db_job.status = JobStatus.FAILED
-        self._safe_commit(session)
-
     def run(self):
         """Execute the runner task."""
         exe_data = ExeData(self.job_path)
@@ -268,7 +222,7 @@ class DBRunner(DBTask):
                         + "\n".join(f" | [dim]{ln.strip()}[/dim]" for ln in f.readlines()),
                     )
 
-            self._process_results(session, db_jobs, exe_data)
+            self._update_job(session, exe_data, {int(j.id): j for j in db_jobs})
 
             # > see if a re-merge is possible
             if self.mode == ExecutionMode.PRODUCTION:
