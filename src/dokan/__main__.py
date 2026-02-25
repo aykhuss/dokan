@@ -903,7 +903,6 @@ def main() -> None:
         def pop_batch(items: set, batch_size: int):
             assert batch_size > 0
             while items:
-                print(f"BATCH ({len(items)} items left)")
                 yield {items.pop() for _ in range(min(batch_size, len(items)))}
 
         # > process jobs in batches

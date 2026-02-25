@@ -3,6 +3,8 @@
 Defines a task to check and repair/synchronize the database state of jobs with their on-disk data
 """
 
+import re
+import shutil
 from pathlib import Path
 
 import luigi
@@ -77,4 +79,26 @@ class DBDoctor(DBTask):
                     session, f"{self._logger_prefix}::run:  processing {rp} [dim]({len(jobs)} jobs)[/dim]"
                 )
 
-                self._update_job(session, exe_data, jobs, add_missing=True, skip_terminated=False)
+                if jobs:
+                    self._update_job(session, exe_data, jobs, add_missing=True, skip_terminated=False)
+                else:
+                    # > find files that match job execution results in the same folder
+                    other_files = [p for p in exe_dir.iterdir() if re.match(r".*\.s\d+\..*", p.name)]
+                    # > only delete directory tree if there really are no potential "left overs"
+                    if not other_files:
+                        try:
+                            shutil.rmtree(exe_dir)
+                        except Exception as exc:
+                            self._logger(
+                                session,
+                                f"{self._logger_prefix}::run: failed to remove "
+                                + f"empty job folder at {exe_dir}: {exc!r}",
+                                level=LogLevel.WARN,
+                            )
+                    else:
+                        self._logger(
+                            session,
+                            f"{self._logger_prefix}::run: not removing dir {exe_dir} "
+                            + f"even though ExeData is empty since other files ({other_files}) are still present",
+                            level=LogLevel.WARN,
+                        )
