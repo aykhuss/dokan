@@ -923,6 +923,9 @@ def main() -> None:
                     part.ntot = 0
                     part.result = 0.0
                     part.error = float("inf")
+                for job in session.scalars(select(Job)):
+                    if job.status == JobStatus.MERGED:
+                        job.status = JobStatus.DONE
                 db_init._safe_commit(session)
             sys.exit(0)
 
