@@ -184,6 +184,14 @@ def main() -> None:
     parser_finalize.add_argument(
         "--k-scan-maxdev-steps", type=float, help="maximum deviation between k-scan steps"
     )
+    parser_finalize.add_argument(
+        "--skip-grids",
+        help="skip interpolation grids in the finalization",
+        action=argparse.BooleanOptionalAction,
+    )
+    parser_finalize.add_argument(
+        "--reset", action="store_true", help="remove all data created/populated by finalization"
+    )
 
     # > parse arguments
     args = parser.parse_args()
@@ -762,9 +770,7 @@ def main() -> None:
         # > determine resources and dynamic job settings
         jobs_max: int = min(config["run"]["jobs_max_concurrent"], config["run"]["jobs_max_total"])
         console.print(f"# CPU cores: {cpu_count}")
-        local_ncores: int
-        local_ncores = jobs_max + 1 if config["exe"]["policy"] == ExecutionPolicy.LOCAL else cpu_count
-
+        local_ncores: int = jobs_max + 1 if config["exe"]["policy"] == ExecutionPolicy.LOCAL else cpu_count
         # > CLI override
         if args.local_cores is not None:
             local_ncores = max(2, args.local_cores)
@@ -820,7 +826,7 @@ def main() -> None:
         if db_init is None:
             raise ValueError("DBInit is not initialized")
 
-        # > CLI override
+        # > CLI overrides
         scan_dir: bool = args.scan_dir if args.scan_dir is not None else False
 
         raw_dir: Path = db_init._local("raw")
@@ -901,12 +907,31 @@ def main() -> None:
         if db_init is None:
             raise ValueError("DBInit is not initialized")
 
+        # > CLI overrides
+        skip_grids: bool = args.skip_grids if args.skip_grids is not None else False
+
+        if args.reset:
+            result_dir: Path = db_init._local("result")
+            if Confirm.ask(
+                f"[red]reset[/red] confirm deletion of: [italic]{result_dir}[/italic]", default=True
+            ):
+                shutil.rmtree(result_dir)
+            with db_init.session as session:
+                for part in session.scalars(select(Part)):
+                    part.timestamp = 0.0
+                    part.Ttot = 0.0
+                    part.ntot = 0
+                    part.result = 0.0
+                    part.error = float("inf")
+                db_init._safe_commit(session)
+            sys.exit(0)
+
         # > launch the finalization task
         mrg_final = MergeFinal(
             reset_tag=time.time(),
             config=config,
             run_tag=time.time(),
-            grids=True,
+            grids=(not skip_grids),
         )
         with mrg_final.session as session:
             mrg_final._logger(session, "finalize", level=LogLevel.SIG_FINI)
