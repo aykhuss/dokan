@@ -336,7 +336,7 @@ class ExeData(UserDict):
             self.data["lost_files"] = []
 
         # > small buffer to account for fs timestamp resolution and potential clock skew
-        timestamp: float = self.data.setdefault("timestamp", 0.0) - 10.0
+        # timestamp: float = self.data.setdefault("timestamp", 0.0) - 10.0
 
         old_output_files: set[str] = set(self.data["output_files"])
         found_new = False

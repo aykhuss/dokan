@@ -20,18 +20,20 @@ class DBDoctor(DBTask):
     """Repair/synchronize DB job rows from on-disk execution directories.
 
     The task iterates over `rel_paths`, optionally refreshes `ExeData` from
-    filesystem artifacts (`sync=True`), then updates/creates corresponding DB
+    filesystem artifacts (`scan_dir=True`), then updates/creates corresponding DB
     `Job` rows via `_update_job`.
     """
 
     rel_paths: list[str] = luigi.ListParameter()
-    sync: bool = luigi.BoolParameter(default=False)
+    scan_dir: bool = luigi.BoolParameter(default=False)
 
     priority = 200
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._logger_prefix: str = self.__class__.__name__
+        if self.scan_dir:
+            self._logger_prefix += "[dim](scan-dir)[/dim]"
 
     def requires(self):
         """Doctoring has no Luigi task dependencies."""
@@ -57,7 +59,7 @@ class DBDoctor(DBTask):
                 continue
             exe_data = ExeData(exe_dir)
             if exe_data.st_mtime < self.run_tag:
-                if self.sync:
+                if self.scan_dir:
                     exe_data.scan_dir(force=True, reset_output=True)
                     exe_data.write(force=True)
                 else:

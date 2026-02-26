@@ -45,32 +45,6 @@ from .scheduler import WorkerSchedulerFactory
 from .util import parse_time_interval
 
 
-def str2bool(value: object) -> bool:
-    """Parse CLI boolean values robustly for argparse.
-
-    Accepts common textual forms (`yes/no`, `on/off`, `true/false`) and
-    numeric `0/1`. Raises `argparse.ArgumentTypeError` for invalid input.
-    """
-    if isinstance(value, bool):
-        return value
-
-    if isinstance(value, int):
-        if value in (0, 1):
-            return bool(value)
-        raise argparse.ArgumentTypeError("Boolean value expected.")
-
-    if not isinstance(value, str):
-        raise argparse.ArgumentTypeError("Boolean value expected.")
-
-    match value.strip().casefold():
-        case "true" | "t" | "1" | "yes" | "y" | "on":
-            return True
-        case "false" | "f" | "0" | "no" | "n" | "off":
-            return False
-        case _:
-            raise argparse.ArgumentTypeError("Boolean value expected.")
-
-
 def reset_and_exit(sig: int, frame) -> None:
     """Restore terminal cursor and exit on SIGINT."""
     print("\x1b[?25h", end="", flush=True)
@@ -185,17 +159,10 @@ def main() -> None:
     parser_submit.add_argument("--seed-offset", type=int, help="seed offset")
     parser_submit.add_argument("--local-cores", type=int, help="maximum number of local cores")
     parser_submit.add_argument(
-        "--skip-warmup",
-        help="skip the warmup stage",
-        nargs="?",
-        const=True,
-        default=None,
-        type=str2bool,
+        "--skip-warmup", help="skip the warmup stage", action=argparse.BooleanOptionalAction
     )
     parser_submit.add_argument(
-        "--live-monitor",
-        help="switch on/off the live monitor",
-        action=argparse.BooleanOptionalAction,
+        "--live-monitor", help="switch on/off the live monitor", action=argparse.BooleanOptionalAction
     )
     parser_submit.add_argument("--channels", nargs="+", default=None)
 
@@ -203,9 +170,8 @@ def main() -> None:
     parser_doctor = subparsers.add_parser("doctor", help="your workflow wellness specialist 🩺")
     parser_doctor.add_argument("run_path", metavar="RUN", help="run directory")
     parser_doctor.add_argument(
-        "--scan-dir", action="store_true", help="re-scan execution directory for job output"
+        "--scan-dir", help="re-scan execution directory for job output", action=argparse.BooleanOptionalAction
     )
-    parser_doctor.add_argument("--recover", action="store_true", help="recover started but incomplete jobs")
 
     # > subcommand: finalize
     parser_finalize = subparsers.add_parser("finalize", help="merge completed jobs into a final result")
@@ -608,10 +574,8 @@ def main() -> None:
                     config["run"]["seed_offset"] = args.seed_offset
                 if args.skip_warmup is not None:
                     config["warmup"]["frozen"] = args.skip_warmup
-                    console.print(f"[dim]skip_warmup = {config['warmup']['frozen']!r}[/dim]")
                 if args.live_monitor is not None:
                     config["ui"]["monitor"] = args.live_monitor
-                    console.print(f"[dim]live_monitor = {config['ui']['monitor']!r}[/dim]")
                 if args.channels is not None:
                     for ch in args.channels:
                         if matches := [
@@ -800,6 +764,7 @@ def main() -> None:
         console.print(f"# CPU cores: {cpu_count}")
         local_ncores: int
         local_ncores = jobs_max + 1 if config["exe"]["policy"] == ExecutionPolicy.LOCAL else cpu_count
+
         # > CLI override
         if args.local_cores is not None:
             local_ncores = max(2, args.local_cores)
@@ -855,6 +820,9 @@ def main() -> None:
         if db_init is None:
             raise ValueError("DBInit is not initialized")
 
+        # > CLI override
+        scan_dir: bool = args.scan_dir if args.scan_dir is not None else False
+
         raw_dir: Path = db_init._local("raw")
         exe_dir_pat = re.compile(r"^s\d+(?:-\d+)?$")
         rel_paths_disk: set[str] = set()
@@ -909,7 +877,7 @@ def main() -> None:
         # @todo allow `-j` flag for user to pick?
         luigi_result = luigi.build(
             [
-                db_init.clone(DBDoctor, rel_paths=list(chunk_jobs))
+                db_init.clone(DBDoctor, rel_paths=list(chunk_jobs), scan_dir=scan_dir)
                 for chunk_jobs in pop_batch(
                     rel_paths_disk, len(rel_paths_disk) // min(cpu_count, nactive_part) + 1
                 )
