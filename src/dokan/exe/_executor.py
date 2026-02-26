@@ -239,11 +239,6 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         self.exe_data.write()
 
         if not self.exe_data.is_complete:
-            # > some systems have a different resolution in timestamps
-            # > time.time() vs. os.stat().st_mtime
-            # > this buffer ensures time ordering works
-            time.sleep(1.0)
-
             # > call the backend specific execution
             try:
                 self.exe()

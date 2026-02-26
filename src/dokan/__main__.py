@@ -910,7 +910,9 @@ def main() -> None:
         luigi_result = luigi.build(
             [
                 db_init.clone(DBDoctor, rel_paths=list(chunk_jobs))
-                for chunk_jobs in pop_batch(rel_paths_disk, len(rel_paths_disk) // min(cpu_count, nactive_part) + 1)
+                for chunk_jobs in pop_batch(
+                    rel_paths_disk, len(rel_paths_disk) // min(cpu_count, nactive_part) + 1
+                )
             ],
             worker_scheduler_factory=WorkerSchedulerFactory(
                 resources={

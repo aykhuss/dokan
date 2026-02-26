@@ -288,7 +288,15 @@ class ExeData(UserDict):
         """Check if data is in the mutable state."""
         return self._mutable
 
-    def scan_dir(self, skip_files: list[str] | None = None, force: bool = False, **kwargs) -> None:
+    def scan_dir(
+        self,
+        skip_files: list[str] | None = None,
+        force: bool = False,
+        *,
+        reset_output: bool = False,
+        fs_max_retry: int = 1,
+        fs_delay: float = 0.0,
+    ) -> None:
         """Scan directory for output files and update job data.
 
         Parameters
@@ -313,22 +321,22 @@ class ExeData(UserDict):
         if not self._mutable and not force:
             return
 
-        reset_output: bool = kwargs.pop("reset_output", False)
-        fs_max_retry: int = kwargs.pop("fs_max_retry", 1)
-        fs_delay: float = kwargs.pop("fs_delay", 0.0)
-
-        skip_entries: list[str] = [ExeData._file_tmp, ExeData._file_fin]
+        skip_entries: list[str] = [ExeData._file_tmp, ExeData._file_fin, "job.run"]
+        if self.data["mode"] == ExecutionMode.PRODUCTION:
+            skip_entries.extend(self.data.get("input_files", []))
         if skip_files:
             skip_entries.extend(skip_files)
+
+        self.data.setdefault("output_files", [])
+        self.data.setdefault("lost_files", [])
+        self.data.setdefault("jobs", {})
 
         if reset_output:
             self.data["output_files"] = []
             self.data["lost_files"] = []
 
-        self.data.setdefault("output_files", [])
-        self.data.setdefault("lost_files", [])
-        self.data.setdefault("jobs", {})
-        timestamp = self.timestamp
+        # > small buffer to account for fs timestamp resolution and potential clock skew
+        timestamp: float = self.data.setdefault("timestamp", 0.0) - 10.0
 
         old_output_files: set[str] = set(self.data["output_files"])
         found_new = False
@@ -340,13 +348,14 @@ class ExeData(UserDict):
                     old_output_files.remove(entry.name)
                 if entry.name in skip_entries:
                     continue
-                try:
-                    entry_mtime = entry.stat().st_mtime
-                except FileNotFoundError:
-                    # File was removed between scandir listing and stat call.
-                    continue
-                if timestamp > 0 and entry_mtime < timestamp:
-                    continue
+                # > even with a buffer, this simply does not perform robustly
+                # try:
+                #     entry_mtime = entry.stat().st_mtime
+                # except FileNotFoundError:
+                #     # File was removed between scandir listing and stat call.
+                #     continue
+                # if timestamp > 0 and entry_mtime < timestamp:
+                #     continue
 
                 if entry.name not in self.data["output_files"]:
                     self.data["output_files"].append(entry.name)
