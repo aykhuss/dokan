@@ -60,9 +60,7 @@ class HTCondorExec(Executor):
         condor_settings: dict = {
             "exe": self.exe_data["exe"],
             "job_path": str(self.exe_data.path.absolute()),
-            "ncores": self.exe_data["policy_settings"]["htcondor_ncores"]
-            if "htcondor_ncores" in self.exe_data["policy_settings"]
-            else 1,
+            "ncores": self.exe_data["policy_settings"].get("htcondor_ncores", 1),
             "start_seed": min(job["seed"] for job in self.exe_data["jobs"].values()),
             "nseed": self.njobs,
             "input_files": ", ".join(self.exe_data["input_files"]),

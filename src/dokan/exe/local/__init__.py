@@ -29,7 +29,7 @@ class BatchLocalExec(LocalExec):
     """Wrapper task to batch-execute multiple local jobs"""
 
     def requires(self):
-        return [self.clone(cls=SingleLocalExec, job_id=job_id) for job_id in self.exe_data["jobs"].keys()]
+        return [self.clone(cls=SingleLocalExec, job_id=job_id) for job_id in self.exe_data["jobs"]]
 
     def exe(self):
         pass
@@ -50,7 +50,6 @@ class SingleLocalExec(LocalExec):
     def resources(self):
         return {
             "local_ncores": self.local_ncores,
-            # "jobs_concurrent": self.local_ncores,
             "jobs_concurrent": 1,
         }
 

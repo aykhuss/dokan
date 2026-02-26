@@ -47,8 +47,9 @@ class Executor(luigi.Task, metaclass=ABCMeta):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # ExeData is the single source of truth shared with DB-side tasks.
         self.exe_data: ExeData = ExeData(Path(self.path))
-        # > we just use a log file to collect output
+        # Per-execution log file used by backend implementations.
         self.file_log: Path = Path(self.path) / self._file_log
 
     @property
@@ -59,6 +60,11 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         -------
         logging.Logger
             A logger instance configured to write to the execution log file.
+
+        Notes
+        -----
+        The logger is keyed by execution path (`dokan.executor.<path>`) so
+        repeated calls for the same task instance reuse the same handler.
 
         """
         # Create a logger specific to this executor identity to avoid handler collisions
@@ -132,7 +138,7 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         Raises
         ------
         TypeError
-            If the policy is invalid.
+            If `policy` is not a supported `ExecutionPolicy`.
 
         """
         # > local import to avoid cyclic dependence
@@ -140,16 +146,15 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         from .local import BatchLocalExec
         from .slurm import SlurmExec
 
-        if policy == ExecutionPolicy.LOCAL:
-            return BatchLocalExec
-
-        if policy == ExecutionPolicy.HTCONDOR:
-            return HTCondorExec
-
-        if policy == ExecutionPolicy.SLURM:
-            return SlurmExec
-
-        raise TypeError(f"invalid ExecutionPolicy: {policy!r}")
+        match policy:
+            case ExecutionPolicy.LOCAL:
+                return BatchLocalExec
+            case ExecutionPolicy.HTCONDOR:
+                return HTCondorExec
+            case ExecutionPolicy.SLURM:
+                return SlurmExec
+            case _:
+                raise TypeError(f"invalid ExecutionPolicy: {policy!r}")
 
     @staticmethod
     def factory(policy: ExecutionPolicy = ExecutionPolicy.LOCAL, *args, **kwargs):
@@ -176,7 +181,7 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         """List of built-in templates for this executor.
 
         If the executor requires additional template files, such as submission
-        files, these should be provided through this method though an override.
+        files, these should be provided by overriding this method.
 
         Returns
         -------
@@ -198,22 +203,32 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         return [luigi.LocalTarget(self.exe_data.file_fin)]
 
     @abstractmethod
-    def exe(self):
-        """Execute the job.
+    def exe(self) -> None:
+        """Execute the backend-specific workload.
 
-        This method must be overridden by subclasses to implement the
-        backend-specific execution logic.
+        Subclasses are expected to:
+        - submit/track work on their respective backend,
+        - update `self.exe_data` as needed (for example scheduler ids),
+        - return without raising for expected job failures (those are detected
+          from output parsing), and raise only for task-level faults.
         """
         raise NotImplementedError("Executor::exe: abstract method must be overridden!")
 
-    def run(self):
+    def run(self) -> None:
         """Run the execution task.
 
         This method handles:
         1. Scanning for existing results (recovery).
-        2. Setting timestamps.
-        3. Invoking `exe()` if necessary.
-        4. Collecting output files and finalizing the execution data.
+        2. Initializing/writing mutable `ExeData`.
+        3. Invoking `exe()` if work is still incomplete.
+        4. Re-scanning outputs and finalizing to `job.json`.
+
+        Notes
+        -----
+        - If recovery scanning already finds all job results, backend execution
+          is skipped.
+        - Finalization is always attempted so downstream tasks can rely on an
+          immutable final state file.
         """
         # > more preparation for execution?
 
@@ -224,11 +239,6 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         self.exe_data.write()
 
         if not self.exe_data.is_complete:
-            # > some systems have a different resolution in timestamps
-            # > time.time() vs. os.stat().st_mtime
-            # > this buffer ensures time ordering works
-            time.sleep(1.0)
-
             # > call the backend specific execution
             try:
                 self.exe()
@@ -238,7 +248,5 @@ class Executor(luigi.Task, metaclass=ABCMeta):
         else:
             self._logger("Executor::run: skipped exe()", level=LogLevel.DEBUG)
 
-        self.exe_data.scan_dir(
-            [self._file_log], fs_max_retry=self.FS_MAX_RETRY, fs_delay=self.FS_DELAY
-        )
+        self.exe_data.scan_dir([self._file_log], fs_max_retry=self.FS_MAX_RETRY, fs_delay=self.FS_DELAY)
         self.exe_data.finalize()

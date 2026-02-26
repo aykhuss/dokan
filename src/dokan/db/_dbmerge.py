@@ -492,7 +492,7 @@ class MergePart(DBMerge):
             if single_file:
                 in_files[single_file] = []  # all hist in single file
             else:
-                in_files = dict((obs, []) for obs in self.config["run"]["histograms"].keys())
+                in_files = dict((obs, []) for obs in self.config["run"]["histograms"])
             # > collect histograms from all jobs
             pt.Ttot = 0.0
             pt.ntot = 0
@@ -521,7 +521,9 @@ class MergePart(DBMerge):
                         else:
                             self._logger(
                                 session,
-                                self._logger_prefix + "::run:  " + f"unmatched observable {dat.group(1)}?! ({in_files.keys()})",
+                                self._logger_prefix
+                                + "::run:  "
+                                + f"unmatched observable {dat.group(1)}?! ({in_files.keys()})",
                             )
                 job.status = JobStatus.MERGED
 
@@ -924,7 +926,7 @@ class MergeAll(DBMerge):
             mrg_parent: Path = self._path.joinpath("result", "part")
 
             # > collect all input files
-            in_files = dict((obs, []) for obs in self.config["run"]["histograms"].keys())
+            in_files = dict((obs, []) for obs in self.config["run"]["histograms"])
             # > reconstruct optimisation target
             opt_target: str = self.config["run"]["opt_target"]
             opt_target_ref: float = 0.0
@@ -1074,7 +1076,7 @@ class MergeFinal(DBMerge):
                     self._logger_prefix + f"::run:  {out_order}: {list(map(lambda x: (x.id, x.ntot), matched_parts))}",
                 )
 
-                in_files = dict((obs, []) for obs in self.config["run"]["histograms"].keys())
+                in_files = dict((obs, []) for obs in self.config["run"]["histograms"])
                 for pt in matched_parts:
                     for obs in self.config["run"]["histograms"]:
                         in_file: Path = mrg_parent / pt.name / f"{obs}.dat"

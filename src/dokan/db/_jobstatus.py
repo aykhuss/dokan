@@ -39,24 +39,24 @@ class JobStatus(IntEnum):
         return f"{self.__class__.__name__}.{self.name}"
 
     @staticmethod
-    def terminated_list() -> tuple["JobStatus", ...]:
+    def terminated_list() -> list["JobStatus"]:
         """Get list of terminated states (final states)."""
-        return (JobStatus.DONE, JobStatus.MERGED, JobStatus.FAILED)
+        return [JobStatus.DONE, JobStatus.MERGED, JobStatus.FAILED]
 
     @staticmethod
-    def success_list() -> tuple["JobStatus", ...]:
+    def success_list() -> list["JobStatus"]:
         """Get list of successful terminated states."""
-        return (JobStatus.DONE, JobStatus.MERGED)
+        return [JobStatus.DONE, JobStatus.MERGED]
 
     @staticmethod
-    def active_list() -> tuple["JobStatus", ...]:
+    def active_list() -> list["JobStatus"]:
         """Get list of active states (non-terminal)."""
-        return (
+        return [
             JobStatus.QUEUED,
             JobStatus.DISPATCHED,
             JobStatus.RUNNING,
             JobStatus.RECOVER,
-        )
+        ]
 
     def terminated(self) -> bool:
         """Check if the status represents a terminated state."""

@@ -1,11 +1,9 @@
 """Dokan Job Resurrection.
 
-Defines a task attempting to resurrect a job that is in a `RUNNING` state
+Defines a task attempting to resurrect a job that is in an "active" state
 from an old run. A previous run might have been cancelled or failed due
 to the loss of a ssh connection or process termination.
 """
-
-import math
 
 import luigi
 
@@ -30,13 +28,14 @@ class DBResurrect(DBTask):
     ----------
     rel_path : str
         Relative path to the job execution directory.
-    only_recover : bool
-        If True, only scan for results without re-executing (default: False).
+    recover_jobs : dict
+        Mapping of job id -> original DB job dictionary captured before setting
+        jobs to `RECOVER`. If non-empty, task runs in active recovery mode.
 
     """
 
     rel_path: str = luigi.Parameter()
-    only_recover: bool = luigi.BoolParameter(default=False)
+    recover_jobs: dict = luigi.DictParameter(default={})
 
     priority = 200
 
@@ -44,13 +43,43 @@ class DBResurrect(DBTask):
         super().__init__(*args, **kwargs)
         # > pick up from where we left off
         self.exe_data: ExeData = ExeData(self._local(self.rel_path))
+        self._logger_prefix: str = self.__class__.__name__ + f"[dim]({self.run_tag})[/dim]"
+        self._recover_jobs: dict[int, dict] = {}
+        for job_id, payload in self.recover_jobs.items():
+            self._recover_jobs[int(job_id)] = payload
+
+        if self._recover_jobs:
+            self._logger_prefix += "[dim](recover)[/dim]"
+            for job_id, job_entry in self._recover_jobs.items():
+                if "status" not in job_entry:
+                    raise RuntimeError(f"{self._logger_prefix}::init: missing status for job {job_id}")
+                # if JobStatus(job_entry["status"]) == JobStatus.RECOVER:
+                #     raise RuntimeError(
+                #         f"{self._logger_prefix}::init: recover_jobs[{job_id}] has RECOVER status"
+                #     )
+                if job_id not in self.exe_data["jobs"]:
+                    raise RuntimeError(
+                        f"{self._logger_prefix}::init: job {job_id} not found in ExeData at {self.rel_path}"
+                    )
 
     def requires(self):
-        """Require an Executor to run/check the job."""
-        if self.only_recover:
+        """Return dependencies needed to complete the resurrection flow.
+
+        In resurrection mode (no `recover_jobs`) we require the backend
+        `Executor` task so unfinished jobs can continue.
+        In recovery-only mode (`recover_jobs` provided) the task only scans
+        existing outputs and therefore has no dependencies.
+        """
+        if self._recover_jobs:
             return []
+
+        if "policy" not in self.exe_data:
+            raise RuntimeError(
+                f"{self._logger_prefix}::requires: missing execution policy in {self.exe_data.path}"
+            )
+
         with self.session as session:
-            self._debug(session, f"DBResurrect::requires:  rel_path = {self.rel_path}")
+            self._debug(session, f"{self._logger_prefix}::requires:  rel_path = {self.rel_path}")
         return [
             Executor.factory(
                 policy=self.exe_data["policy"],
@@ -59,70 +88,107 @@ class DBResurrect(DBTask):
         ]
 
     def complete(self) -> bool:
-        """Check if all jobs in this resurrection context are terminated.
+        """Check if this resurrection task has reached a stable DB state.
 
-        Returns True if all associated jobs are in a terminated state (DONE, MERGED, FAILED)
-        in the database.
+        Resurrection mode returns True only when all ExeData jobs are
+        terminated. Recovery-only mode returns True once all tracked recovery
+        jobs have moved out of `RECOVER`.
         """
         with self.session as session:
-            self._debug(session, f"DBResurrect::complete: {self.rel_path}")
-            for job_id in self.exe_data["jobs"].keys():
+            self._debug(session, f"{self._logger_prefix}::complete: {self.rel_path}")
+            for job_id in self.exe_data["jobs"]:
                 job: Job | None = session.get(Job, job_id)
 
-                if self.only_recover:
-                    # > recovery:  clear out all RECOVER status jobs
-                    if not job:
+                if self._recover_jobs:
+                    # > recovery-only: only tracked jobs participate in completion
+                    if job_id not in self._recover_jobs:
                         continue
-                    if job.status == JobStatus.RECOVER:
+                    if not job:
+                        self._logger(
+                            session,
+                            f"Job {job_id} not found in DB during resurrection",
+                            level=LogLevel.WARN,
+                        )
+                    elif job.status == JobStatus.RECOVER:
                         return False
                 else:
                     # > resurrection:  not terminated, we are not complete.
                     if not job:
-                        return False
-                    if job.status not in JobStatus.terminated_list():
+                        self._logger(
+                            session,
+                            f"Job {job_id} not found in DB during resurrection",
+                            level=LogLevel.WARN,
+                        )
+                    elif job.status not in JobStatus.terminated_list():
                         return False
 
         return True
 
+    def _all_jobs_terminated(self, session, job_ids: list[int] | None = None) -> bool:
+        """Return True if all selected jobs are terminated in DB."""
+        ids = job_ids if job_ids is not None else list(self.exe_data["jobs"])
+        for job_id in ids:
+            db_job: Job | None = session.get(Job, job_id)
+            if not db_job:
+                return False
+            if db_job.status not in JobStatus.terminated_list():
+                return False
+        return True
+
     def run(self):
-        """Process the results of the resurrection execution."""
+        """Process resurrection output and update job rows.
+
+        Workflow
+        --------
+        1. Reload `ExeData` from disk to capture Executor/file-system updates.
+        2. In recovery-only mode, scan log/output files to refresh results.
+        3. Update each DB job row according to parsed result availability.
+
+        Status policy
+        -------------
+        - valid result -> `DONE`
+        - invalid numerical result -> `FAILED`
+        - missing result in active mode -> `FAILED`
+        - missing result in recovery-only mode -> restore original pre-recovery status
+        """
         # > Re-load to capture changes made by Executor (if any) or filesystem
         self.exe_data.load()
 
-        if self.only_recover:
-            # Passive scan: update ExeData from logs found on disk
-            self.exe_data.scan_dir()
+        if self._recover_jobs:
+            # > Recovery-only scan: update ExeData from logs found on disk.
+            self.exe_data.scan_dir(force=True)
+            self.exe_data.write(force=True)
         elif not self.exe_data.is_final:
-            # Active mode requires ExeData to be finalized by Executor
+            # > Active mode requires ExeData to be finalized by Executor
             raise RuntimeError(f"Job at {self.rel_path} did not finalize correctly.")
 
         with self.session as session:
-            self._logger(session, f"DBResurrect::run:  {self.rel_path}, run_tag = {self.run_tag}")
+            self._logger(
+                session,
+                f"{self._logger_prefix}::run:  {self.rel_path}",
+            )
 
-            for job_id, job_entry in self.exe_data["jobs"].items():
-                db_job: Job | None = session.get(Job, job_id)
-                if not db_job:
-                    self._logger(
-                        session,
-                        f"Job {job_id} not found in DB during resurrection",
-                        level=LogLevel.WARN,
+            jobs: dict[int, Job | None] = {
+                job_id: session.get(Job, job_id) for job_id in self.exe_data["jobs"]
+            }
+            self._update_job(session, self.exe_data, jobs)
+            for job_id, job in jobs.items():
+                if job and job.status == JobStatus.RECOVER:
+                    restored_status: JobStatus = self._recover_jobs.get(job.id, {}).get(
+                        "status", JobStatus.RUNNING
                     )
-                    continue
-
-                if "result" in job_entry:
-                    res = float(job_entry["result"])
-                    err = float(job_entry["error"])
-                    if math.isnan(res * err):
-                        db_job.status = JobStatus.FAILED
-                    else:
-                        db_job.result = res
-                        db_job.error = err
-                        db_job.chi2dof = float(job_entry["chi2dof"])
-                        db_job.elapsed_time = float(job_entry["elapsed_time"])
-                        db_job.status = JobStatus.DONE
-                else:
-                    # Active mode: missing result implies failure
-                    # Passive mode: missing result implies still incomplete
-                    db_job.status = JobStatus.FAILED if not self.only_recover else JobStatus.RUNNING
+                    if restored_status == JobStatus.RECOVER:
+                        self._logger(
+                            session,
+                            f"{self._logger_prefix}::run:  job {job_id} "
+                            + "has RECOVER as recovery status: overriding to RUNNING",
+                            level=LogLevel.WARN,
+                        )
+                        restored_status = JobStatus.RUNNING
+                    job.status = JobStatus.FAILED if not self._recover_jobs else restored_status
 
             self._safe_commit(session)
+
+            # In recovery-only mode, finalize ExeData once tracked jobs are terminated.
+            if self._recover_jobs and self._all_jobs_terminated(session, list(self._recover_jobs)):
+                self.exe_data.finalize()

@@ -5,7 +5,6 @@ backend as specified by the job policy. It is responsible for populating
 the database with the results of each execution.
 """
 
-import math
 import re
 import shutil
 from pathlib import Path
@@ -19,7 +18,6 @@ from ..runcard import RuncardTemplate
 from ._dbmerge import MergePart
 from ._dbtask import DBTask
 from ._jobstatus import JobStatus
-from ._loglevel import LogLevel
 from ._sqla import Job, Part
 
 
@@ -64,9 +62,10 @@ class DBRunner(DBTask):
             assert all(j.mode == self.mode for j in jobs)
             self.policy: ExecutionPolicy = ExecutionPolicy(jobs[0].policy)
             assert all(j.policy == self.policy for j in jobs)
-            # > sequential seed range
+            # > all seeds set?
             seeds: list[int] = sorted(j.seed for j in jobs if j.seed is not None)
             assert len(seeds) == len(jobs)
+            # > sequential list of seeds? @todo: should we enforce this? (might interfere with resurrection)
             min_seed: int = min(seeds)
             max_seed: int = max(seeds)
             assert len(jobs) == (max_seed - min_seed + 1)
@@ -84,7 +83,7 @@ class DBRunner(DBTask):
             assert all(j.ncall == self.ncall for j in jobs)
             assert all(j.niter == self.niter for j in jobs)
             if (self.niter * self.ncall) == 0:
-                raise RuntimeError(f"job {jobs[0].id} has ntot={self.ncall}×{self.niter}==0")
+                raise RuntimeError(f"job {jobs[0].id} has ntot={self.ncall}x{self.niter}==0")
 
     def complete(self) -> bool:
         """Check if all jobs in this runner have terminated."""
@@ -102,6 +101,7 @@ class DBRunner(DBTask):
         exe_data["exe"] = self.config["exe"]["path"]
         exe_data["mode"] = self.mode
         exe_data["policy"] = self.policy
+        exe_data["part_id"] = self.part_id
 
         # > add policy settings
         exe_data["policy_settings"] = {"max_runtime": self.config["run"]["job_max_runtime"]}
@@ -176,49 +176,12 @@ class DBRunner(DBTask):
             db_job.status = JobStatus.RUNNING
         self._safe_commit(session)
 
-    def _process_results(self, session: Session, db_jobs: list[Job], exe_data: ExeData) -> None:
-        """Parse execution results and update database job entries."""
-        for db_job in db_jobs:
-            if db_job.status in JobStatus.terminated_list():
-                continue
-
-            job_data = exe_data["jobs"].get(db_job.id)
-            if job_data and "result" in job_data:
-                res = float(job_data["result"])
-                err = float(job_data["error"])
-                if math.isnan(res * err):
-                    db_job.status = JobStatus.FAILED
-                else:
-                    db_job.result = res
-                    db_job.error = err
-                    db_job.chi2dof = job_data["chi2dof"]
-
-                    elapsed = job_data["elapsed_time"]
-                    if elapsed > 0:
-                        db_job.elapsed_time = elapsed
-                    else:
-                        # > issue warning and keep estimated runtime in database
-                        self._logger(
-                            session,
-                            self._logger_prefix
-                            + f"::run:  job {db_job.id} at {exe_data.path} has"
-                            + f" elapsed time: {elapsed}"
-                            + f" -> keeping estimate {db_job.elapsed_time}",
-                            LogLevel.DEBUG,
-                        )
-                    db_job.status = JobStatus.DONE
-            else:
-                db_job.status = JobStatus.FAILED
-        self._safe_commit(session)
-
     def run(self):
         """Execute the runner task."""
         exe_data = ExeData(self.job_path)
 
         with self.session as session:
-            self._logger(
-                session, self._logger_prefix + f"::run:  [dim](job_ids = {self.ids})[/dim]"
-            )
+            self._logger(session, self._logger_prefix + f"::run:  [dim](job_ids = {self.ids})[/dim]")
 
             # > DBDispatch takes care to stay within batch size
             db_jobs: list[Job] = [session.get_one(Job, job_id) for job_id in self.ids]
@@ -259,13 +222,13 @@ class DBRunner(DBTask):
                         + "\n".join(f" | [dim]{ln.strip()}[/dim]" for ln in f.readlines()),
                     )
 
-            self._process_results(session, db_jobs, exe_data)
+            self._update_job(session, exe_data, {int(j.id): j for j in db_jobs})
 
             # > see if a re-merge is possible
             if self.mode == ExecutionMode.PRODUCTION:
                 mrg_part = self.clone(MergePart, force=False, part_id=self.part_id)
                 if mrg_part.complete():
-                    self._debug(session, self._logger_prefix + "::run:  MergePart complete")
+                    self._debug(session, self._logger_prefix + "::run:  MergePart skip")
                     return
                 else:
                     self._logger(session, self._logger_prefix + "::run:  yield MergePart")

@@ -162,6 +162,6 @@ pyrightconfig.json
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# output folder of the example runcard
-example/
-example_run_Z_8TeV/
+# files/directories starting with "example"
+example*
+**/example*

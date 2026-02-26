@@ -391,9 +391,7 @@ class NNLOJETHistogram:
         # construct string line by line
         lines = []
         # first the comments
-        lines.append(
-            "#labels: " + " ".join([lab + f"[{idx + 1}]" for (idx, lab) in enumerate(self._labels)])
-        )
+        lines.append("#labels: " + " ".join([lab + f"[{idx + 1}]" for (idx, lab) in enumerate(self._labels)]))
         lines.append(f"#neval: {self._neval}")
         # overflow?
         for irow, yarr in enumerate(self._yval):

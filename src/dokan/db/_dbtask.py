@@ -8,8 +8,7 @@ from rich.console import Console
 from sqlalchemy import Engine, create_engine, select, text
 from sqlalchemy.orm import Session  # , scoped_session, sessionmaker
 
-from ..exe import ExecutionMode
-from ..order import Order
+from ..exe import ExecutionMode, ExecutionPolicy, ExeData
 from ..task import Task
 from ._jobstatus import JobStatus
 from ._loglevel import LogLevel
@@ -23,10 +22,7 @@ class DBTask(Task, metaclass=ABCMeta):
 
     run_tag: float = luigi.FloatParameter()
 
-    # > threadsafety using resource = 1, where read/write needed
-    resources = {"DBTask": 1}
     # > database queries should jump the scheduler queue?
-
     # priority = 1
 
     def __init__(self, *args, **kwargs):
@@ -36,6 +32,11 @@ class DBTask(Task, metaclass=ABCMeta):
         self.logname: str = "sqlite:///" + str(self._local("log.sqlite").absolute())
         self.db_setup: bool = False
 
+    # > threadsafety using resource = 1, where read/write needed
+    @property
+    def resources(self):
+        return super().resources | {"DBTask": 1}
+
     def _create_engine(self, name: str) -> Engine:
         """Create a SQLite engine with WAL mode and concurrency settings."""
         engine = create_engine(name, connect_args={"timeout": 1800})
@@ -43,8 +44,10 @@ class DBTask(Task, metaclass=ABCMeta):
         # > Apply concurrency-friendly SQLite PRAGMAs
         if self.db_setup:
             with engine.connect() as conn:
-                conn.execute(text("PRAGMA journal_mode=WAL;"))
-                conn.execute(text("PRAGMA synchronous=NORMAL;"))
+                # conn.execute(text("PRAGMA journal_mode=WAL;"))  # <- bad for network/shared FS
+                conn.execute(text("PRAGMA journal_mode=DELETE;"))
+                # conn.execute(text("PRAGMA synchronous=NORMAL;"))  # <- riskier on crashes
+                conn.execute(text("PRAGMA synchronous=FULL"))
                 # conn.execute(text("PRAGMA wal_autocheckpoint=1000;"))
                 # conn.execute(text("PRAGMA busy_timeout=30000;"))
                 conn.execute(text("PRAGMA temp_store=MEMORY;"))
@@ -64,20 +67,21 @@ class DBTask(Task, metaclass=ABCMeta):
     def _safe_commit(self, session: Session) -> None:
         from sqlalchemy.exc import OperationalError
 
+        dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         for i in range(10):  # maximum number of tries
             try:
                 session.commit()
                 return
             except OperationalError as e:
                 if "database is locked" in str(e):
-                    dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    _console.print(f"(c)[dim][{dt_str}][/dim](WARN): DBTask::_safe_commit locked, retrying...")
+                    _console.print(
+                        f"(c)[dim][{dt_str}][/dim](WARN): DBTask::_safe_commit locked, retrying..."
+                    )
                     time.sleep(1.0 + i * 0.5)  # exponential backoff
                     continue
                 raise e
             except Exception as e:
                 # > do NOT use self._logger here to avoid recursion loop
-                dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 _console.print(f"(c)[dim][{dt_str}][/dim](ERROR): DBTask::_safe_commit: {e!r}")
                 time.sleep(1.0)  # time delay between retries
         raise RuntimeError("DBTask::_safe_commit: ran out of retries")
@@ -113,14 +117,13 @@ class DBTask(Task, metaclass=ABCMeta):
         if level >= 0 and level < self.config["ui"]["log_level"]:
             return
         # > print out
+        dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if not self.config["ui"]["monitor"]:
-            dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             _console.print(f"(c)[dim][{dt_str}][/dim]({level!r}): {message}")
             return
         # > general case: monitor is ON: store messages in DB
         last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
         if last_log and last_log.level in [LogLevel.SIG_COMP]:
-            dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             _console.print(f"(c)[dim][{dt_str}][/dim]({level!r}): {message}")
         elif level >= 0:
             session.add(Log(level=level, timestamp=time.time(), message=message))
@@ -128,6 +131,187 @@ class DBTask(Task, metaclass=ABCMeta):
 
     def _debug(self, session: Session, message: str) -> None:
         self._logger(session, message, LogLevel.DEBUG)
+
+    def _update_job(
+        self,
+        session: Session,
+        exe_data: ExeData,
+        jobs: dict[int, Job | None] | None = None,
+        *,
+        add_missing: bool = False,
+        skip_terminated: bool = True,
+    ) -> None:
+        """Synchronize job rows from an `ExeData["jobs"]` payload.
+
+        Parameters
+        ----------
+        session : Session
+            Active SQLAlchemy session bound to the job database.
+        exe_data : ExeData
+            Execution metadata source containing per-job output fields.
+        jobs : dict[int, Job | None] | None, optional
+            Optional mapping of job id to pre-fetched DB row. If omitted,
+            all job ids found in `exe_data["jobs"]` are considered and rows
+            are loaded lazily.
+        add_missing : bool, optional
+            If True, create missing DB jobs from ExeData entries.
+        skip_terminated : bool, optional
+            If True, do not overwrite rows that are already terminated.
+
+        Notes
+        -----
+        - `job_id` keys are normalized to `int`.
+        - A missing/invalid result payload marks non-recovery jobs as FAILED.
+        - This method commits once at the end.
+        """
+        exe_jobs = exe_data.get("jobs", {})
+        if not isinstance(exe_jobs, dict):
+            self._logger(
+                session,
+                f"_update_job: invalid ExeData jobs payload type: {type(exe_jobs)!r}",
+                LogLevel.WARN,
+            )
+            return
+
+        _jobs: dict[int, Job | None] = {}
+        if jobs:
+            for raw_job_id, db_job in jobs.items():
+                try:
+                    _jobs[int(raw_job_id)] = db_job
+                except (TypeError, ValueError):
+                    self._logger(
+                        session,
+                        f"_update_job: invalid job id {raw_job_id!r} in input mapping, skipping",
+                        LogLevel.WARN,
+                    )
+        else:
+            for raw_job_id in exe_jobs:
+                try:
+                    _jobs[int(raw_job_id)] = None
+                except (TypeError, ValueError):
+                    self._logger(
+                        session,
+                        f"_update_job: invalid ExeData job id {raw_job_id!r}, skipping",
+                        LogLevel.WARN,
+                    )
+
+        part_name: str = exe_data.path.parent.name
+        part: Part | None = session.scalars(select(Part).where(Part.name == part_name)).first()
+        if not part:
+            self._logger(
+                session,
+                f"_update_job: part {part_name!r} not found in DB {exe_data.path}",
+                level=LogLevel.WARN,
+            )
+
+        for job_id in _jobs:
+            job: Job | None = _jobs[job_id]
+            if job is None:
+                job = session.get(Job, job_id)  # fetch from DB
+
+            job_entry = exe_jobs.get(job_id)
+
+            if skip_terminated and job and job.status in JobStatus.terminated_list():
+                continue
+
+            if job_entry is None:
+                self._logger(
+                    session,
+                    f"_update_job: job {job_id} not found in ExeData, skipping",
+                    LogLevel.WARN,
+                )
+                if job is not None:
+                    job.status = JobStatus.FAILED
+                continue
+
+            if not job:
+                if add_missing:
+                    if not part:
+                        continue
+                    if "part_id" in exe_data:
+                        # assert exe_data["part_id"] == part.id, f"part_id mismatch for {exe_data.path}"
+                        # @note:  independent runs could assign different part ids?
+                        pass
+                    self._logger(session, f"_update_job: job {job_id} not found, adding new entry")
+                    job = Job(
+                        part_id=part.id,
+                        run_tag=exe_data["timestamp"],
+                        status=JobStatus.RECOVER,
+                        mode=ExecutionMode(exe_data["mode"]),
+                        policy=ExecutionPolicy(exe_data["policy"]),
+                        timestamp=exe_data["timestamp"],
+                        ncall=exe_data["ncall"],
+                        niter=exe_data["niter"],
+                        rel_path=str(exe_data.path.relative_to(self._local())),
+                        elapsed_time=0.0,
+                        seed=job_entry["seed"],
+                    )
+                    session.add(job)
+                else:
+                    self._logger(
+                        session,
+                        f"_update_job: job {job_id} not found, skipping",
+                        LogLevel.WARN,
+                    )
+                    continue
+
+            # > job is set: sanity checks & update entries
+            assert part_name == job.part.name, (
+                f"part name mismatch for job {job_id}: {part_name!r} vs {job.part.name!r}"
+            )
+            if job_entry["seed"] != job.seed:
+                self._logger(
+                    session,
+                    f"_update_job: seed mismatch for job {job_id}: {job_entry['seed']} vs {job.seed} ({exe_data.path})",
+                    LogLevel.WARN,
+                )
+                continue
+
+            if "result" in job_entry:
+                try:
+                    res: float = float(job_entry["result"])
+                    err: float = float(job_entry["error"])
+                    chi2dof: float = float(job_entry["chi2dof"])
+                except (KeyError, TypeError, ValueError):
+                    self._logger(
+                        session,
+                        f"_update_job: invalid result payload for job {job_id}, marking FAILED",
+                        LogLevel.WARN,
+                    )
+                    job.status = JobStatus.FAILED
+                    continue
+
+                if not (math.isfinite(res) and math.isfinite(err) and math.isfinite(chi2dof)):
+                    job.status = JobStatus.FAILED
+                else:
+                    job.result = res
+                    job.error = err
+                    job.chi2dof = chi2dof
+                    if "elapsed_time" in job_entry:
+                        elapsed: float = float(job_entry["elapsed_time"])
+                        if elapsed > 0.0:
+                            job.elapsed_time = elapsed
+                        else:
+                            # > keep DB estimates if runtime metadata is broken
+                            pass
+                    else:
+                        # > premature termination of job:  re-scale by iterations that completed
+                        niter_completed: int = len(job_entry.get("iterations", []))
+                        scale: float = float(niter_completed) / float(job.niter) if job.niter > 0 else 0.0
+                        job.niter = niter_completed
+                        job.elapsed_time = scale * job.elapsed_time
+                    # > retain the DONE vs. MERGED status
+                    if job.status not in JobStatus.success_list():
+                        job.status = JobStatus.DONE
+            else:
+                # > recovery will reinstate the original status after this call
+                if job.status != JobStatus.RECOVER:
+                    job.status = JobStatus.FAILED
+
+            # @todo: status restoration infra
+            # @todo: trigger on change if status is in success_list and report & overwrite.
+
+        self._safe_commit(session)
 
     def _remainders(self, session: Session) -> tuple[int, float]:
         # > remaining resources available
@@ -280,7 +464,9 @@ class DBTask(Task, metaclass=ABCMeta):
                     # > convert to time
                     # include estimate from the extra jobs already allocated
                     i_T: float = i_tau * (ic["ntot"] + ic["nextra"])
-                    ic["adj_error"] = math.sqrt(ic["adj_error"] ** 2 * ic["ntot"] / (ic["ntot"] + ic["nextra"]))
+                    ic["adj_error"] = math.sqrt(
+                        ic["adj_error"] ** 2 * ic["ntot"] / (ic["ntot"] + ic["nextra"])
+                    )
                     result["part"][part_id] = {
                         "tau": i_tau,
                         "tau_err": i_tau_err,
@@ -354,8 +540,10 @@ class DBTask(Task, metaclass=ABCMeta):
         # (T_max_job, T_job, njobs, ntot_job)
         result["tot_error_estimate_jobs"] = 0.0
         for part_id, ires in result["part"].items():
-            # > 5 sigma buffer but never larger than 50% runtime
-            tau_buf: float = min(5 * ires["tau_err"], 0.5 * ires["tau"])
+            # > 10 sigma buffer but never larger than 50% runtime
+            # (note that the large buffer reflects that our data sample is biased
+            # where termination due to runtime limits either fail or keep estimate)
+            tau_buf: float = min(10 * ires["tau_err"], 0.5 * ires["tau"])
             if tau_buf <= 0.0:  # in case we have no clue (tau_err==0): target 50%
                 tau_buf = 0.5 * ires["tau"]
 
@@ -366,7 +554,9 @@ class DBTask(Task, metaclass=ABCMeta):
                 ntot_job: int = int(T_max_job / ires["tau"])
             else:
                 if ires["T_opt"] > 0.0:
-                    ntot_min: int = self.config["production"]["niter"] * self.config["production"]["ncall_start"]
+                    ntot_min: int = (
+                        self.config["production"]["niter"] * self.config["production"]["ncall_start"]
+                    )
                     ntot_max: int = int(T_max_job / ires["tau"])
                     njobs: int = int(ires["T_opt"] / T_max_job) + 1
                     ntot_job: int = int(ires["T_opt"] / float(njobs) / ires["tau"])
@@ -376,7 +566,10 @@ class DBTask(Task, metaclass=ABCMeta):
                     ntot_job: int = 0
 
             # > if we inflated the error of a count==1 part, we only want to register *one* job
-            if cache[part_id]["count"] <= self.config["production"]["min_number"] and cache[part_id]["nextra"] <= 0:
+            if (
+                cache[part_id]["count"] <= self.config["production"]["min_number"]
+                and cache[part_id]["nextra"] <= 0
+            ):
                 njobs = min(njobs, 1)
 
             # > update & store info for each part

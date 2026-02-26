@@ -6,6 +6,8 @@ module defining the job database
 from sqlalchemy import BigInteger, ForeignKey
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from dokan.db._jobstatus import JobStatus
+
 from ..exe._exe_config import ExecutionMode, ExecutionPolicy
 
 
@@ -72,7 +74,10 @@ class Job(DokanDB):
     chi2dof: Mapped[float] = mapped_column(default=float("inf"))
 
     def __repr__(self) -> str:
-        return f"Job(id={self.id!r}, part_id={self.part_id!r}, status={(self.status)!r}, timestamp={self.timestamp!r}, rel_path={self.rel_path}, mode={ExecutionMode(self.mode)!r}, policy={ExecutionPolicy(self.policy)!r})"
+        return f"Job(id={self.id!r}, part_id={self.part_id!r}, status={JobStatus(self.status)!r}, timestamp={self.timestamp!r}, seed={self.seed}, rel_path={self.rel_path}, mode={ExecutionMode(self.mode)!r}, policy={ExecutionPolicy(self.policy)!r})"
+
+    def to_dict(self) -> dict:
+        return {column.name: getattr(self, column.name) for column in self.__table__.columns}
 
 
 class DokanLog(DeclarativeBase):
