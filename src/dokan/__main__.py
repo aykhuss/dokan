@@ -921,7 +921,7 @@ def main() -> None:
 
         if args.reset:
             result_dir: Path = db_init._local("result")
-            if Confirm.ask(
+            if result_dir.exists() and Confirm.ask(
                 f"[red]reset[/red] confirm deletion of: [italic]{result_dir}[/italic]", default=True
             ):
                 shutil.rmtree(result_dir)
