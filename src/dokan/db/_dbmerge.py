@@ -371,13 +371,13 @@ class MergeObs(Task):
                                 for _inode in _nodes:
                                     weights[irow, _inode] = _iwgt * bin_data["neval"][_inode] / _neval
                         # print(f" > weights: {weights[irow,:]}")
-                        print(f" > sum of weights [{irow}] = {np.sum(weights[irow, :]):.3f}")
+                        # print(f" > sum of weights [{irow}] = {np.sum(weights[irow, :]):.3f}")
                         assert np.all(
                             np.isfinite(weights[irow, :])
                         )  # check that we have weights for all entries
-                        if not np.all(np.isfinite(weights[irow, :])):
-                            print(f" > mask: {bin_mask}")
-                            time.sleep(5)
+                        # if not np.all(np.isfinite(weights[irow, :])):
+                        #     print(f" > mask: {bin_mask}")
+                        #     time.sleep(5)
 
         with open(self.file_dat, "w") as df:
             if labels is not None:
@@ -591,7 +591,7 @@ class MergePart(DBMerge):
                 job.status = JobStatus.MERGED
 
             # > commit merged status and timestamp before yielding
-            pt.timestamp = time.time()
+            # pt.timestamp = time.time()
             self._safe_commit(session)
 
             #############################
@@ -798,68 +798,27 @@ class MergePart(DBMerge):
                                     h5dat_data["error2", irow, :, idat] = arr_f64[nx + 1 :: 2] ** 2
                                     irow += 1
 
-            # # > dispatch HDF5 file to MergeObs for each observable separately
-            # mrg_obs_list = yield [
-            #     self.clone(
-            #         cls=MergeObs,
-            #         hdf5_in=str((self._path / "raw" / f"{pt.name}.hdf5").relative_to(self._path)),
-            #         hdf5_path=[f"{pt.name}", f"{obs}"],
-            #         dat_out=str((mrg_path / f"{obs}.dat2").relative_to(self._path)),
-            #         wgt_out=str((mrg_path / f"{obs}.weights.txt2").relative_to(self._path)),
-            #     )
-            #     for obs in self.config["run"]["histograms"]
-            # ]
-            # print(f"{mrg_obs_list!r}")
-            # for i, mrg_obs in enumerate(mrg_obs_list, start=1):
-            #     print(f"{i}: {mrg_obs}")
+            # > dispatch HDF5 file to MergeObs for each observable separately
+            mrg_obs_dict = {
+                obs: self.clone(
+                    cls=MergeObs,
+                    hdf5_in=str((self._path / "raw" / f"{pt.name}.hdf5").relative_to(self._path)),
+                    hdf5_path=[f"{pt.name}", f"{obs}"],
+                    dat_out=str((mrg_path / f"{obs}.dat").relative_to(self._path)),
+                    wgt_out=str((mrg_path / f"{obs}.weights.txt").relative_to(self._path)),
+                )
+                for obs in self.config["run"]["histograms"]
+            }
+            yield list(mrg_obs_dict.values())
 
-            #############################
-
-            self._logger(session, self._logger_prefix + "::run: " + "merging histograms")
-
-            # > for backwards compatibility
-            if single_file:
-                # > unroll the single histogram to all registered observables
-                singles: list[GenericPath] = in_files.pop(single_file)
-                in_files = dict((obs, singles) for obs in self.config["run"]["histograms"].keys())
-
-            # > merge all histograms
-            # > keep track of all cross section estimates (also as sums over distributions)
+            # > update cross section estimates for the part & collect all estimates also from distributions
             cross_list: list[tuple[float, float]] = []
-            for obs, hist_info in self.config["run"]["histograms"].items():
-                out_file: Path = mrg_path / f"{obs}.dat"
+            for obs, mrg_obs in mrg_obs_dict.items():
+                # print(f" post-processing observable {obs} ...")
+                file_out: Path = self._local(mrg_obs.dat_out)
+                file_wgt: Path = self._local(mrg_obs.wgt_out)
+                hist_info = self.config["run"]["histograms"][obs]
                 nx: int = hist_info["nx"]
-                qwgt: bool = True  # self.grids and (hist_info.get("grid") is not None)
-                container = NNLOJETContainer(size=len(in_files[obs]), weights=qwgt)
-                obs_name: str | None = obs if single_file else None
-                for in_file in in_files[obs]:
-                    try:
-                        container.append(
-                            NNLOJETHistogram(
-                                nx=nx,
-                                filename=self._path / in_file,
-                                obs_name=obs_name,
-                                weights=qwgt,
-                            )
-                        )
-                    except ValueError as e:
-                        self._logger(session, f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR)
-                container.mask_outliers(
-                    self.config["merge"]["trim_threshold"],
-                    self.config["merge"]["trim_max_fraction"],
-                )
-                container.optimise_k(
-                    maxdev_unwgt=None,
-                    nsteps=self.config["merge"]["k_scan_nsteps"],
-                    maxdev_steps=self.config["merge"]["k_scan_maxdev_steps"],
-                )
-                hist = container.merge(weighted=True)
-                hist.write_to_file(out_file)
-                print(" > merged histogram written to", out_file)
-                if qwgt:
-                    weights_file = out_file.with_suffix(".weights.txt")
-                    weights_file.write_text(hist.to_weights())
-                    print(" > weights written to", weights_file)
 
                 # > register cross section numbers
                 if "cumulant" in hist_info:
@@ -867,7 +826,7 @@ class MergePart(DBMerge):
 
                 res, err = 0.0, 0.0  # accumulate bins to "cross" (possible fac, selectors, ...)
                 if nx == 0:
-                    with open(out_file) as cross:
+                    with open(file_out) as cross:
                         for line in cross:
                             if line.startswith("#"):
                                 continue
@@ -876,7 +835,7 @@ class MergePart(DBMerge):
                             err = col[1] ** 2
                             break
                 elif nx == 3:
-                    with open(out_file) as diff:
+                    with open(file_out) as diff:
                         for line in diff:
                             if line.startswith("#overflow"):
                                 scol: list[str] = line.split()
@@ -903,10 +862,7 @@ class MergePart(DBMerge):
                 )
                 cross_list.append((res, err))
 
-                # # > override error if larger from bin sums (correaltions with counter-events)
-                # if err > pt.error:
-                #     pt.error = err
-
+            # > update the error from the chosen optimization target
             opt_target: str = self.config["run"]["opt_target"]
 
             # > different estimates for the relative cross uncertainties
@@ -915,6 +871,7 @@ class MergePart(DBMerge):
                 rel_cross_err = abs(pt.error / pt.result)
             elif pt.error != 0.0:
                 raise ValueError(self._logger_prefix + f"::run:  val={pt.result}, err={pt.error}")
+
             cross_list.append((1.0, 0.0))  # safe guard against all-zero case
             max_rel_hist_err: float = max(abs(e / r) for r, e in cross_list if r != 0.0)
             if opt_target == "cross":
@@ -930,24 +887,10 @@ class MergePart(DBMerge):
             # > override with registered error with the optimization target
             pt.error = abs(rel_cross_err * pt.result)
 
+            pt.timestamp = time.time()
             self._safe_commit(session)
 
-            # @todo keep track of a "settings.json" for merge settings used?
-            # with open(out_file, "w") as out:
-            #     for in_file in in_files:
-            #         out.write(str(in_file))
-
-            # > dispatch HDF5 file to MergeObs for each observable separately
-            mrg_obs_list = yield [
-                self.clone(
-                    cls=MergeObs,
-                    hdf5_in=str((self._path / "raw" / f"{pt.name}.hdf5").relative_to(self._path)),
-                    hdf5_path=[f"{pt.name}", f"{obs}"],
-                    dat_out=str((mrg_path / f"{obs}.dat2").relative_to(self._path)),
-                    wgt_out=str((mrg_path / f"{obs}.weights.txt2").relative_to(self._path)),
-                )
-                for obs in self.config["run"]["histograms"]
-            ]
+            #############################
 
         if not self.force:
             yield self.clone(cls=MergeAll)
@@ -1081,28 +1024,6 @@ class MergeAll(DBMerge):
                             )
                             break
 
-            # > sum all parts for `*.dat2`
-            for obs, hist_info in self.config["run"]["histograms"].items():
-                out_file: Path = self.mrg_path / f"{obs}.dat2"
-                self._logger(
-                    session, f"{self._logger_prefix}::run:  merging {obs} to {out_file}", level=LogLevel.WARN
-                )
-                nx: int = hist_info["nx"]
-                if len(in_files[obs]) == 0:
-                    self._logger(
-                        session,
-                        self._logger_prefix + f"::run:  no files for {obs}",
-                        level=LogLevel.ERROR,
-                    )
-                    continue
-                hist = NNLOJETHistogram()
-                for in_file in in_files[obs]:
-                    try:
-                        hist = hist + NNLOJETHistogram(nx=nx, filename=self._path / (str(in_file) + "2"))
-                    except ValueError as e:
-                        self._logger(session, f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR)
-                hist.write_to_file(out_file)
-
 
 class MergeFinal(DBMerge):
     # > a final merge of all orders where we have parts available
@@ -1235,34 +1156,6 @@ class MergeFinal(DBMerge):
                                 f"[red]MergeFinal::run:  missing nnlojet-merge-pineappl executable at {pine_merge}[/red]",
                                 level=LogLevel.ERROR,
                             )
-
-                # > sum all `*.dat2` files
-                for obs, hist_info in self.config["run"]["histograms"].items():
-                    out_file: Path = self.fin_path / f"{out_order}.{obs}.dat2"
-                    self._logger(
-                        session,
-                        f"{self._logger_prefix}::run:  merging {obs} to {out_file}",
-                        level=LogLevel.WARN,
-                    )
-                    nx: int = hist_info["nx"]
-                    if len(in_files[obs]) == 0:
-                        self._logger(
-                            session,
-                            self._logger_prefix + f"::run:  no files for {obs}",
-                            level=LogLevel.ERROR,
-                        )
-                        continue
-                    hist = NNLOJETHistogram()
-                    for in_file in in_files[obs]:
-                        try:
-                            hist = hist + NNLOJETHistogram(nx=nx, filename=self._path / (str(in_file) + "2"))
-                        except ValueError as e:
-                            self._logger(
-                                session,
-                                self._logger_prefix + f"::run:  error reading file {in_file} ({e!r})",
-                                level=LogLevel.ERROR,
-                            )
-                    hist.write_to_file(out_file)
 
             # > shut down the monitor
             self._logger(session, "complete", level=LogLevel.SIG_COMP)
