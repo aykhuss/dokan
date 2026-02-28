@@ -5,7 +5,6 @@ constitutes the dokan workflow implementation of `nnlojet-combine.py`
 """
 
 import datetime
-from enum import IntEnum, unique
 import math
 import os
 import re
@@ -13,6 +12,7 @@ import shutil
 import subprocess
 import time
 from abc import ABCMeta
+from enum import IntEnum, unique
 from pathlib import Path
 
 import h5py
@@ -32,7 +32,6 @@ from ._dbtask import DBTask
 from ._jobstatus import JobStatus
 from ._loglevel import LogLevel
 from ._sqla import Job, Log, Part
-
 
 # > some variable definitions
 _dt_vstr = h5py.string_dtype()
@@ -64,13 +63,22 @@ class DBMerge(DBTask, metaclass=ABCMeta):
         return super().resources | {"local_ncores": 1}
 
     def _make_prefix(self, session: Session | None = None) -> str:
-        return self.__class__.__name__ + "[" + ", ".join(([f"force={self.force}"] if self.force else []) + ([f"reset={time.ctime(self.reset_tag)}"] if self.reset_tag > 0.0 else [])) + "]"
+        return (
+            self.__class__.__name__
+            + "["
+            + ", ".join(
+                ([f"force={self.force}"] if self.force else [])
+                + ([f"reset={time.ctime(self.reset_tag)}"] if self.reset_tag > 0.0 else [])
+            )
+            + "]"
+        )
 
 
 class MergeObs(Task):
     hdf5_in: GenericPath = luigi.Parameter()
     hdf5_path: list[str] = luigi.ListParameter()  # path to the observable group
     dat_out: GenericPath = luigi.Parameter()
+    wgt_out: GenericPath | None = luigi.Parameter(default=None)  # only used if `grids` is True
 
     priority = 130
 
@@ -78,6 +86,7 @@ class MergeObs(Task):
         super().__init__(*args, **kwargs)
         self.file_hdf5: Path = self._path / self.hdf5_in
         self.file_dat: Path = self._path / self.dat_out
+        self.file_wgt: Path | None = self._path / self.wgt_out if self.wgt_out is not None else None
         if not self.file_hdf5.is_file():
             raise FileNotFoundError(f"MergeObs:  HDF5 input file {self.file_hdf5} does not exist!")
         with h5py.File(self.file_hdf5, "r", libver="latest", swmr=True) as h5f:
@@ -97,7 +106,9 @@ class MergeObs(Task):
             return False
 
     def run(self):
-        print(f"MergeObs:  {self.hdf5_in}{self.hdf5_path} > {self.dat_out}")
+        print(
+            f"MergeObs:  {self.hdf5_in}:{self.hdf5_path} > {self.dat_out} & {self.wgt_out if self.wgt_out else '(no weights)'}"
+        )
         trim_threshold: float = self.config["merge"]["trim_threshold"]
         trim_max_fraction: float = self.config["merge"]["trim_max_fraction"]
         k_scan_nsteps: int = self.config["merge"]["k_scan_nsteps"]
@@ -109,8 +120,12 @@ class MergeObs(Task):
             nrows, ncols, ndat = h5dat_data.shape
             # > define arrays to avoid re-allocation
             bin_data = np.empty((ndat,), dtype=_dt_hist)
-            bin_sumf = np.empty((ndat + 1,), dtype=_dt_hist)  # one trailing entry to accumulate "trimmed" datasets
-            bin_mask = np.empty((ndat + 1,), dtype=np.int32)  # mask to keep track of trimmed data (0: active, 1: trimmed, 2: invalid, <0: merged)
+            bin_sumf = np.empty(
+                (ndat + 1,), dtype=_dt_hist
+            )  # one trailing entry to accumulate "trimmed" datasets
+            bin_mask = np.empty(
+                (ndat + 1,), dtype=np.int32
+            )  # mask to keep track of trimmed data (0: active, 1: trimmed, 2: invalid, <0: merged)
             # > buffers for intermediate operations
             bin_buf1 = np.empty((ndat + 1,), dtype=np.float64)
             bin_buf2 = np.empty((ndat + 1,), dtype=np.float64)
@@ -119,11 +134,9 @@ class MergeObs(Task):
             weights = np.full((nrows, ndat), np.nan, dtype=np.float64)  ### if self.grids else None
 
             # > more information needed for the output
-            if nx > 0:
-                xval = h5dat_data.dims[0][0][...]
-            else:
-                xval = None
+            xval = h5dat_data.dims[0][0][...] if nx > 0 else None
             labels = h5grp_obs.attrs.get("labels", None)
+            filenames = [str(self._local(f).absolute()) for f in h5grp_obs["files"].asstr()[:]]
 
             def combine_unweighted() -> tuple[np.float64, np.float64]:
                 # > unweigthed average as a reference
@@ -231,19 +244,27 @@ class MergeObs(Task):
                     # > some cleanup & flagging of invalid entries
                     bin_mask[:] = BinMask.ACTIVE  # switch on all entries
                     bin_mask[ndat] = BinMask.INVALID  # "trimmed" entry not yet populated
-                    bin_mask[:ndat][~np.isfinite(bin_data["result"])] = BinMask.INVALID  # discard all non-finite results (nan, +/- inf)
-                    bin_mask[:ndat][bin_data["neval"] <= 0] = BinMask.INVALID  # discard all entries with zero evaluations
+                    bin_mask[:ndat][~np.isfinite(bin_data["result"])] = (
+                        BinMask.INVALID
+                    )  # discard all non-finite results (nan, +/- inf)
+                    bin_mask[:ndat][bin_data["neval"] <= 0] = (
+                        BinMask.INVALID
+                    )  # discard all entries with zero evaluations
                     bin_sumf[bin_mask == BinMask.INVALID] = 0
                     # > error = zero should only happen if result is also zero
                     assert np.all(bin_data["result"][bin_data["error2"] == 0.0] == 0.0)
 
                     # > appy outlier trimming
                     # > we'll use MAD instead of IQR as it is easier to convert to a standard z-score
-                    _mask = (bin_mask == BinMask.ACTIVE) & (bin_sumf["error2"] > 0.0)  # exclude "zero bins" from being trimmed
+                    _mask = (bin_mask == BinMask.ACTIVE) & (
+                        bin_sumf["error2"] > 0.0
+                    )  # exclude "zero bins" from being trimmed
                     if trim_threshold > 0.0 and np.sum(_mask) > 1:
                         q25, q50, q75 = np.quantile(bin_data["result"][_mask[:ndat]], [0.25, 0.50, 0.75])
                         bin_buf1[:] = 0
-                        bin_buf1[_mask] = np.abs(bin_data["result"][_mask[:ndat]] - q50)  # `ndat` entry invalid: no need for [:ndat] on lhs
+                        bin_buf1[_mask] = np.abs(
+                            bin_data["result"][_mask[:ndat]] - q50
+                        )  # `ndat` entry invalid: no need for [:ndat] on lhs
                         mad = np.median(bin_buf1[_mask])
                         threshold = trim_threshold * (mad / 0.6745)  # convert to z-score
                         # > start trimming from the "worst" until we either run out or would exceed the max fraction
@@ -321,7 +342,7 @@ class MergeObs(Task):
 
                     merged_hist[irow, icol] = (_neval, *k_scan[-1][:2])
                     # > determine weights (only for the "central" prediction)
-                    if icol == 0:
+                    if self.wgt_out is not None and icol == 0:
                         for idat in range(ndat):
                             if (bin_mask[idat] == BinMask.INVALID) or (bin_mask[idat] == BinMask.TRIMMED):
                                 weights[irow, idat] = 0.0
@@ -342,17 +363,21 @@ class MergeObs(Task):
                                     # > find all children of the current node
                                     # print(f"  | {_inode}:{_nodes[_inode]} | {_nodes} | {np.flatnonzero(bin_mask == -_nodes[_inode])}")
                                     if _nodes[_inode] != 0:
-                                        _nodes = np.concatenate((_nodes, np.flatnonzero(bin_mask == -_nodes[_inode])))
+                                        _nodes = np.concatenate(
+                                            (_nodes, np.flatnonzero(bin_mask == -_nodes[_inode]))
+                                        )
                                     _inode += 1
                                 # print(f" > nodes[{idat}]: {_nodes}")
                                 for _inode in _nodes:
                                     weights[irow, _inode] = _iwgt * bin_data["neval"][_inode] / _neval
                         # print(f" > weights: {weights[irow,:]}")
-                        # print(f" > sum of weights [{irow}] = {np.sum(weights[irow, :]):.3f}")
-                        assert np.all(np.isfinite(weights[irow, :]))  # check that we have weights for all entries
+                        print(f" > sum of weights [{irow}] = {np.sum(weights[irow, :]):.3f}")
+                        assert np.all(
+                            np.isfinite(weights[irow, :])
+                        )  # check that we have weights for all entries
                         if not np.all(np.isfinite(weights[irow, :])):
                             print(f" > mask: {bin_mask}")
-                            time.sleep(10)
+                            time.sleep(5)
 
         with open(self.file_dat, "w") as df:
             if labels is not None:
@@ -367,11 +392,31 @@ class MergeObs(Task):
                             df.write("#overflow: ")
                     else:
                         for x in xval[irow]:
-                            df.write(f"{np.format_float_scientific(x): <23} ")
+                            df.write(f"{np.format_float_scientific(x): <25} ")
                 for icol in range(ncols):
-                    df.write(np.format_float_scientific(merged_hist["result"][irow, icol]) + " ")
-                    df.write(np.format_float_scientific(merged_hist["error2"][irow, icol]) + " ")
+                    df.write(f"{np.format_float_scientific(merged_hist['result'][irow, icol]): <25} ")
+                    df.write(f"{np.format_float_scientific(merged_hist['error2'][irow, icol]): <25} ")
                 df.write("\n")
+
+        if self.file_wgt is not None:
+            with open(self.file_wgt, "w") as wf:
+                wf.write(f"#nx={nx} ")
+                if xval is not None:
+                    if nx == 3:
+                        for irow in range(nrows):
+                            if np.all(np.isnan(xval[irow])):
+                                continue
+                            wf.write(
+                                f"[{np.format_float_scientific(xval[irow][0])},{np.format_float_scientific(xval[irow][-1])}] "
+                            )
+                wf.write("\n")
+                for idat in range(ndat):
+                    wf.write(filenames[idat] + " ")
+                    for irow in range(nrows):
+                        if xval is not None and np.all(np.isnan(xval[irow])):
+                            continue
+                        wf.write(np.format_float_scientific(weights[irow, idat]) + " ")
+                    wf.write("\n")
 
 
 class MergePart(DBMerge):
@@ -393,20 +438,32 @@ class MergePart(DBMerge):
         with self.session as session:
             pt: Part = session.get_one(Part, self.part_id)
             self._logger_prefix = (
-                self._logger_prefix + f"[{pt.name}" + (f", force={self.force}" if self.force else "") + (f", reset={time.ctime(self.reset_tag)}" if self.reset_tag > 0.0 else "") + "]"
+                self._logger_prefix
+                + f"[{pt.name}"
+                + (f", force={self.force}" if self.force else "")
+                + (f", reset={time.ctime(self.reset_tag)}" if self.reset_tag > 0.0 else "")
+                + "]"
             )
             self._debug(session, self._logger_prefix + "::init")
 
     @property
     def select_job(self):
         return (
-            select(Job).join(Part).where(Part.id == self.part_id).where(Part.active.is_(True)).where(Job.mode == ExecutionMode.PRODUCTION).where(Job.status.in_(JobStatus.success_list()))
+            select(Job)
+            .join(Part)
+            .where(Part.id == self.part_id)
+            .where(Part.active.is_(True))
+            .where(Job.mode == ExecutionMode.PRODUCTION)
+            .where(Job.status.in_(JobStatus.success_list()))
             # @todo: why did I have this? -> ".where(Job.timestamp < Part.timestamp)"
         )
 
     def complete(self) -> bool:
         with self.session as session:
             pt: Part = session.get_one(Part, self.part_id)
+
+            if pt.timestamp < self.reset_tag:
+                return False
 
             query_job = (
                 session.query(Job)
@@ -430,13 +487,11 @@ class MergePart(DBMerge):
 
             self._debug(
                 session,
-                self._logger_prefix + f"::complete:  #done={c_done}, #merged={c_merged}, timestamp={time.ctime(pt.timestamp)}",
+                self._logger_prefix
+                + f"::complete:  #done={c_done}, #merged={c_merged}, timestamp={time.ctime(pt.timestamp)}",
             )
 
             if self.force and c_done > 0:
-                return False
-
-            if pt.timestamp < self.reset_tag:
                 return False
 
             # > this is incorrect, as we need to wait for *all* pre-productions to be complete
@@ -450,15 +505,23 @@ class MergePart(DBMerge):
                 return True
 
             # > below min production number: force re-merge each time
-            if self.config["production"]["min_number"] > 0 and c_done > 0 and c_merged <= self.config["production"]["min_number"]:
+            if (
+                self.config["production"]["min_number"] > 0
+                and c_done > 0
+                and c_merged <= self.config["production"]["min_number"]
+            ):
                 return False
 
-            if float(c_done + c_merged + 1) / float(c_merged + 1) < self.config["production"]["fac_merge_trigger"]:
+            if (
+                float(c_done + c_merged + 1) / float(c_merged + 1)
+                < self.config["production"]["fac_merge_trigger"]
+            ):
                 return True
 
             self._debug(
                 session,
-                self._logger_prefix + f"::complete:  #done={c_done}, #merged={c_merged} => time for a re-merge",
+                self._logger_prefix
+                + f"::complete:  #done={c_done}, #merged={c_merged} => time for a re-merge",
             )
 
         return False
@@ -488,7 +551,7 @@ class MergePart(DBMerge):
 
             # > populate a dictionary with all histogram files (reduces IO)
             in_files: dict[str, list[GenericPath]] = dict()
-            single_file: str | None = self.config["run"].get("histograms_single_file", None)
+            single_file: str | None = self.config["run"].get("histograms_single_file")
             if single_file:
                 in_files[single_file] = []  # all hist in single file
             else:
@@ -577,7 +640,9 @@ class MergePart(DBMerge):
                                         # @todo move this one to a member function
                                         if h5grp_obs is not None:
                                             # > create empty datasets for this observable
-                                            _ = h5grp_obs.create_dataset("files", (0,), dtype=_dt_vstr, maxshape=(None,))
+                                            _ = h5grp_obs.create_dataset(
+                                                "files", (0,), dtype=_dt_vstr, maxshape=(None,)
+                                            )
                                             _ = h5grp_obs.create_dataset(
                                                 "data",
                                                 (nrows, ncols, 0),
@@ -585,7 +650,9 @@ class MergePart(DBMerge):
                                                 maxshape=(nrows, ncols, None),
                                             )
                                             if nx > 0:
-                                                h5dat_xval = h5grp_obs.create_dataset("xval", (nrows, nx), dtype=np.float64)
+                                                h5dat_xval = h5grp_obs.create_dataset(
+                                                    "xval", (nrows, nx), dtype=np.float64
+                                                )
                                                 # @todo: set up as dimensionscales
                                                 # @todo: do not forget about the overflow bin (fix some convention where to put it <-> same as for the data storage)
                                                 # @todo: h5dat_xval needs to be populatd with the bin edges (store above?)
@@ -642,7 +709,7 @@ class MergePart(DBMerge):
                                         else:
                                             assert ncols == ncols_
                             # > create empty datasets for this observable
-                            _ = h5grp_obs.create_dataset("file", (0,), dtype=_dt_vstr, maxshape=(None,))
+                            _ = h5grp_obs.create_dataset("files", (0,), dtype=_dt_vstr, maxshape=(None,))
                             h5dat_data = h5grp_obs.create_dataset(
                                 "data",
                                 (nrows, ncols, 0),
@@ -655,7 +722,9 @@ class MergePart(DBMerge):
                             )
                             # print(f"new data {(nrows, ncols, 0)}: chunks = {h5dat_data.chunks}")
                             if nx > 0:
-                                h5dat_xval = h5grp_obs.create_dataset("xval", (nrows, nx), dtype=np.float64, data=xval)
+                                h5dat_xval = h5grp_obs.create_dataset(
+                                    "xval", (nrows, nx), dtype=np.float64, data=xval
+                                )
                                 h5dat_xval.make_scale("x value")
                                 h5dat_data.dims[0].attach_scale(h5dat_xval)
 
@@ -671,12 +740,14 @@ class MergePart(DBMerge):
                 # @todo: add the single-file case some other time
                 for obs in in_files.keys():
                     h5grp_obs: h5py.Group = h5grp_pt[obs]
-                    h5dat_file: h5py.Dataset = h5grp_obs["file"]
+                    h5dat_file: h5py.Dataset = h5grp_obs["files"]
                     h5dat_data: h5py.Dataset = h5grp_obs["data"]
                     nrows, ncols, ndat_old = h5dat_data.shape
                     # in_files_old: list[GenericPath] = [file_path.decode("utf-8") for file_path in h5dat_file]
                     in_files_old: list[GenericPath] = [file_path for file_path in h5dat_file.asstr()[:]]
-                    in_files_new: list[GenericPath] = [file_path for file_path in in_files[obs] if file_path not in in_files_old]
+                    in_files_new: list[GenericPath] = [
+                        file_path for file_path in in_files[obs] if file_path not in in_files_old
+                    ]
                     ndat_new: int = len(in_files_new)
                     if ndat_new == 0:
                         # print(f"{pt.name}[{obs}]: nothing to append ({ndat_new}/{len(in_files_old)})")
@@ -704,8 +775,10 @@ class MergePart(DBMerge):
                                     continue  # skip empty lines
                                 if line.startswith("#"):
                                     if line.startswith("#overflow"):
-                                        # > parse the columns fof the line, discard nx columns
-                                        arr_f64 = np.fromstring(line.split(None, nx)[nx], dtype=np.float64, sep=" ")
+                                        # > parse the columns for the line, discard nx columns
+                                        arr_f64 = np.fromstring(
+                                            line.split(None, nx)[nx], dtype=np.float64, sep=" "
+                                        )
                                         # > slice into the row, update values
                                         h5dat_data["result", irow, :, idat] = arr_f64[0::2]
                                         h5dat_data["error2", irow, :, idat] = arr_f64[1::2] ** 2
@@ -725,16 +798,17 @@ class MergePart(DBMerge):
                                     h5dat_data["error2", irow, :, idat] = arr_f64[nx + 1 :: 2] ** 2
                                     irow += 1
 
-            # > dispatch HDF5 file to MergeObs for each observable separately
-            mrg_obs_list = yield [
-                self.clone(
-                    cls=MergeObs,
-                    hdf5_in=str((self._path / "raw" / f"{pt.name}.hdf5").relative_to(self._path)),
-                    hdf5_path=[f"{pt.name}", f"{obs}"],
-                    dat_out=str((mrg_path / f"{obs}.dat2").relative_to(self._path)),
-                )
-                for obs in self.config["run"]["histograms"]
-            ]
+            # # > dispatch HDF5 file to MergeObs for each observable separately
+            # mrg_obs_list = yield [
+            #     self.clone(
+            #         cls=MergeObs,
+            #         hdf5_in=str((self._path / "raw" / f"{pt.name}.hdf5").relative_to(self._path)),
+            #         hdf5_path=[f"{pt.name}", f"{obs}"],
+            #         dat_out=str((mrg_path / f"{obs}.dat2").relative_to(self._path)),
+            #         wgt_out=str((mrg_path / f"{obs}.weights.txt2").relative_to(self._path)),
+            #     )
+            #     for obs in self.config["run"]["histograms"]
+            # ]
             # print(f"{mrg_obs_list!r}")
             # for i, mrg_obs in enumerate(mrg_obs_list, start=1):
             #     print(f"{i}: {mrg_obs}")
@@ -755,7 +829,7 @@ class MergePart(DBMerge):
             for obs, hist_info in self.config["run"]["histograms"].items():
                 out_file: Path = mrg_path / f"{obs}.dat"
                 nx: int = hist_info["nx"]
-                qwgt: bool = self.grids and (hist_info.get("grid") is not None)
+                qwgt: bool = True  # self.grids and (hist_info.get("grid") is not None)
                 container = NNLOJETContainer(size=len(in_files[obs]), weights=qwgt)
                 obs_name: str | None = obs if single_file else None
                 for in_file in in_files[obs]:
@@ -781,9 +855,11 @@ class MergePart(DBMerge):
                 )
                 hist = container.merge(weighted=True)
                 hist.write_to_file(out_file)
+                print(" > merged histogram written to", out_file)
                 if qwgt:
                     weights_file = out_file.with_suffix(".weights.txt")
                     weights_file.write_text(hist.to_weights())
+                    print(" > weights written to", weights_file)
 
                 # > register cross section numbers
                 if "cumulant" in hist_info:
@@ -861,6 +937,18 @@ class MergePart(DBMerge):
             #     for in_file in in_files:
             #         out.write(str(in_file))
 
+            # > dispatch HDF5 file to MergeObs for each observable separately
+            mrg_obs_list = yield [
+                self.clone(
+                    cls=MergeObs,
+                    hdf5_in=str((self._path / "raw" / f"{pt.name}.hdf5").relative_to(self._path)),
+                    hdf5_path=[f"{pt.name}", f"{obs}"],
+                    dat_out=str((mrg_path / f"{obs}.dat2").relative_to(self._path)),
+                    wgt_out=str((mrg_path / f"{obs}.weights.txt2").relative_to(self._path)),
+                )
+                for obs in self.config["run"]["histograms"]
+            ]
+
         if not self.force:
             yield self.clone(cls=MergeAll)
 
@@ -875,7 +963,9 @@ class MergeAll(DBMerge):
         self._logger_prefix: str = "MergeAll"
         with self.session as session:
             if self.force or self.reset_tag > 0.0:
-                self._logger_prefix = self._logger_prefix + f"[force={self.force}, reset={time.ctime(self.reset_tag)}]"
+                self._logger_prefix = (
+                    self._logger_prefix + f"[force={self.force}, reset={time.ctime(self.reset_tag)}]"
+                )
             self._debug(session, self._logger_prefix + "::init")
         # > output directory
         self.mrg_path: Path = self._path.joinpath("result", "merge")
@@ -914,7 +1004,8 @@ class MergeAll(DBMerge):
             for pt in session.scalars(self.select_part):
                 self._debug(
                     session,
-                    self._logger_prefix + f"::complete:  {pt.name} {datetime.datetime.fromtimestamp(pt.timestamp)}",
+                    self._logger_prefix
+                    + f"::complete:  {pt.name} {datetime.datetime.fromtimestamp(pt.timestamp)}",
                 )
                 if pt.timestamp > timestamp:
                     return False
@@ -993,7 +1084,9 @@ class MergeAll(DBMerge):
             # > sum all parts for `*.dat2`
             for obs, hist_info in self.config["run"]["histograms"].items():
                 out_file: Path = self.mrg_path / f"{obs}.dat2"
-                self._logger(session, f"{self._logger_prefix}::run:  merging {obs} to {out_file}", level=LogLevel.WARN)
+                self._logger(
+                    session, f"{self._logger_prefix}::run:  merging {obs} to {out_file}", level=LogLevel.WARN
+                )
                 nx: int = hist_info["nx"]
                 if len(in_files[obs]) == 0:
                     self._logger(
@@ -1019,7 +1112,9 @@ class MergeFinal(DBMerge):
         self._logger_prefix: str = "MergeFinal"
         with self.session as session:
             if self.force or self.reset_tag > 0.0:
-                self._logger_prefix = self._logger_prefix + f"[force={self.force}, reset={time.ctime(self.reset_tag)}]"
+                self._logger_prefix = (
+                    self._logger_prefix + f"[force={self.force}, reset={time.ctime(self.reset_tag)}]"
+                )
             self._debug(session, self._logger_prefix + "::init")
 
         # > output directory
@@ -1073,7 +1168,8 @@ class MergeFinal(DBMerge):
 
                 self._debug(
                     session,
-                    self._logger_prefix + f"::run:  {out_order}: {list(map(lambda x: (x.id, x.ntot), matched_parts))}",
+                    self._logger_prefix
+                    + f"::run:  {out_order}: {list(map(lambda x: (x.id, x.ntot), matched_parts))}",
                 )
 
                 in_files = dict((obs, []) for obs in self.config["run"]["histograms"])
@@ -1143,7 +1239,11 @@ class MergeFinal(DBMerge):
                 # > sum all `*.dat2` files
                 for obs, hist_info in self.config["run"]["histograms"].items():
                     out_file: Path = self.fin_path / f"{out_order}.{obs}.dat2"
-                    self._logger(session, f"{self._logger_prefix}::run:  merging {obs} to {out_file}", level=LogLevel.WARN)
+                    self._logger(
+                        session,
+                        f"{self._logger_prefix}::run:  merging {obs} to {out_file}",
+                        level=LogLevel.WARN,
+                    )
                     nx: int = hist_info["nx"]
                     if len(in_files[obs]) == 0:
                         self._logger(
@@ -1183,7 +1283,8 @@ class MergeFinal(DBMerge):
             T_tot: float = sum(pt.Ttot for pt in session.scalars(select(Part).where(Part.active.is_(True))))
             self._logger(
                 session,
-                f"\n[blue]cross = ({self.result} +/- {self.error}) fb  [{rel_acc * 1e2:.3}%][/blue]" + f"\n[dim](total runtime invested: {format_time_interval(T_tot)})[/dim]",
+                f"\n[blue]cross = ({self.result} +/- {self.error}) fb  [{rel_acc * 1e2:.3}%][/blue]"
+                + f"\n[dim](total runtime invested: {format_time_interval(T_tot)})[/dim]",
             )
             # > use `distribute_time` to fetch optimization target
             # > & time estimate to reach desired accuracy
@@ -1200,12 +1301,14 @@ class MergeFinal(DBMerge):
             if rel_acc <= self.config["run"]["target_rel_acc"] * (1.05):
                 self._logger(
                     session,
-                    f"[green]reached rel. acc. {rel_acc * 1e2:.3}% on {opt_target}[/green] " + f"(requested: {self.config['run']['target_rel_acc'] * 1e2:.3}%)",
+                    f"[green]reached rel. acc. {rel_acc * 1e2:.3}% on {opt_target}[/green] "
+                    + f"(requested: {self.config['run']['target_rel_acc'] * 1e2:.3}%)",
                 )
             else:
                 self._logger(
                     session,
-                    f"[red]reached rel. acc. {rel_acc * 1e2:.3}% on {opt_target}[/red] " + f"(requested: {self.config['run']['target_rel_acc'] * 1e2:.3}%)",
+                    f"[red]reached rel. acc. {rel_acc * 1e2:.3}% on {opt_target}[/red] "
+                    + f"(requested: {self.config['run']['target_rel_acc'] * 1e2:.3}%)",
                 )
                 T_target: float = opt_dist["T_target"]
                 # > because of inequality constraints, need to loop to find reliable estimate
@@ -1216,5 +1319,8 @@ class MergeFinal(DBMerge):
                 njobs_target: int = sum(ires["njobs"] for _, ires in opt_dist["part"].items())
                 self._logger(
                     session,
-                    "still require about " + f"[bold]{format_time_interval(T_target)}[/bold]" + " of runtime to reach desired target accuracy" + f" [dim](approx. {njobs_target} jobs)[/dim]",
+                    "still require about "
+                    + f"[bold]{format_time_interval(T_target)}[/bold]"
+                    + " of runtime to reach desired target accuracy"
+                    + f" [dim](approx. {njobs_target} jobs)[/dim]",
                 )
