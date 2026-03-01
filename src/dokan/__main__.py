@@ -114,6 +114,44 @@ def main() -> None:
     console: Console = Console()
     cpu_count: int = multiprocessing.cpu_count()
 
+    def _load_config(run_path: str) -> Config:
+        """Load Config from disk, offering to update it if runcard template was manually edited."""
+        try:
+            return Config(path=run_path, default_ok=False)
+        except RuntimeError as exc:
+            _cfg = Config(path=run_path, default_ok=False, check_md5=False)
+
+            console.print(f"[yellow]Warning: runcard template was modified![/yellow] {exc}")
+            if not Confirm.ask("Update the configuration? (do at your own risk!)", default=False):
+                sys.exit(1)
+
+            run_path: Path = _cfg.path / _cfg["run"]["template"]
+            tmp_path: Path = _cfg.path / (_cfg["run"]["template"] + ".bak")
+            shutil.move(run_path, tmp_path)
+
+            runcard = Runcard(runcard=tmp_path)
+
+            if runcard.data["process_name"] != _cfg["process"]["name"]:
+                raise RuntimeError(
+                    f"process name in template {runcard.data['process_name']} does not match "
+                    f"the one in the config {_cfg['process']['name']}"
+                )
+            for pdf in runcard.data["PDFs"]:
+                if not check_PDF(_cfg["exe"]["path"], pdf):
+                    raise RuntimeError(f'PDF set: "{pdf}" not found')
+
+            _cfg["run"]["name"] = runcard.data["run_name"]
+            _cfg["run"]["histograms"] = runcard.data["histograms"]
+            if "histograms_single_file" in runcard.data:
+                _cfg["run"]["histograms_single_file"] = runcard.data["histograms_single_file"]
+            run_template: RuncardTemplate = runcard.to_template(run_path)
+            _cfg["run"]["md5"] = run_template.to_md5_hash()
+            tmp_path.unlink()
+
+            _cfg.write()
+            sys.exit(1)
+            return _cfg
+
     parser = argparse.ArgumentParser(description="dokan: an automated NNLOJET workflow")
     parser.add_argument("--exe", dest="exe", help="path to NNLOJET executable")
     parser.add_argument("-v", "--version", action="version", version="%(prog)s " + __version__)
@@ -302,7 +340,7 @@ def main() -> None:
     # >-----
     if args.action in ["init", "config"]:
         if args.action == "config":  # load!
-            config = Config(path=args.run_path, default_ok=False)
+            config = _load_config(args.run_path)
 
             # > advanced settings
             if args.advanced:
@@ -609,7 +647,7 @@ def main() -> None:
     nfailed_job: int = -1
 
     if args.action in ["submit", "doctor", "finalize"]:
-        config = Config(path=args.run_path, default_ok=False)
+        config = _load_config(args.run_path)
         channels = config["process"].pop("channels")
 
         # > CLI overrides: persistent overwrite --> config
