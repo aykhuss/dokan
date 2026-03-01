@@ -104,7 +104,7 @@ class Entry(DBTask):
             yield preprods
 
             self._logger(session, f"{self._logger_prefix}::run:  complete preprods -> MergeAll")
-            yield self.clone(MergeAll, force=True)
+            yield self.clone(MergeAll, force=True, reset_tag=self.run_tag)
 
             self._logger(session, f"{self._logger_prefix}::run:  complete MergeAll -> dispatch")
             n_dispatch: int = max(len(preprods), self.config["run"]["jobs_max_concurrent"])

@@ -165,6 +165,7 @@ def main() -> None:
         "--live-monitor", help="switch on/off the live monitor", action=argparse.BooleanOptionalAction
     )
     parser_submit.add_argument("--channels", nargs="+", default=None)
+    parser_submit.add_argument("--skip-channels", nargs="+", default=None)
 
     # > subcommand: doctor
     parser_doctor = subparsers.add_parser("doctor", help="your workflow wellness specialist 🩺")
@@ -561,6 +562,7 @@ def main() -> None:
     # > common settings & DBInit task
     channels: dict
     select_channels: list = []
+    skip_channels: list = []
     db_init: DBInit | None = None
     nactive_part: int = -1
     nactive_job: int = -1
@@ -602,10 +604,20 @@ def main() -> None:
                         ]:
                             select_channels.extend(matches)
                         else:
-                            console.print(f" > channel {ch!r} did not match, skipping")
+                            console.print(f" > --channels:  channel {ch!r} did not match, skipping")
                     if not select_channels:
                         console.print(f'no channels selected with "{args.channels}", exiting')
                         sys.exit(0)
+                if args.skip_channels is not None:
+                    for ch in args.skip_channels:
+                        if matches := [
+                            key
+                            for key in channels
+                            if key.upper() == ch.upper() or key.upper().startswith(ch.upper() + "_")
+                        ]:
+                            skip_channels.extend(matches)
+                        else:
+                            console.print(f" > --skip-channels:  channel {ch!r} did not match, skipping")
             case "doctor":
                 # > no monitor needed for doctor
                 config["ui"]["monitor"] = False
@@ -630,6 +642,7 @@ def main() -> None:
             config=config,  # override in "submit" action with `config`
             channels=channels,
             select_channels=select_channels,
+            skip_channels=skip_channels,
             run_tag=time.time(),
             order=config["run"]["order"],
         )
