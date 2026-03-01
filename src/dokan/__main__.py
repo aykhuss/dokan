@@ -130,6 +130,9 @@ def main() -> None:
     parser_config.add_argument("run_path", metavar="RUN", help="run directory")
     parser_config.add_argument("--merge", action="store_true", help="set default merge parameters")
     parser_config.add_argument("--advanced", action="store_true", help="advanced settings")
+    parser_config.add_argument(
+        "--restore-defaults", action="store_true", help="restore default configuration settings"
+    )
 
     # > subcommand: submit
     parser_submit = subparsers.add_parser("submit", help="submit a run")
@@ -416,6 +419,42 @@ def main() -> None:
                 console.print(f"[dim]k_scan_maxdev_steps = {config['merge']['k_scan_maxdev_steps']!r}[/dim]")
 
                 # > config with flags skip the default config options
+                config.write()
+                return
+
+            # > restore default setting from config.json shipped with dokan
+            if args.restore_defaults:
+                # > recursive function to traverse full config tree
+                def restore(cfg, parents: list = []) -> None:
+                    for k, v in cfg.items():
+                        # > some settings we don't want to overwrite
+                        if k in [
+                            "policy",
+                            "order",
+                            "target_rel_acc",
+                            "job_max_runtime",
+                            "jobs_max_total",
+                            "jobs_max_concurrent",
+                        ]:
+                            continue
+                        level = [*parents, k] if parents else [k]
+                        if isinstance(v, dict):
+                            restore(v, level)
+                        else:
+                            default_val = v
+                            current_ref = config
+                            for l in level[:-1]:
+                                current_ref = current_ref[l]
+                            current_val = current_ref[level[-1]]
+                            if default_val != current_val and Confirm.ask(
+                                f"restore default value for {'.'.join(level)}? "
+                                + f"[dim](default: {default_val!r}, current: {current_val!r})[/dim]",
+                                default=True,
+                            ):
+                                current_ref[level[-1]] = default_val
+
+                default_config: Config = Config(default_ok=True)
+                restore(default_config)
                 config.write()
                 return
 
