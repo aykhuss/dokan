@@ -190,6 +190,7 @@ def main() -> None:
         help="skip interpolation grids in the finalization",
         action=argparse.BooleanOptionalAction,
     )
+    parser_finalize.add_argument("--local-cores", type=int, help="maximum number of local cores")
     parser_finalize.add_argument(
         "--reset", action="store_true", help="remove all data created/populated by finalization"
     )
@@ -931,6 +932,7 @@ def main() -> None:
 
         # > CLI overrides
         skip_grids: bool = args.skip_grids if args.skip_grids is not None else False
+        local_ncores: int = max(2, args.local_cores) if args.local_cores is not None else cpu_count
 
         if args.reset:
             result_dir: Path = db_init._local("result")
@@ -966,7 +968,7 @@ def main() -> None:
             worker_scheduler_factory=WorkerSchedulerFactory(
                 resources={
                     # @todo allow `-j` flag for user to pick?
-                    "local_ncores": cpu_count,
+                    "local_ncores": local_ncores,
                     "DBTask": cpu_count + 1,
                 },
                 cache_task_completion=False,
@@ -975,7 +977,7 @@ def main() -> None:
                 wait_interval=0.1,
             ),
             detailed_summary=True,
-            workers=min(cpu_count, nactive_part) + 1,
+            workers=local_ncores + 1,
             local_scheduler=True,
             log_level="WARNING",
         )  # 'WARNING', 'INFO', 'DEBUG''
