@@ -149,7 +149,6 @@ def main() -> None:
             tmp_path.unlink()
 
             _cfg.write()
-            sys.exit(1)
             return _cfg
 
     parser = argparse.ArgumentParser(description="dokan: an automated NNLOJET workflow")
