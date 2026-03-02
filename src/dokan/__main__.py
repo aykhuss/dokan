@@ -114,6 +114,44 @@ def main() -> None:
     console: Console = Console()
     cpu_count: int = multiprocessing.cpu_count()
 
+    def _load_config(run_path: str) -> Config:
+        """Load Config from disk, offering to update it if runcard template was manually edited."""
+        try:
+            return Config(path=run_path, default_ok=False)
+        except RuntimeError as exc:
+            _cfg = Config(path=run_path, default_ok=False, check_md5=False)
+
+            console.print(f"[yellow]Warning: runcard template was modified![/yellow] {exc}")
+            if not Confirm.ask("Update the configuration? (do at your own risk!)", default=False):
+                sys.exit(1)
+
+            run_path: Path = _cfg.path / _cfg["run"]["template"]
+            tmp_path: Path = _cfg.path / (_cfg["run"]["template"] + ".bak")
+            shutil.move(run_path, tmp_path)
+
+            runcard = Runcard(runcard=tmp_path)
+
+            if runcard.data["process_name"] != _cfg["process"]["name"]:
+                raise RuntimeError(
+                    f"process name in template {runcard.data['process_name']} does not match "
+                    f"the one in the config {_cfg['process']['name']}"
+                )
+            for pdf in runcard.data["PDFs"]:
+                if not check_PDF(_cfg["exe"]["path"], pdf):
+                    raise RuntimeError(f'PDF set: "{pdf}" not found')
+
+            _cfg["run"]["name"] = runcard.data["run_name"]
+            _cfg["run"]["histograms"] = runcard.data["histograms"]
+            if "histograms_single_file" in runcard.data:
+                _cfg["run"]["histograms_single_file"] = runcard.data["histograms_single_file"]
+            run_template: RuncardTemplate = runcard.to_template(run_path)
+            _cfg["run"]["md5"] = run_template.to_md5_hash()
+            tmp_path.unlink()
+
+            _cfg.write()
+            sys.exit(1)
+            return _cfg
+
     parser = argparse.ArgumentParser(description="dokan: an automated NNLOJET workflow")
     parser.add_argument("--exe", dest="exe", help="path to NNLOJET executable")
     parser.add_argument("-v", "--version", action="version", version="%(prog)s " + __version__)
@@ -130,6 +168,9 @@ def main() -> None:
     parser_config.add_argument("run_path", metavar="RUN", help="run directory")
     parser_config.add_argument("--merge", action="store_true", help="set default merge parameters")
     parser_config.add_argument("--advanced", action="store_true", help="advanced settings")
+    parser_config.add_argument(
+        "--restore-defaults", action="store_true", help="restore default configuration settings"
+    )
 
     # > subcommand: submit
     parser_submit = subparsers.add_parser("submit", help="submit a run")
@@ -165,6 +206,7 @@ def main() -> None:
         "--live-monitor", help="switch on/off the live monitor", action=argparse.BooleanOptionalAction
     )
     parser_submit.add_argument("--channels", nargs="+", default=None)
+    parser_submit.add_argument("--skip-channels", nargs="+", default=None)
 
     # > subcommand: doctor
     parser_doctor = subparsers.add_parser("doctor", help="your workflow wellness specialist 🩺")
@@ -189,6 +231,7 @@ def main() -> None:
         help="skip interpolation grids in the finalization",
         action=argparse.BooleanOptionalAction,
     )
+    parser_finalize.add_argument("--local-cores", type=int, help="maximum number of local cores")
     parser_finalize.add_argument(
         "--reset", action="store_true", help="remove all data created/populated by finalization"
     )
@@ -297,7 +340,7 @@ def main() -> None:
     # >-----
     if args.action in ["init", "config"]:
         if args.action == "config":  # load!
-            config = Config(path=args.run_path, default_ok=False)
+            config = _load_config(args.run_path)
 
             # > advanced settings
             if args.advanced:
@@ -414,6 +457,42 @@ def main() -> None:
                 console.print(f"[dim]k_scan_maxdev_steps = {config['merge']['k_scan_maxdev_steps']!r}[/dim]")
 
                 # > config with flags skip the default config options
+                config.write()
+                return
+
+            # > restore default setting from config.json shipped with dokan
+            if args.restore_defaults:
+                # > recursive function to traverse full config tree
+                def restore(cfg, parents: list = []) -> None:
+                    for k, v in cfg.items():
+                        # > some settings we don't want to overwrite
+                        if k in [
+                            "policy",
+                            "order",
+                            "target_rel_acc",
+                            "job_max_runtime",
+                            "jobs_max_total",
+                            "jobs_max_concurrent",
+                        ]:
+                            continue
+                        level = [*parents, k] if parents else [k]
+                        if isinstance(v, dict):
+                            restore(v, level)
+                        else:
+                            default_val = v
+                            current_ref = config
+                            for l in level[:-1]:
+                                current_ref = current_ref[l]
+                            current_val = current_ref[level[-1]]
+                            if default_val != current_val and Confirm.ask(
+                                f"restore default value for {'.'.join(level)}? "
+                                + f"[dim](default: {default_val!r}, current: {current_val!r})[/dim]",
+                                default=True,
+                            ):
+                                current_ref[level[-1]] = default_val
+
+                default_config: Config = Config(default_ok=True)
+                restore(default_config)
                 config.write()
                 return
 
@@ -561,13 +640,14 @@ def main() -> None:
     # > common settings & DBInit task
     channels: dict
     select_channels: list = []
+    skip_channels: list = []
     db_init: DBInit | None = None
     nactive_part: int = -1
     nactive_job: int = -1
     nfailed_job: int = -1
 
     if args.action in ["submit", "doctor", "finalize"]:
-        config = Config(path=args.run_path, default_ok=False)
+        config = _load_config(args.run_path)
         channels = config["process"].pop("channels")
 
         # > CLI overrides: persistent overwrite --> config
@@ -602,10 +682,20 @@ def main() -> None:
                         ]:
                             select_channels.extend(matches)
                         else:
-                            console.print(f" > channel {ch!r} did not match, skipping")
+                            console.print(f" > --channels:  channel {ch!r} did not match, skipping")
                     if not select_channels:
                         console.print(f'no channels selected with "{args.channels}", exiting')
                         sys.exit(0)
+                if args.skip_channels is not None:
+                    for ch in args.skip_channels:
+                        if matches := [
+                            key
+                            for key in channels
+                            if key.upper() == ch.upper() or key.upper().startswith(ch.upper() + "_")
+                        ]:
+                            skip_channels.extend(matches)
+                        else:
+                            console.print(f" > --skip-channels:  channel {ch!r} did not match, skipping")
             case "doctor":
                 # > no monitor needed for doctor
                 config["ui"]["monitor"] = False
@@ -630,6 +720,7 @@ def main() -> None:
             config=config,  # override in "submit" action with `config`
             channels=channels,
             select_channels=select_channels,
+            skip_channels=skip_channels,
             run_tag=time.time(),
             order=config["run"]["order"],
         )
@@ -918,10 +1009,11 @@ def main() -> None:
 
         # > CLI overrides
         skip_grids: bool = args.skip_grids if args.skip_grids is not None else False
+        local_ncores: int = max(2, args.local_cores) if args.local_cores is not None else cpu_count
 
         if args.reset:
             result_dir: Path = db_init._local("result")
-            if Confirm.ask(
+            if result_dir.exists() and Confirm.ask(
                 f"[red]reset[/red] confirm deletion of: [italic]{result_dir}[/italic]", default=True
             ):
                 shutil.rmtree(result_dir)
@@ -953,7 +1045,7 @@ def main() -> None:
             worker_scheduler_factory=WorkerSchedulerFactory(
                 resources={
                     # @todo allow `-j` flag for user to pick?
-                    "local_ncores": cpu_count,
+                    "local_ncores": local_ncores,
                     "DBTask": cpu_count + 1,
                 },
                 cache_task_completion=False,
@@ -962,7 +1054,7 @@ def main() -> None:
                 wait_interval=0.1,
             ),
             detailed_summary=True,
-            workers=min(cpu_count, nactive_part) + 1,
+            workers=local_ncores + 1,
             local_scheduler=True,
             log_level="WARNING",
         )  # 'WARNING', 'INFO', 'DEBUG''

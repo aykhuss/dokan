@@ -37,8 +37,10 @@ class DBInit(DBTask):
 
     channels: dict = luigi.DictParameter()  # all channels
     order: int = luigi.IntParameter(default=Order.NNLO)
-    # if select_channels is non-empty, we ignore the order
+    # > if select_channels is non-empty, we ignore the order
     select_channels: list[str] = luigi.ListParameter(default=[])
+    # > we also allow to specify a list of channels to skip
+    skip_channels: list[str] = luigi.ListParameter(default=[])
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -63,23 +65,39 @@ class DBInit(DBTask):
             invalid/missing `order` field.
 
         """
+        result: list[str] = []
+
+        # > first, determine the initial activation list based on select_channels or order
         if self.select_channels:
             unknown = [name for name in self.select_channels if name not in self.channels]
             if unknown:
                 raise ValueError(
                     f"{self._logger_prefix}::init: select_channels contains unknown entries: {unknown}"
                 )
-            return self.select_channels
+            # return self.select_channels
+            result = self.select_channels
+        else:
+            target_order: Order = Order(self.order)
+            activate: list[str] = []
+            for name, channel_info in self.channels.items():
+                if "order" not in channel_info:
+                    raise ValueError(f"{self._logger_prefix}::init: channel {name!r} has no 'order' entry")
+                channel_order = Order(channel_info["order"])
+                if channel_order.is_in(target_order):
+                    activate.append(name)
+            # return activate
+            result = activate
 
-        target_order: Order = Order(self.order)
-        activate: list[str] = []
-        for name, channel_info in self.channels.items():
-            if "order" not in channel_info:
-                raise ValueError(f"{self._logger_prefix}::init: channel {name!r} has no 'order' entry")
-            channel_order = Order(channel_info["order"])
-            if channel_order.is_in(target_order):
-                activate.append(name)
-        return activate
+        # > apply skip list
+        if self.skip_channels:
+            unknown_skip = [name for name in self.skip_channels if name not in self.channels]
+            if unknown_skip:
+                raise ValueError(
+                    f"{self._logger_prefix}::init: skip_channels contains unknown entries: {unknown_skip}"
+                )
+            result = [name for name in result if name not in self.skip_channels]
+
+        return result
 
     def complete(self) -> bool:
         """Check if DB activation flags match the requested channel selection."""
