@@ -32,3 +32,11 @@ class LogLevel(IntEnum):
     @staticmethod
     def parse(s: str):
         return LogLevel[s.upper()]
+
+    @staticmethod
+    def argparse(s: str):
+        """method for `argparse`"""
+        try:
+            return LogLevel.parse(s)
+        except KeyError:
+            return s
