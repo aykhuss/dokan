@@ -51,7 +51,7 @@ class DBMerge(DBTask, metaclass=ABCMeta):
     # > flag to force a re-merge (if new jobs are in a `done` state but not yet `merged`)
     force: bool = luigi.BoolParameter(default=False)
     # > tag to trigger a reset to initiate a re-merge from scratch (timestamp)
-    reset_tag: float = luigi.FloatParameter(default=-1.0)
+    reset_tag: float = luigi.FloatParameter(default=0.0)
     # > flag to trigger write-out of weights for interpolation grids
     grids: bool = luigi.BoolParameter(default=False)
 
@@ -589,7 +589,9 @@ class MergePart(DBMerge):
                                 + f"unmatched observable {dat.group(1)}?! ({in_files.keys()})",
                             )
                 job.status = JobStatus.MERGED
-
+            # > this forces MergePart into an incomplete state
+            # > that persists across the MergeObs yielding below
+            pt.timestamp = -1.0
             self._safe_commit(session)
 
             #############################
@@ -910,16 +912,18 @@ class MergePart(DBMerge):
             pt.error = abs(rel_cross_err * pt.result)
 
             pt.timestamp = time.time()
-            self._safe_commit(session)
             self._debug(
                 session,
                 self._logger_prefix
                 + f"::run: {max_rel_hist_err=}  pt.result = {pt.result} +/- {pt.error} (rel_err = {rel_cross_err:.3e})",
             )
+            self._safe_commit(session)
 
             #############################
 
-        if not self.force:
+        if not self.force and resize_max <= 1:
+            # > we have to skip pre-productions to trigger `MergeAll`
+            # > as it is not guaranteed that all parts exist yet
             yield self.clone(cls=MergeAll)
 
 
@@ -993,6 +997,7 @@ class MergeAll(DBMerge):
             opt_target_ref: float = 0.0
             opt_target_rel: float = 0.0
             for pt in session.scalars(self.select_part):
+                self._debug(session, self._logger_prefix + f"::run:  processing part {pt.name}: {pt.result} +/- {pt.error}")
                 opt_target_ref += pt.result
                 opt_target_rel += pt.error**2
                 for obs in self.config["run"]["histograms"]:
