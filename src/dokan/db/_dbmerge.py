@@ -921,7 +921,7 @@ class MergePart(DBMerge):
 
             #############################
 
-        if not self.force and resize_max <= 1:
+        if not self.force and resize_max > 1:
             # > we have to skip pre-productions to trigger `MergeAll`
             # > as it is not guaranteed that all parts exist yet
             yield self.clone(cls=MergeAll)
