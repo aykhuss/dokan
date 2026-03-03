@@ -114,20 +114,20 @@ def main() -> None:
     console: Console = Console()
     cpu_count: int = multiprocessing.cpu_count()
 
-    def _load_config(run_path: str) -> Config:
+    def _load_config(rp: str) -> Config:
         """Load Config from disk, offering to update it if runcard template was manually edited."""
         try:
-            return Config(path=run_path, default_ok=False)
+            return Config(path=rp, default_ok=False)
         except RuntimeError as exc:
-            _cfg = Config(path=run_path, default_ok=False, check_md5=False)
+            _cfg = Config(path=rp, default_ok=False, check_md5=False)
 
             console.print(f"[yellow]Warning: runcard template was modified![/yellow] {exc}")
             if not Confirm.ask("Update the configuration? (do at your own risk!)", default=False):
                 sys.exit(1)
 
-            run_path: Path = _cfg.path / _cfg["run"]["template"]
+            rp: Path = _cfg.path / _cfg["run"]["template"]
             tmp_path: Path = _cfg.path / (_cfg["run"]["template"] + ".bak")
-            shutil.move(run_path, tmp_path)
+            shutil.move(rp, tmp_path)
 
             runcard = Runcard(runcard=tmp_path)
 
@@ -144,7 +144,7 @@ def main() -> None:
             _cfg["run"]["histograms"] = runcard.data["histograms"]
             if "histograms_single_file" in runcard.data:
                 _cfg["run"]["histograms_single_file"] = runcard.data["histograms_single_file"]
-            run_template: RuncardTemplate = runcard.to_template(run_path)
+            run_template: RuncardTemplate = runcard.to_template(rp)
             _cfg["run"]["md5"] = run_template.to_md5_hash()
             tmp_path.unlink()
 
@@ -203,6 +203,13 @@ def main() -> None:
     )
     parser_submit.add_argument(
         "--live-monitor", help="switch on/off the live monitor", action=argparse.BooleanOptionalAction
+    )
+    parser_submit.add_argument(
+        "--log-level",
+        type=LogLevel.argparse,
+        choices=list(ll for ll in LogLevel if int(ll) > 0),  # exclude signals
+        dest="log_level",
+        help="the logging level for the execution",
     )
     parser_submit.add_argument("--channels", nargs="+", default=None)
     parser_submit.add_argument("--skip-channels", nargs="+", default=None)
@@ -672,6 +679,8 @@ def main() -> None:
                     config["warmup"]["frozen"] = args.skip_warmup
                 if args.live_monitor is not None:
                     config["ui"]["monitor"] = args.live_monitor
+                if args.log_level is not None:
+                    config["ui"]["log_level"] = args.log_level
                 if args.channels is not None:
                     for ch in args.channels:
                         if matches := [
