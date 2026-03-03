@@ -817,7 +817,7 @@ class MergePart(DBMerge):
                 if obs in resize_obs
             }
             self._debug(
-                session, self._logger_prefix + f"::run:  yield {[obs.dat_out for obs in mrg_obs_dict]}"
+                session, self._logger_prefix + f"::run:  yield {[mrg_obs.dat_out for mrg_obs in mrg_obs_dict.values()]} for merging ..."
             )
             yield list(mrg_obs_dict.values())
 
