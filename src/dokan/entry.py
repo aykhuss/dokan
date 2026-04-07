@@ -54,7 +54,9 @@ class Entry(DBTask):
     def _rebind_run_tag(self, session) -> None:
         """Move resurrected warmup jobs onto the current run tag.
 
-        We don't do this for production to not count them towards the task limits
+        Production resurrection jobs are deliberately left on their original
+        run tag so they do not count against the current submission's concurrency
+        and total-job limits.
         """
         if not self._resurrect_jobs:
             return
@@ -107,9 +109,9 @@ class Entry(DBTask):
             yield self.clone(MergeAll, force=True, reset_tag=self.run_tag)
 
             self._logger(session, f"{self._logger_prefix}::run:  complete MergeAll -> dispatch")
-            n_dispatch: int = max(len(preprods), self.config["run"]["jobs_max_concurrent"])
-            dispatch: list = [self.clone(DBDispatch, id=0, _n=n) for n in range(n_dispatch)]
-            dispatch[0]._repopulate(session)
+            dispatch: list = [self.clone(DBDispatch, id=0, _n=0)]
+            _ = dispatch[0]._reset_dispatch_done(session)
+            _ = dispatch[0]._repopulate(session)
             # > add production resurrection tasks
             if self._resurrect_jobs:
                 dispatch = [
@@ -126,5 +128,6 @@ class Entry(DBTask):
             self._logger(session, f"{self._logger_prefix}::run:  complete dispatch -> MergeFinal")
             yield self.clone(MergeFinal, force=True)
             # yield self.clone(MergeFinal, force=True, reset_tag=time.time(), grids=True)
-            # > should already been triggered in MergeFinal but for good measure
+            # > SIG_COMP may already be written inside MergeFinal; log it here explicitly
+            # > so that Entry.complete() is satisfied even if MergeFinal skips it
             self._logger(session, f"{self._logger_prefix}::run:  complete", level=LogLevel.SIG_COMP)

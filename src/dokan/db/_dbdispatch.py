@@ -25,7 +25,7 @@ from ..exe import ExecutionMode
 from ._dbrunner import DBRunner
 from ._dbtask import DBTask
 from ._jobstatus import JobStatus
-from ._sqla import Job, Part
+from ._sqla import Job, Log, Part
 
 # _console = Console()
 
@@ -39,16 +39,17 @@ class DBDispatch(DBTask):
     (`DBDispatch`) to avoid concurrent queue mutation by multiple schedulers.
     """
 
-    # > dynamic selection: 0
-    # > pick a specific `Job` by id: > 0
-    # > restrict to specific `Part` by id: < 0 [take abs]
+    # > id semantics:
+    # >   0  — dynamic global scheduling
+    # >  >0  — dispatch a specific Job by its primary key
+    # >  <0  — restrict dispatch to all jobs of Part abs(id)
     id: int = luigi.IntParameter(default=0)
 
-    # > in order to be able to create multiple id==0 dispatchers,
-    # > need an additional parameter to distinguish them
+    # > _n distinguishes successive id==0 dispatchers in the chain
+    # > (Luigi deduplicates tasks by parameters, so _n must differ per wave)
     _n: int = luigi.IntParameter(default=0)
 
-    # > mode and policy must be set already before dispatch!
+    # > execution mode and policy are fixed at queue time; dispatch reads them from the DB
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -65,7 +66,7 @@ class DBDispatch(DBTask):
         else:
             return super().resources
 
-    priority = 5
+    priority = 5  # run dispatchers before lower-priority tasks (default is 0)
 
     @property
     def select_job(self):
@@ -80,23 +81,98 @@ class DBDispatch(DBTask):
             return slct
 
     def complete(self) -> bool:
-        """Return True when no matching jobs remain in `QUEUED` state."""
+        """Return True when dispatch is fully settled.
+
+        For dynamic dispatch (`id == 0`): waits for an explicit `SIG_DISPATCH_DONE`
+        signal (written by `_repopulate` when budget or accuracy conditions are met)
+        *and* confirms no active jobs remain.
+
+        For bounded dispatch (`id != 0`): the simpler "no QUEUED jobs" check suffices
+        because the job set is fixed at creation time.
+        """
         with self.session as session:
+            if self.id == 0:
+                sig = session.scalars(
+                    select(Log).where(Log.level == LogLevel.SIG_DISPATCH_DONE).order_by(Log.id.desc())
+                ).first()
+                if sig is None:
+                    self._debug(session, self._logger_prefix + "::complete:  False (no signal)")
+                    return False
+                active = session.scalars(
+                    self.select_job.where(Job.status.in_(JobStatus.active_list()))
+                ).first()
+                done = active is None
+                self._debug(session, self._logger_prefix + f"::complete:  {done} (signal present)")
+                return done
+            # id != 0: finite dispatch — no QUEUED is sufficient
             if session.scalars(self.select_job.where(Job.status == JobStatus.QUEUED)).first() is not None:
                 self._debug(session, self._logger_prefix + "::complete:  False")
                 return False
-        self._debug(session, self._logger_prefix + "::complete:  True")
+            self._debug(session, self._logger_prefix + "::complete:  True")
         return True
 
-    def _repopulate(self, session: Session):
-        """Populate queue and select the next part to dispatch.
+    def _reset_dispatch_done(self, session: Session) -> int:
+        """Downgrade all `SIG_DISPATCH_DONE` log entries to `INFO`.
+
+        This re-opens dynamic dispatch after it has been terminated (e.g. when
+        resuming from a doctor/resurrection run that adds new budget or changes
+        the accuracy target).  The log entries are preserved their level is
+        merely lowered so that `complete()` no longer treats them as a terminal
+        signal.
+
+        Parameters
+        ----------
+        session : Session
+            Active SQLAlchemy session (must be bound to the log database).
+
+        Returns
+        -------
+        int
+            Number of log entries that were downgraded.
+        """
+        signals = list(session.scalars(select(Log).where(Log.level == LogLevel.SIG_DISPATCH_DONE)))
+        for sig in signals:
+            sig.level = LogLevel.INFO
+            sig.message = "[reset] " + sig.message
+        if signals:
+            self._safe_commit(session)
+            self._logger(
+                session,
+                self._logger_prefix
+                + f"::reset_dispatch_done:  downgraded {len(signals)} SIG_DISPATCH_DONE signal(s) to INFO",
+            )
+        return len(signals)
+
+    def _repopulate(self, session: Session) -> bool:
+        """Populate the job queue and select the next part to dispatch.
+
+        For `id == 0` (dynamic mode) this is the main scheduling engine: it
+        checks remaining budget and accuracy, registers new `Job` rows via
+        `_distribute_time`, and selects which part should be dispatched next.
+        For `id != 0` it only sets `self.part_id` from the DB and returns.
+
+        Parameters
+        ----------
+        session : Session
+            Active SQLAlchemy session bound to *both* databases.
+
+        Returns
+        -------
+        bool
+            ``True`` when the in-flight job count has reached
+            `jobs_max_concurrent` (throttled — caller should sleep and retry);
+            ``False`` when dispatch can proceed or a terminal condition was met.
 
         Side effects
         ------------
-        - May insert new `Job` rows (dynamic mode only, `id == 0`).
-        - Sets `self.part_id` to the part selected for dispatch.
-        - May remove queued jobs once target accuracy is reached.
+        - May insert new `Job` rows (dynamic mode only).
+        - Sets `self.part_id` to the part selected for the next dispatch batch,
+          or ``0`` when no part is ready (throttled or terminal).
+        - May delete QUEUED jobs and write a `SIG_DISPATCH_DONE` log entry when
+          budget is exhausted or the target accuracy has been reached.
         """
+        queue_full: bool = False
+
         if self.id > 0:
             job: Job = session.get_one(Job, self.id)
             self.part_id = job.part_id
@@ -105,7 +181,7 @@ class DBDispatch(DBTask):
             self.part_id = abs(self.id)
 
         if self.id != 0:
-            return
+            return queue_full
 
         def safe_rel_error(numerator: float, denominator: float) -> float:
             """Return a robust |numerator / denominator| for convergence checks.
@@ -123,12 +199,13 @@ class DBDispatch(DBTask):
         # > to get the correct state of self.part_id
         njobs_rem, T_rem = self._remainders(session)
 
-        # self._debug(
-        #     session, self._logger_prefix + "::repopulate:  " + f"njobs = {njobs_rem}, T = {T_rem}"
-        # )
+        self._debug(
+            session,
+            self._logger_prefix + "::repopulate: " + f"njobs = {njobs_rem}, T = {T_rem}",
+        )
 
-        # > queue up a new production job in the database and return job id's
         def queue_production(part_id: int, opt: dict) -> list[int]:
+            """Insert ``opt['njobs']`` new QUEUED production jobs and return their ids."""
             nonlocal session
             if opt["njobs"] <= 0:
                 return []
@@ -160,8 +237,8 @@ class DBDispatch(DBTask):
             self._safe_commit(session)
             return [job.id for job in jobs]
 
-        # > build up subquery to get Parts with job counts
         def job_count_subquery(js_list: list[JobStatus]):
+            """Return a subquery of (part_id, job_count) for jobs in the given statuses."""
             nonlocal session
             return (
                 session.query(Job.part_id, func.count(Job.id).label("job_count"))
@@ -173,16 +250,15 @@ class DBDispatch(DBTask):
             )
 
         # > populate until some termination condition is reached
-        qbreak: bool = False  # control where we break out (to set self.part_id)
         while True:
-            if njobs_rem <= 0 or T_rem <= 0.0:
-                qbreak = True
+            no_new_jobs: bool = njobs_rem <= 0 or T_rem <= 0.0
 
-            self.part_id = 0  # reset in each loop set @ break
+            self.part_id = 0  # reset in each loop, only set when a part is selected for dispatch
 
             # > get counters for termination conditions on #queued
             job_count_queued = job_count_subquery([JobStatus.QUEUED])
             job_count_active = job_count_subquery(JobStatus.active_list())
+            job_count_running = job_count_subquery([JobStatus.RUNNING])
             job_count_success = job_count_subquery(JobStatus.success_list())
             job_min_id_queued = (
                 session.query(Job.part_id, func.min(Job.id).label("job_id"))
@@ -192,17 +268,19 @@ class DBDispatch(DBTask):
                 .group_by(Job.part_id)
                 .subquery()
             )
-            # > get tuples (Part, #queued, #active, #success) ordered by #queued
+            # > get tuples (Part, #queued, #active, #running, #success, min_job_id) ordered by min_job_id
             sorted_parts = (
                 session.query(
                     Part,  # Part.id only?
                     job_count_queued.c.job_count,
                     job_count_active.c.job_count,
+                    job_count_running.c.job_count,
                     job_count_success.c.job_count,
                     job_min_id_queued.c.job_id,
                 )
                 .outerjoin(job_count_queued, Part.id == job_count_queued.c.part_id)
                 .outerjoin(job_count_active, Part.id == job_count_active.c.part_id)
+                .outerjoin(job_count_running, Part.id == job_count_running.c.part_id)
                 .outerjoin(job_count_success, Part.id == job_count_success.c.part_id)
                 .outerjoin(job_min_id_queued, Part.id == job_min_id_queued.c.part_id)
                 .filter(Part.active.is_(True))
@@ -212,54 +290,72 @@ class DBDispatch(DBTask):
             )
 
             # > termination condition based on #queued of individual jobs
-            qterm: bool = (
-                False  # separate variable avoid interfere with other termination conditions (rel acc, etc.)
-            )
+            # > separate variable avoid interfere with other termination conditions (rel acc, etc.)
+            qterm: bool = False
             tot_nque: int = 0
             tot_nact: int = 0
+            tot_nrun: int = 0
             tot_nsuc: int = 0
-            for pt, nque, nact, nsuc, jobid in sorted_parts:
-                self._debug(session, f"  >> {pt!r} | {nque} | {nact} | {nsuc} | {jobid}")
+            for pt, nque, nact, nrun, nsuc, jobid in sorted_parts:
+                qterm_pt: bool = False
                 nque = nque if nque else 0
                 nact = nact if nact else 0
+                nrun = nrun if nrun else 0
                 nsuc = nsuc if nsuc else 0
+                self._debug(session, f"  >> {pt!r} | {nque} | {nact} | {nrun} | {nsuc} | {jobid}")
                 tot_nque += nque
                 tot_nact += nact
+                tot_nrun += nrun
                 tot_nsuc += nsuc
                 # > implement termination conditions
                 if nque >= self.config["run"]["jobs_batch_size"]:
-                    qterm = True
+                    qterm_pt = True
                 # > initially, we prefer to increment jobs by 2x
                 if nque >= 2 * (nsuc + (nact - nque)):
-                    qterm = True
+                    qterm_pt = True
                 # @todo: more?
                 # > reset break flag in case below min batch size
                 if nque < self.config["run"]["jobs_batch_unit_size"]:
-                    qterm = False
-                # > found a part that should be dispatched:
-                if qterm and self.part_id <= 0:
+                    qterm_pt = False
+                # > found a part that should be dispatched (must have queued jobs):
+                if qterm_pt and self.part_id <= 0:
                     # > in case other conditions trigger:
                     # >  pick part with largest # of queued jobs
                     self.part_id = pt.id
                     #  break  # to get `tot_...` right, need to continue the loop
-            qbreak = qbreak or qterm  # combine the two
-            # > wait until # active jobs drops under max_concurrent with 25% buffer
-            if (tot_nact > tot_nque) and (tot_nact > 1.25 * self.config["run"]["jobs_max_concurrent"]):
+                qterm = qterm or qterm_pt
+            # > hold repopulation when slots are saturated and a queue buffer is already in place
+            # > use (active - queued) = DISPATCHED + RUNNING to count truly in-flight jobs
+            max_concurrent: int = self.config["run"]["jobs_max_concurrent"]
+            tot_inflight: int = tot_nact - tot_nque  # DISPATCHED + RUNNING
+            queue_full = (
+                queue_full
+                or tot_inflight >= max_concurrent
+            )
+            if queue_full:
                 self._logger(
                     session,
                     self._logger_prefix
                     + "::repopulate:  "
-                    + f"{tot_nact} v.s. {self.config['run']['jobs_max_concurrent']} -> sleeping",
+                    + f"{tot_inflight}/{tot_nact} in-flight"
+                    + f" v.s. {max_concurrent} max -> throttled",
                 )
-                time.sleep(0.1 * self.config["run"]["job_max_runtime"])
-                continue
-            # > the sole location where we break out of the infinite loop
-            if qbreak:
+                self.part_id = 0
+                return queue_full
+            # > break when the queue is full enough to dispatch, or budget is exhausted
+            if qterm or no_new_jobs:
                 if self.part_id > 0:
                     pt: Part = session.get_one(Part, self.part_id)
                     self._logger(
                         session,
                         self._logger_prefix + "::repopulate:  " + f"next:  {pt.name}",
+                    )
+                elif no_new_jobs:
+                    # > budget exhausted and no queued jobs left to dispatch: terminal
+                    self._logger(
+                        session,
+                        self._logger_prefix + "::repopulate:  budget exhausted",
+                        level=LogLevel.SIG_DISPATCH_DONE,
                     )
                 break
 
@@ -293,16 +389,20 @@ class DBDispatch(DBTask):
                 for job in session.scalars(self.select_job.where(Job.status == JobStatus.QUEUED)):
                     session.delete(job)
                 self._safe_commit(session)
-                qbreak = True
-                continue
+                self._logger(
+                    session,
+                    self._logger_prefix + "::repopulate:  target accuracy reached",
+                    level=LogLevel.SIG_DISPATCH_DONE,
+                )
+                break
             # @todo: place to inject the staggered merge settings?
 
             # > make sure we stay within `njobs` resource limits
             # > by decreasing the number of jobs in proportion to `T_opt`
             lim_njobs: int = min(njobs_rem, self.config["run"]["jobs_max_concurrent"])
             tot_njobs: int = sum(opt["njobs"] for opt in opt_dist["part"].values())
-            while tot_njobs > lim_njobs:
-                fac: float = (tot_njobs - lim_njobs) / float(tot_njobs)
+            while tot_njobs > lim_njobs and tot_njobs > 0:
+                fac: float = (tot_njobs - lim_njobs) / (float(tot_njobs) + 0.1)
                 tot_njobs = 0  # reset to re-accumulate
                 # > keep track of how many jobs were removed
                 del_njobs: int = 0
@@ -364,79 +464,120 @@ class DBDispatch(DBTask):
                 opt_dist["tot_error_estimate_jobs"], opt_dist["tot_result"]
             )
             if estimate_rel_acc <= self.config["run"]["target_rel_acc"]:
-                qbreak = True
-                continue
+                queue_full = True  # pause new jobs to be queued up
+                continue  # loop once more to pick part_id for the just-registered jobs
+
+        return queue_full
 
     def run(self):
-        """Dispatch a batch of queued jobs by spawning one `DBRunner`.
+        """Dispatch batches of queued jobs by spawning `DBRunner`s.
 
-        The selected batch receives contiguous seeds and is transitioned from
-        `QUEUED` to `DISPATCHED` before yielding the runner task.
+        Loops over `_repopulate` until no more parts need dispatching, collecting
+        one `DBRunner` per part per iteration.  For dynamic dispatch (`id == 0`)
+        all collected runners are yielded together with the *next* dispatcher in
+        the chain so that the next wave starts while the current runners are still
+        in flight — keeping total in-flight jobs close to `jobs_max_concurrent` at
+        all times.  The chain terminates when `_repopulate` writes a
+        `SIG_DISPATCH_DONE` log entry.
         """
+        queue_full: bool = True
+        while queue_full:
+            with self.session as session:
+                queue_full = self._repopulate(session)
+            if queue_full:
+                time.sleep(0.1 * self.config["run"]["job_max_runtime"])
+
+        runners: list[DBRunner] = []
+        done: bool = False
         with self.session as session:
             self._debug(session, self._logger_prefix + "::run:  " + f"part_id = {self.part_id}")
-            self._repopulate(session)
+            while True:
+                _ = self._repopulate(session)
 
-            # > queue empty and no job added in `repopulate`: we're done
-            if self.part_id <= 0:
-                return
-
-            # > get the queue
-            stmt = self.select_job.where(Job.status == JobStatus.QUEUED)
-            if self.id == 0:
-                stmt = stmt.where(Job.part_id == self.part_id)
-            # > compile batch in `id` order
-            jobs: list[Job] = [*session.scalars(stmt.order_by(Job.id.asc())).all()]
-            if jobs:
-                # > most recent entry [-1] sets overall statistics
-                for j in jobs:
-                    j.ncall = jobs[-1].ncall
-                    j.niter = jobs[-1].niter
-                    j.elapsed_time = jobs[-1].elapsed_time
-                if self.id == 0:  # only for production dispatch @todo think about warmup & pre-production
-                    # > try to exhaust the batch with multiples of the batch unit size
-                    nbatch_curr: int = min(len(jobs), self.config["run"]["jobs_batch_size"])
-                    nbatch_unit: int = self.config["run"]["jobs_batch_unit_size"]
-                    nbatch: int = (nbatch_curr // nbatch_unit) * nbatch_unit
-                    jobs = jobs[:nbatch]
-
-            # > set seeds for the jobs to prepare for a dispatch
-            if jobs:
-                # > get last job that has a seed assigned to it
-                last_job = session.scalars(
-                    select(Job)
-                    .where(Job.part_id == self.part_id)
-                    .where(Job.mode == jobs[0].mode)
-                    .where(Job.seed.is_not(None))
-                    .where(Job.seed > self.config["run"]["seed_offset"])
-                    # @todo not good enough, need a max to shield from another batch-job starting at larger value of seed?
-                    # determine upper bound by the max number of jobs? -> seems like a good idea
-                    .order_by(Job.seed.desc())
-                ).first()
-                seed_start: int = -1
-                if last_job and last_job.seed:
-                    self._debug(
-                        session,
-                        self._logger_prefix + "::run:  " + f"{self.id} last job:  {last_job!r}",
+                # > repopulate returned without selecting a part
+                if self.part_id <= 0:
+                    # > check whether a terminal signal was written this call
+                    done = (
+                        session.scalars(select(Log).where(Log.level == LogLevel.SIG_DISPATCH_DONE)).first()
+                        is not None
                     )
-                    seed_start = last_job.seed + 1
+                    break
+
+                # > get the queue
+                stmt = self.select_job.where(Job.status == JobStatus.QUEUED)
+                if self.id == 0:
+                    stmt = stmt.where(Job.part_id == self.part_id)
+                # > compile batch in `id` order
+                jobs: list[Job] = [*session.scalars(stmt.order_by(Job.id.asc())).all()]
+                if jobs:
+                    # > most recent entry [-1] sets overall statistics
+                    for j in jobs:
+                        j.ncall = jobs[-1].ncall
+                        j.niter = jobs[-1].niter
+                        j.elapsed_time = jobs[-1].elapsed_time
+                    if self.id == 0:  # only for production dispatch @todo think about warmup & pre-production
+                        # > try to exhaust the batch with multiples of the batch unit size;
+                        # > fall back to the partial remainder so we never drop queued jobs
+                        nbatch_curr: int = min(len(jobs), self.config["run"]["jobs_batch_size"])
+                        nbatch_unit: int = self.config["run"]["jobs_batch_unit_size"]
+                        nbatch: int = (nbatch_curr // nbatch_unit) * nbatch_unit
+                        if nbatch == 0:
+                            nbatch = nbatch_curr  # dispatch the partial batch rather than stalling
+                        jobs = jobs[:nbatch]
+
+                # > set seeds for the jobs to prepare for a dispatch
+                if jobs:
+                    # > get last job that has a seed assigned to it
+                    last_job = session.scalars(
+                        select(Job)
+                        .where(Job.part_id == self.part_id)
+                        .where(Job.mode == jobs[0].mode)
+                        .where(Job.seed.is_not(None))
+                        .where(Job.seed > self.config["run"]["seed_offset"])
+                        # @todo not good enough, need a max to shield from another batch-job starting at larger value of seed?
+                        # determine upper bound by the max number of jobs? -> seems like a good idea
+                        .order_by(Job.seed.desc())
+                    ).first()
+                    seed_start: int = -1
+                    if last_job and last_job.seed:
+                        self._debug(
+                            session,
+                            self._logger_prefix + "::run:  " + f"{self.id} last job:  {last_job!r}",
+                        )
+                        seed_start = last_job.seed + 1
+                    else:
+                        seed_start = self.config["run"]["seed_offset"] + 1
+
+                    for iseed, job in enumerate(jobs, seed_start):
+                        job.seed = iseed
+                        job.status = JobStatus.DISPATCHED
+                    self._safe_commit(session)
+
+                    # > collect Runner for this part
+                    pt: Part = session.get_one(Part, self.part_id)
+                    self._logger(
+                        session,
+                        self._logger_prefix
+                        + "::run:  "
+                        + f"submitting {pt.name} jobs with "
+                        + (
+                            f"seeds: {jobs[0].seed}-{jobs[-1].seed}"
+                            if len(jobs) > 1
+                            else f"seed: {jobs[0].seed}"
+                        ),
+                    )
+                    runners.append(
+                        self.clone(cls=DBRunner, ids=[job.id for job in jobs], part_id=self.part_id)
+                    )
                 else:
-                    seed_start = self.config["run"]["seed_offset"] + 1
+                    # > repopulate selected a part but no jobs were found: stop
+                    break
+            self._logger(session, self._logger_prefix + "::run:  " + f"yield {len(runners)} DBRunner")
 
-                for iseed, job in enumerate(jobs, seed_start):
-                    job.seed = iseed
-                    job.status = JobStatus.DISPATCHED
-                self._safe_commit(session)
-
-                # > time to dispatch Runners
-                pt: Part = session.get_one(Part, self.part_id)
-                self._logger(
-                    session,
-                    self._logger_prefix
-                    + "::run:  "
-                    + f"submitting {pt.name} jobs with "
-                    + (
-                        f"seeds: {jobs[0].seed}-{jobs[-1].seed}" if len(jobs) > 1 else f"seed: {jobs[0].seed}"
-                    ),
-                )
-                yield self.clone(cls=DBRunner, ids=[job.id for job in jobs], part_id=self.part_id)
+        # > for dynamic dispatch: yield runners alongside the next dispatcher so
+        # > the next wave starts while current runners are still in flight
+        next_tasks: list = list(runners)
+        if self.id == 0 and not done:
+            next_tasks.append(self.clone(DBDispatch, id=0, _n=self._n + 1))
+        if next_tasks:
+            yield next_tasks

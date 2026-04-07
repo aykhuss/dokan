@@ -819,7 +819,9 @@ class MergePart(DBMerge):
                 if obs in resize_obs
             }
             self._debug(
-                session, self._logger_prefix + f"::run:  yield {[mrg_obs.dat_out for mrg_obs in mrg_obs_dict.values()]} for merging ..."
+                session,
+                self._logger_prefix
+                + f"::run:  yield {[mrg_obs.dat_out for mrg_obs in mrg_obs_dict.values()]} for merging ...",
             )
             yield list(mrg_obs_dict.values())
 
@@ -997,7 +999,10 @@ class MergeAll(DBMerge):
             opt_target_ref: float = 0.0
             opt_target_rel: float = 0.0
             for pt in session.scalars(self.select_part):
-                self._debug(session, self._logger_prefix + f"::run:  processing part {pt.name}: {pt.result} +/- {pt.error}")
+                self._debug(
+                    session,
+                    self._logger_prefix + f"::run:  processing part {pt.name}: {pt.result} +/- {pt.error}",
+                )
                 opt_target_ref += pt.result
                 opt_target_rel += pt.error**2
                 for obs in self.config["run"]["histograms"]:

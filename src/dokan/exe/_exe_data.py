@@ -322,7 +322,7 @@ class ExeData(UserDict):
             return
 
         skip_entries: list[str] = [ExeData._file_tmp, ExeData._file_fin, "job.run"]
-        if self.data["mode"] == ExecutionMode.PRODUCTION:
+        if self.data.get("mode") == ExecutionMode.PRODUCTION:
             skip_entries.extend(self.data.get("input_files", []))
         if skip_files:
             skip_entries.extend(skip_files)

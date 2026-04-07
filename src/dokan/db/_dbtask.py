@@ -77,7 +77,7 @@ class DBTask(Task, metaclass=ABCMeta):
                     _console.print(
                         f"(c)[dim][{dt_str}][/dim](WARN): DBTask::_safe_commit locked, retrying..."
                     )
-                    time.sleep(1.0 + i * 0.5)  # exponential backoff
+                    time.sleep(1.75**i)  # exponential backoff
                     continue
                 raise e
             except Exception as e:
@@ -401,7 +401,13 @@ class DBTask(Task, metaclass=ABCMeta):
         tot_error: float = 0.0
         for pt in session.scalars(select(Part).where(Part.active.is_(True))):
             if pt.id not in cache:
-                raise RuntimeError(f"part {pt.id} not in cache?!")
+                self._logger(
+                    session,
+                    f"DBTask::_distribute_time: part {pt.id} ({pt.name!r}) has no production jobs"
+                    " for the current policy — skipping",
+                    LogLevel.WARN,
+                )
+                continue
             if cache[pt.id]["error"] > 0.0:
                 pt_min_error = min(pt_min_error, cache[pt.id]["error"])
                 pt_max_error = max(pt_max_error, cache[pt.id]["error"])
@@ -482,27 +488,31 @@ class DBTask(Task, metaclass=ABCMeta):
             # > and flag if parts were removed and we need to recompute
             acc_T_opt: float = 0.0
             no_negative_T_opt: bool = True
+            n_excluded_prev: int = sum(1 for ires in result["part"].values() if ires.get("T_opt", 1.0) <= 0.0)
             for part_id, ires in result["part"].items():
                 if ires.get("T_opt", 1.0) <= 0.0:
                     continue
                 # i_err_sqrtT: float = ires.pop("i_err_sqrtT")
                 i_err_sqrtT: float = ires.get("i_err_sqrtT")
                 i_T: float = ires.get("i_T")  # need it for error calc below
-                T_opt: float = (i_err_sqrtT / accum_err_sqrtT) * (T + accum_T) - i_T
+                T_opt: float = 0.0
+                if accum_err_sqrtT > 0.0:
+                    T_opt = (i_err_sqrtT / accum_err_sqrtT) * (T + accum_T) - i_T
                 if T_opt < 0.0:
                     no_negative_T_opt = False
                     T_opt = 0.0  # flag as excluded from optimization
                 ires["T_opt"] = T_opt
                 acc_T_opt += T_opt
-            # > check if all T_opt were positive
-            if no_negative_T_opt:
+            n_excluded_curr: int = sum(1 for ires in result["part"].values() if ires.get("T_opt", 1.0) <= 0.0)
+            # > check if all T_opt were positive, or no new exclusions (degenerate: avoid infinite loop)
+            if no_negative_T_opt or n_excluded_curr == n_excluded_prev:
                 self._debug(
                     session,
                     f"DBTask::_distribute_time:  skipped: {[part_id for part_id, ires in result['part'].items() if ires['T_opt'] <= 0.0]}",
                 )
                 for _, ires in result["part"].items():
                     del ires["i_err_sqrtT"]
-                break  # no more negative T_opt
+                break  # no more negative T_opt (or no progress — degenerate case)
 
         # > re-normalize at the end for good measure
         # > and compute an estimate for the error to be achieved

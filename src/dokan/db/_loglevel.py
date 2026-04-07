@@ -1,21 +1,22 @@
-"""Definition of logging levels and signals
-
-log levels used in `DBTask.logger` and displayed in `Monitor`
-as well as signals to trigger events such as the termination of the monitor.
-"""
+"""Numeric log levels and workflow control signals for the DBTask logging system."""
 
 from enum import IntEnum, unique
 
 
 @unique
 class LogLevel(IntEnum):
-    """possible log levels (c.f. logging module)"""
+    """Numeric log levels compatible with the standard `logging` module.
 
-    SIG_TERM = -10  # signal to terminate the monitor
-    SIG_SUB = -4  # signal to indicate new submission
-    SIG_FINI = -3  # signal to indicate finalize was triggered
-    SIG_UPDXS = -2  # signal to send an updated XS number
-    SIG_COMP = -1  # signal to indicate successful completion
+    Negative values are workflow control signals consumed by the Luigi
+    task graph and the monitor; positive values are ordinary log levels.
+    """
+
+    SIG_TERM = -10  # terminate the monitor
+    SIG_DISPATCH_DONE = -5  # dynamic dispatch has reached a terminal state (budget or accuracy)
+    SIG_SUB = -4  # new submission started
+    SIG_FINI = -3  # finalize was triggered
+    SIG_UPDXS = -2  # updated cross-section numbers are available
+    SIG_COMP = -1  # workflow completed successfully
     NOTSET = 0
     DEBUG = 10
     INFO = 20
@@ -35,7 +36,11 @@ class LogLevel(IntEnum):
 
     @staticmethod
     def argparse(s: str):
-        """method for `argparse`"""
+        """Parse a log-level string for use as an ``argparse`` type.
+
+        Returns the `LogLevel` on success, or the raw string on failure so
+        that argparse can generate a meaningful error message.
+        """
         try:
             return LogLevel.parse(s)
         except KeyError:
