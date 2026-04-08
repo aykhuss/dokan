@@ -352,7 +352,11 @@ class MergeObs(Task):
                                 _neval, _sumf, _sumf2 = bin_sumf[idat]
                                 _ierr2 = (_sumf2 - _sumf**2 / _neval) / _neval**2
                                 if _ierr2 <= 0.0:
-                                    assert merged_hist[irow, icol]["error2"] == 0.0
+                                    # > near-constant integrand: floating-point rounding makes the
+                                    # > variance estimate non-positive even though Σf² > 0.
+                                    # > combine_weighted() may still return a small non-zero merged
+                                    # > error from other active bins, so we cannot assert
+                                    # > merged_hist["error2"] == 0. Assign zero weight instead.
                                     _iwgt = 0.0
                                 else:
                                     _iwgt = (1.0 / _ierr2) * merged_hist[irow, icol]["error2"] ** 2
