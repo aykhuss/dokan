@@ -35,7 +35,9 @@ from ._sqla import Job, Log, Part
 
 # > some variable definitions
 _dt_vstr = h5py.string_dtype()
-_dt_hist = np.dtype([("neval", np.int64), ("result", np.float64), ("error2", np.float64)], align=True)
+_dt_hist = np.dtype([("result", np.float64), ("error2", np.float64)])  # HDF5 storage: per-job, per-bin
+_dt_cmlt = np.dtype([("neval", np.int64), ("sumf", np.float64), ("sumf2", np.float64)])  # in-memory cumulants
+_chunk_size: int = 256  # chunk size along the ndat axis
 
 
 @unique
@@ -116,12 +118,15 @@ class MergeObs(Task):
         with h5py.File(self.file_hdf5, "r", libver="latest", swmr=True) as h5f:
             h5grp_obs: h5py.Group = h5f["/".join(self.hdf5_path)]
             nx: int = h5grp_obs.attrs["nx"]
+            h5dat_neval: h5py.Dataset = h5grp_obs["neval"]
             h5dat_data: h5py.Dataset = h5grp_obs["data"]
             nrows, ncols, ndat = h5dat_data.shape
-            # > define arrays to avoid re-allocation
+            # > neval is per-job (identical across all bins): read once outside the loop
+            bin_neval: np.ndarray = h5dat_neval[:]
+            # > per-bin buffer reused across the (irow, icol) loop
             bin_data = np.empty((ndat,), dtype=_dt_hist)
-            bin_sumf = np.empty(
-                (ndat + 1,), dtype=_dt_hist
+            bin_cmlt = np.empty(
+                (ndat + 1,), dtype=_dt_cmlt
             )  # one trailing entry to accumulate "trimmed" datasets
             bin_mask = np.empty(
                 (ndat + 1,), dtype=np.int32
@@ -129,8 +134,9 @@ class MergeObs(Task):
             # > buffers for intermediate operations
             bin_buf1 = np.empty((ndat + 1,), dtype=np.float64)
             bin_buf2 = np.empty((ndat + 1,), dtype=np.float64)
-            # > the final merged result
+            # > the final merged result; neval tracked separately as sum of all job nevals
             merged_hist = np.zeros((nrows, ncols), dtype=_dt_hist)
+            neval_total: int = int(np.sum(bin_neval))
             weights = np.full((nrows, ndat), np.nan, dtype=np.float64)  ### if self.grids else None
 
             # > more information needed for the output
@@ -140,29 +146,28 @@ class MergeObs(Task):
 
             def combine_unweighted() -> tuple[np.float64, np.float64]:
                 # > unweigthed average as a reference
-                nonlocal bin_sumf, bin_mask
+                nonlocal bin_cmlt, bin_mask
                 _mask = bin_mask == BinMask.ACTIVE
-                _neval = np.sum(bin_sumf["neval"], where=_mask)
-                _result = np.sum(bin_sumf["result"], where=_mask) / _neval
-                _error = np.sqrt(np.sum(bin_sumf["error2"], where=_mask) - _result**2 * _neval) / _neval
+                _neval = np.sum(bin_cmlt["neval"], where=_mask)
+                _result = np.sum(bin_cmlt["sumf"], where=_mask) / _neval
+                _error = np.sqrt(np.sum(bin_cmlt["sumf2"], where=_mask) - _result**2 * _neval) / _neval
                 return _result, _error
 
             def combine_weighted() -> tuple[np.float64, np.float64]:
                 # > compute the weighted average using the sumf arrays
-                nonlocal bin_sumf, bin_mask
+                nonlocal bin_cmlt, bin_mask
                 nonlocal bin_buf1, bin_buf2
-                _mask = (bin_mask == BinMask.ACTIVE) & (bin_sumf["error2"] > 0.0)
+                _mask = (bin_mask == BinMask.ACTIVE) & (bin_cmlt["sumf2"] > 0.0)
                 bin_buf1[:] = 0
                 bin_buf2[:] = 0
-                np.multiply(bin_sumf["result"], bin_sumf["result"], out=bin_buf1, where=_mask)
-                np.divide(bin_buf1, bin_sumf["neval"], out=bin_buf1, where=_mask)
-                np.subtract(bin_sumf["error2"], bin_buf1, out=bin_buf1, where=_mask)
-                np.multiply(bin_sumf["neval"], bin_sumf["neval"], out=bin_buf2, where=_mask)
-                np.divide(bin_buf1, bin_buf2, out=bin_buf1, where=_mask)
-                np.reciprocal(bin_buf1, out=bin_buf1, where=_mask)
+                np.square(bin_cmlt["sumf"], out=bin_buf1, where=_mask)
+                np.divide(bin_buf1, bin_cmlt["neval"], out=bin_buf1, where=_mask)
+                np.subtract(bin_cmlt["sumf2"], bin_buf1, out=bin_buf1, where=_mask)
+                np.square(bin_cmlt["neval"], out=bin_buf2, where=_mask)
+                np.divide(bin_buf2, bin_buf1, out=bin_buf1, where=_mask)
                 _error = np.sum(bin_buf1[_mask])
                 if _error > 0.0:
-                    np.divide(bin_sumf["result"], bin_sumf["neval"], out=bin_buf2, where=_mask)
+                    np.divide(bin_cmlt["sumf"], bin_cmlt["neval"], out=bin_buf2, where=_mask)
                     np.multiply(bin_buf2, bin_buf1, out=bin_buf2, where=_mask)
                     _result = np.sum(bin_buf2, where=_mask) / _error
                     _error = 1.0 / np.sqrt(_error)
@@ -173,11 +178,11 @@ class MergeObs(Task):
 
             def merge_pair() -> None:
                 # > small & large stats to average out differences in (pseudo-)job statistics
-                nonlocal bin_sumf, bin_mask
-                _ibuf = np.argsort(bin_sumf["neval"])
+                nonlocal bin_cmlt, bin_mask
+                _ibuf = np.argsort(bin_cmlt["neval"])
                 _mask = bin_mask == BinMask.ACTIVE
                 nstart = np.sum(_mask)
-                # print(f"{bin_sumf["neval"]=}")
+                # print(f"{bin_cmlt["neval"]=}")
                 # print(f"{_ibuf=}")
                 # print(f"{_mask=}")
                 # > init indices
@@ -208,10 +213,10 @@ class MergeObs(Task):
                     # > this ensures that index `0` either remains ACTIVE or is merged
                     # > and we can use negative indices to keep track of merge history
                     low, upp = sorted((low, upp))  # reset below
-                    bin_sumf["neval"][upp] += bin_sumf["neval"][low]
-                    bin_sumf["result"][upp] += bin_sumf["result"][low]
-                    bin_sumf["error2"][upp] += bin_sumf["error2"][low]
-                    bin_sumf[low] = 0  # reset
+                    bin_cmlt["neval"][upp] += bin_cmlt["neval"][low]
+                    bin_cmlt["sumf"][upp] += bin_cmlt["sumf"][low]
+                    bin_cmlt["sumf2"][upp] += bin_cmlt["sumf2"][low]
+                    bin_cmlt[low] = 0  # reset
                     bin_mask[low] = -upp
                     _mask[low] = False
                     # print(f"  >  merged {low} into {upp}")
@@ -221,25 +226,25 @@ class MergeObs(Task):
                     low = _ibuf[ilow]
                     upp = _ibuf[iupp]
                 nend = np.sum(_mask)
-                assert nend < nstart
+                assert nend <= nstart
 
             for irow in range(nrows):
                 for icol in range(ncols):
                     # > populate the arrays to perform the merge
                     h5dat_data.read_direct(bin_data, source_sel=np.s_[irow, icol, :])
                     # > we operate on the f & f2 cumulants from here on, leave `bin_data` alone
-                    bin_sumf[:] = 0
-                    bin_sumf["neval"][:ndat] = bin_data["neval"]
-                    # X  bin_sumf["result"][:ndat] = bin_data["neval"] * bin_data["result"]
-                    np.multiply(bin_data["neval"], bin_data["result"], out=bin_sumf["result"][:ndat])
-                    # X  bin_sumf["error2"][:ndat] = bin_data["neval"] ** 2 * bin_data["error2"] + bin_data["neval"] * bin_data["result"] ** 2
+                    bin_cmlt[:] = 0
+                    bin_cmlt["neval"][:ndat] = bin_neval
+                    # X  bin_cmlt["sumf"][:ndat] = bin_neval * bin_data["result"]
+                    np.multiply(bin_neval, bin_data["result"], out=bin_cmlt["sumf"][:ndat])
+                    # X  bin_cmlt["sumf2"][:ndat] = bin_neval ** 2 * bin_data["error2"] + bin_neval * bin_data["result"] ** 2
                     bin_buf1[:] = 0
                     bin_buf2[:] = 0
-                    np.multiply(bin_data["neval"], bin_data["neval"], out=bin_buf1[:ndat])
+                    np.square(bin_neval, out=bin_buf1[:ndat])
                     np.multiply(bin_data["error2"], bin_buf1[:ndat], out=bin_buf1[:ndat])
-                    np.multiply(bin_data["result"], bin_data["result"], out=bin_buf2[:ndat])
-                    np.multiply(bin_data["neval"], bin_buf2[:ndat], out=bin_buf2[:ndat])
-                    np.add(bin_buf1[:ndat], bin_buf2[:ndat], out=bin_sumf["error2"][:ndat])
+                    np.square(bin_data["result"], out=bin_buf2[:ndat])
+                    np.multiply(bin_neval, bin_buf2[:ndat], out=bin_buf2[:ndat])
+                    np.add(bin_buf1[:ndat], bin_buf2[:ndat], out=bin_cmlt["sumf2"][:ndat])
 
                     # > some cleanup & flagging of invalid entries
                     bin_mask[:] = BinMask.ACTIVE  # switch on all entries
@@ -247,17 +252,17 @@ class MergeObs(Task):
                     bin_mask[:ndat][~np.isfinite(bin_data["result"])] = (
                         BinMask.INVALID
                     )  # discard all non-finite results (nan, +/- inf)
-                    bin_mask[:ndat][bin_data["neval"] <= 0] = (
+                    bin_mask[:ndat][bin_neval <= 0] = (
                         BinMask.INVALID
                     )  # discard all entries with zero evaluations
-                    bin_sumf[bin_mask == BinMask.INVALID] = 0
+                    bin_cmlt[bin_mask == BinMask.INVALID] = 0
                     # > error = zero should only happen if result is also zero
                     assert np.all(bin_data["result"][bin_data["error2"] == 0.0] == 0.0)
 
                     # > appy outlier trimming
                     # > we'll use MAD instead of IQR as it is easier to convert to a standard z-score
                     _mask = (bin_mask == BinMask.ACTIVE) & (
-                        bin_sumf["error2"] > 0.0
+                        bin_cmlt["sumf2"] > 0.0
                     )  # exclude "zero bins" from being trimmed
                     if trim_threshold > 0.0 and np.sum(_mask) > 1:
                         q25, q50, q75 = np.quantile(bin_data["result"][_mask[:ndat]], [0.25, 0.50, 0.75])
@@ -270,43 +275,44 @@ class MergeObs(Task):
                         # > start trimming from the "worst" until we either run out or would exceed the max fraction
                         # > skip `[_mask]` since initialised to zero (makes indexing easier than for sliced arrays)
                         # X  bin_mask[bin_buf1 > threshold] = BinMask.TRIMMED
-                        avg_neval = np.sum(bin_sumf["neval"][_mask]) / (1.0 + np.sum(_mask))
+                        avg_neval = np.sum(bin_cmlt["neval"][_mask]) / (np.sum(_mask) + 0.1)
                         ntrim: int = 0
-                        for itrim in np.argsort(bin_buf1)[::-1]:
+                        # for itrim in np.argsort(bin_buf1)[::-1]:
+                        for itrim in np.argsort(-bin_buf1):  # largest defiation first
                             if bin_buf1[itrim] <= threshold:
                                 break
                             if (ntrim + 1) > trim_max_fraction * ndat:
                                 break
                             # > we correct for the fact that the data samples can be based on different statistics
-                            if bin_buf1[itrim] > threshold * np.sqrt(avg_neval / bin_sumf["neval"][itrim]):
+                            if bin_buf1[itrim] > threshold * np.sqrt(avg_neval / bin_cmlt["neval"][itrim]):
                                 bin_mask[itrim] = BinMask.TRIMMED
                                 ntrim += 1
-                                # print(f" > trim {irow},{icol} [{itrim}] {bin_buf1[itrim]:.3f} > {threshold * np.sqrt(avg_neval / bin_sumf['neval'][itrim]):.3f} ({ntrim}/{ndat})")
+                                # print(f" > trim {irow},{icol} [{itrim}] {bin_buf1[itrim]:.3f} > {threshold * np.sqrt(avg_neval / bin_cmlt['neval'][itrim]):.3f} ({ntrim}/{ndat})")
                         # > we will not discard the trimmed datasets but actually accumulate them into a mega "outlier" dataset
                         # > which will eventually be suppressed in the weighted average by the large error
                         _mask = bin_mask == BinMask.TRIMMED
-                        bin_sumf["neval"][ndat] = np.sum(bin_sumf["neval"][_mask])
-                        bin_sumf["result"][ndat] = np.sum(bin_sumf["result"][_mask])
-                        bin_sumf["error2"][ndat] = np.sum(bin_sumf["error2"][_mask])
-                        bin_sumf[_mask] = 0
-                        bin_mask[ndat] = BinMask.ACTIVE if bin_sumf["neval"][ndat] > 0 else BinMask.INVALID
+                        bin_cmlt["neval"][ndat] = np.sum(bin_cmlt["neval"][_mask])
+                        bin_cmlt["sumf"][ndat] = np.sum(bin_cmlt["sumf"][_mask])
+                        bin_cmlt["sumf2"][ndat] = np.sum(bin_cmlt["sumf2"][_mask])
+                        bin_cmlt[_mask] = 0
+                        bin_mask[ndat] = BinMask.ACTIVE if bin_cmlt["neval"][ndat] > 0 else BinMask.INVALID
                         # if bin_mask[ndat] == BinMask.ACTIVE:
-                        #     print(f"trimmed {bin_sumf['neval'][ndat]} [{irow},{icol}]")
+                        #     print(f"trimmed {bin_cmlt['neval'][ndat]} [{irow},{icol}]")
                         bin_mask[ndat] = BinMask.INVALID  # keep it trimmed for now
 
-                    # print(f"\n### {self.hdf5_path[0]}__{self.hdf5_path[1]}__{irow}__{icol}  active = {np.sum(bin_mask == BinMask.ACTIVE)}, non-zero = {np.sum(bin_sumf['error2'] > 0.0)}")
+                    # print(f"\n### {self.hdf5_path[0]}__{self.hdf5_path[1]}__{irow}__{icol}  active = {np.sum(bin_mask == BinMask.ACTIVE)}, non-zero = {np.sum(bin_cmlt['error2'] > 0.0)}")
 
                     # > weighted average cannot deal with "zero bins" but those jobs still matter and should not be discarded
                     # > do a pairwise merge of (pseudo-)jobs until there are no "zero bins" or there's only one psuedo-job left
                     while True:
                         _mask = bin_mask == BinMask.ACTIVE
-                        if np.sum(_mask) <= 1 or np.sum(bin_sumf["error2"][_mask] == 0.0) <= 0:
+                        if np.sum(_mask) <= 1 or np.sum(bin_cmlt["sumf2"][_mask] == 0.0) <= 0:
                             break
-                        # print(f"  > merge {np.sum(bin_mask == BinMask.ACTIVE)} active bins, {np.sum(bin_sumf['error2'] > 0.0)} non-zero bins")
+                        # print(f"  > merge {np.sum(bin_mask == BinMask.ACTIVE)} active bins, {np.sum(bin_cmlt['error2'] > 0.0)} non-zero bins")
                         merge_pair()
 
                     # > perform the k-scan
-                    _neval = sum(bin_sumf["neval"])  # no mask(!) since err=0 events also count
+                    _neval = sum(bin_cmlt["neval"])  # no mask(!) since err=0 events also count
                     k_scan: list[tuple[np.float64, np.float64, np.int32]] = []
                     while True:
                         _result, _error = combine_weighted()
@@ -340,7 +346,7 @@ class MergeObs(Task):
                         # > prepare for the next step (pair up two pseudoruns into a single one)
                         merge_pair()
 
-                    merged_hist[irow, icol] = (_neval, *k_scan[-1][:2])
+                    merged_hist[irow, icol] = k_scan[-1][:2]
                     # > determine weights (only for the "central" prediction)
                     if self.wgt_out is not None and icol == 0:
                         for idat in range(ndat):
@@ -349,7 +355,7 @@ class MergeObs(Task):
                             elif bin_mask[idat] == BinMask.ACTIVE:
                                 # > the merged/absorbed data will be set in this "parent" active case
                                 # > the weight from the weighted average
-                                _neval, _sumf, _sumf2 = bin_sumf[idat]
+                                _neval, _sumf, _sumf2 = bin_cmlt[idat]
                                 _ierr2 = (_sumf2 - _sumf**2 / _neval) / _neval**2
                                 if _ierr2 <= 0.0:
                                     # > near-constant integrand: floating-point rounding makes the
@@ -373,7 +379,7 @@ class MergeObs(Task):
                                     _inode += 1
                                 # print(f" > nodes[{idat}]: {_nodes}")
                                 for _inode in _nodes:
-                                    weights[irow, _inode] = _iwgt * bin_data["neval"][_inode] / _neval
+                                    weights[irow, _inode] = _iwgt * bin_neval[_inode] / _neval
                         # print(f" > weights: {weights[irow,:]}")
                         # print(f" > sum of weights [{irow}] = {np.sum(weights[irow, :]):.3f}")
                         assert np.all(
@@ -386,7 +392,7 @@ class MergeObs(Task):
         with open(self.file_dat, "w") as df:
             if labels is not None:
                 df.write(labels + "\n")
-            df.write(f"#neval: {np.max(merged_hist['neval'])}\n")
+            df.write(f"#neval: {neval_total}\n")
             for irow in range(nrows):
                 if xval is not None:
                     if np.all(np.isnan(xval[irow])):
@@ -670,17 +676,16 @@ class MergePart(DBMerge):
                                             assert ncols == ncols_
                             # > create empty datasets for this observable
                             _ = h5grp_obs.create_dataset("files", (0,), dtype=_dt_vstr, maxshape=(None,))
+                            # > neval is per-job (not per-bin): store as 1-D to avoid nrows*ncols redundancy
+                            _ = h5grp_obs.create_dataset("neval", (0,), dtype=np.int64, maxshape=(None,))
                             h5dat_data = h5grp_obs.create_dataset(
                                 "data",
                                 (nrows, ncols, 0),
                                 dtype=_dt_hist,
                                 maxshape=(nrows, ncols, None),
-                                # chunks=(nrows, ncols, 2),  # this is bad for many reads
-                                chunks=(1, 1, 42),  # aims for something slightly smaller than 1024 Bytes
-                                # compression="gzip",
-                                compression="lzf",  # faster (de-)compressions, only for h5py
+                                chunks=(1, 1, _chunk_size),  # read pattern: [irow, icol, :] → align last axis
+                                compression="lzf",  # faster (de-)compression, only for h5py
                             )
-                            # print(f"new data {(nrows, ncols, 0)}: chunks = {h5dat_data.chunks}")
                             if nx > 0:
                                 h5dat_xval = h5grp_obs.create_dataset(
                                     "xval", (nrows, nx), dtype=np.float64, data=xval
@@ -690,8 +695,8 @@ class MergePart(DBMerge):
 
                         # > all structures exist at this point
                         # > time to populate new data
-                        # > _dt_hist = np.dtype([("neval", np.int64), ("result", np.float64), ("error2", np.float64)])
                         h5dat_files: h5py.Dataset = h5grp_obs["files"]
+                        h5dat_neval: h5py.Dataset = h5grp_obs["neval"]
                         h5dat_data: h5py.Dataset = h5grp_obs["data"]
                         nrows, ncols, ndat_old = h5dat_data.shape
                         if nx > 0:
@@ -713,8 +718,10 @@ class MergePart(DBMerge):
                         # > resize data structures to accommodate the new input files
                         resize_obs[obs] = ndat_old
                         h5dat_files.resize((ndat_old + ndat_new,))
+                        h5dat_neval.resize((ndat_old + ndat_new,))
                         h5dat_data.resize((nrows, ncols, ndat_old + ndat_new))
                         # > open each file and accummulate into the enlarged dataset
+                        _row_buf = np.empty(ncols, dtype=_dt_hist)  # reusable write buffer
                         for idat, ifile in enumerate(in_files_new, start=ndat_old):
                             # > register the file to the "old" list
                             h5dat_files[idat] = ifile
@@ -731,24 +738,27 @@ class MergePart(DBMerge):
                                             arr_f64 = np.fromstring(
                                                 line.split(None, nx)[nx], dtype=np.float64, sep=" "
                                             )
-                                            # > slice into the row, update values
-                                            h5dat_data["result", irow, :, idat] = arr_f64[0::2]
-                                            h5dat_data["error2", irow, :, idat] = arr_f64[1::2] ** 2
+                                            # > write both fields as one struct to halve chunk RMW ops
+                                            _row_buf["result"] = arr_f64[0::2]
+                                            _row_buf["error2"] = arr_f64[1::2] ** 2
+                                            h5dat_data[irow, :, idat] = _row_buf
                                             irow += 1
                                         elif line.startswith("#nx"):
                                             assert int(line.split()[-1]) == nx
                                         elif line.startswith("#neval"):
                                             neval = int(line.split()[-1])
-                                            h5dat_data["neval", :, :, idat] = neval
                                     else:
                                         arr_f64 = np.fromstring(line, dtype=np.float64, sep=" ")
                                         if nx > 0:
                                             assert np.all(arr_f64[:nx] == xval[irow])
                                         assert len(arr_f64) - nx == 2 * ncols
-                                        # > slice into the row, update values
-                                        h5dat_data["result", irow, :, idat] = arr_f64[nx::2]
-                                        h5dat_data["error2", irow, :, idat] = arr_f64[nx + 1 :: 2] ** 2
+                                        # > write both fields as one struct to halve chunk RMW ops
+                                        _row_buf["result"] = arr_f64[nx::2]
+                                        _row_buf["error2"] = arr_f64[nx + 1 :: 2] ** 2
+                                        h5dat_data[irow, :, idat] = _row_buf
                                         irow += 1
+                                # > neval is per-job: write once after parsing the file
+                                h5dat_neval[idat] = neval
                                 resize_obs[obs] += 1
                         assert resize_obs[obs] == len(in_files[obs])
 
