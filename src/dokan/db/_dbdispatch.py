@@ -328,10 +328,7 @@ class DBDispatch(DBTask):
             # > use (active - queued) = DISPATCHED + RUNNING to count truly in-flight jobs
             max_concurrent: int = self.config["run"]["jobs_max_concurrent"]
             tot_inflight: int = tot_nact - tot_nque  # DISPATCHED + RUNNING
-            queue_full = (
-                queue_full
-                or tot_inflight >= max_concurrent
-            )
+            queue_full = queue_full or tot_inflight >= max_concurrent
             if queue_full:
                 self._logger(
                     session,
