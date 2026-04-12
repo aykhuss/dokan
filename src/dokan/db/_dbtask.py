@@ -393,7 +393,7 @@ class DBTask(Task, metaclass=ABCMeta):
             # @todo maybe we would want to include the failed jobs above
             #  to see if they hit the runtime limit?
 
-        # > check every active part has an entry; compute the minimum & average error; accumulate tot result & error
+        # > check every active part has an entry; compute the min/max/avg error; accumulate tot result & error
         pt_min_error: float = +float("inf")
         pt_max_error: float = -float("inf")
         pt_avg_error: float = 0.0  # avg error on part to get target accuracy
@@ -404,7 +404,7 @@ class DBTask(Task, metaclass=ABCMeta):
                 self._logger(
                     session,
                     f"DBTask::_distribute_time: part {pt.id} ({pt.name!r}) has no production jobs"
-                    " for the current policy — skipping",
+                    " for the current policy: skipping",
                     LogLevel.WARN,
                 )
                 continue
@@ -419,19 +419,24 @@ class DBTask(Task, metaclass=ABCMeta):
         pt_avg_error = self.config["run"]["target_rel_acc"] * pt_avg_error / math.sqrt(len(cache) + 1.0)
         tot_error = math.sqrt(tot_error)
 
+        # median of errors
+        cached_errors: list[float] = [ic["error"] for ic in cache.values() if ic["error"] > 0.0]
+        pt_med_error: float = sorted(cached_errors)[len(cached_errors) // 2]
+
         # > adjusted errors
         # _console.print(cache)
-        adj_thresh_min: float = 2.0
-        adj_thresh_max: float = 1e2
+        adj_thresh_min: float = 1.0
+        adj_thresh_max: float = 7.0
         adj_penalty: float = 10.0
+        t: float = adj_thresh_max * pt_med_error
         for part_id, ic in cache.items():
             ic["adj_error"] = ic["error"]
             # > enforce non-zero errors:  arithmetic mean
             if ic["error"] < adj_thresh_min * pt_min_error:
                 ic["adj_error"] = 0.5 * (ic["error"] + adj_thresh_min * pt_min_error)
-            # > dampen outliers:  geometric mean
-            if ic["error"] > adj_thresh_max * pt_avg_error:
-                ic["adj_error"] = math.sqrt(ic["error"] * adj_thresh_max * pt_avg_error)
+            # > protect against outliers:  log damping above t
+            if ic["error"] > t:
+                ic["adj_error"] = t * (1.0 + math.log(ic["error"] / t))
             # > penalize pre-production only parts
             if ic["count"] <= self.config["production"]["min_number"] and ic["nextra"] <= 0:
                 ic["adj_error"] = ic["error"] + adj_penalty * pt_max_error
