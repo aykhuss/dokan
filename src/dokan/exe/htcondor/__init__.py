@@ -41,6 +41,7 @@ class HTCondorExec(Executor):
         )
         self.file_sub: Path = Path(self.path) / self._file_sub
         self.njobs: int = len(self.exe_data["jobs"])
+        self.nactive: int = self.njobs  # decrements as condor jobs complete
 
     @staticmethod
     def templates() -> list[GenericPath]:
@@ -118,7 +119,7 @@ class HTCondorExec(Executor):
             time.sleep(poll_time)
 
             condor_q_json: dict = {}
-            for _ in range(nretry):
+            for iretry in range(nretry):
                 condor_q = subprocess.run(["condor_q", "-json", str(job_id)], capture_output=True, text=True)
                 if condor_q.returncode == 0:
                     if condor_q.stdout == "":
@@ -132,7 +133,7 @@ class HTCondorExec(Executor):
                         + f"{condor_q.stderr}",
                         LogLevel.INFO,
                     )
-                    time.sleep(retry_delay)
+                    time.sleep(retry_delay * 1.5**iretry)  # exponential backoff
 
             # > "JobStatus" codes
             # >  0 Unexpanded  U
@@ -152,6 +153,13 @@ class HTCondorExec(Executor):
             #         job_id, count_status[2], count_status[1], njobs
             #     )
             # )
+
+            # > release resources for completed jobs so Luigi can schedule other tasks
+            n_active = count_status[1] + count_status[2]  # Idle + Running
+            n_completed = self.nactive - n_active
+            if n_completed > 0:
+                self.decrease_running_resources({"jobs_concurrent": n_completed})
+                self.nactive = n_active
 
             if njobs == 0:
                 self._logger(f"HTCondorExec failed to query job {job_id} with njobs = {njobs}", LogLevel.WARN)

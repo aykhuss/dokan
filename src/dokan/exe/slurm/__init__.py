@@ -27,6 +27,7 @@ class SlurmExec(Executor):
         )
         self.file_sub: Path = self.exe_data.path / self._file_sub
         self.njobs: int = len(self.exe_data["jobs"])
+        self.nactive: int = self.njobs  # decrements as slurm jobs complete
 
     @staticmethod
     def templates() -> list[GenericPath]:
@@ -102,16 +103,28 @@ class SlurmExec(Executor):
         while True:
             time.sleep(poll_time)
 
-            for _ in range(nretry):
+            for iretry in range(nretry):
+                # > -r/--array: one line per array task (avoids grouped regex notation for pending tasks)
+                # > --format="%t": compact state (PD=pending, R=running, CG=completing, ...)
                 squeue = subprocess.run(
-                    ["squeue", "-h", "--job", str(job_id)], capture_output=True, text=True
+                    ["squeue", "-h", "-r", "--job", str(job_id), "--format=%t"],
+                    capture_output=True,
+                    text=True,
                 )
                 if squeue.returncode == 0:
-                    if squeue.stdout == "":
-                        return  # job terminated: no longer in queue
+                    _active_states = {"PD", "R", "CG", "CF", "ST"}
+                    n_active = sum(1 for s in squeue.stdout.splitlines() if s.strip() in _active_states)
+                    n_completed = self.nactive - n_active
+                    if n_completed > 0:
+                        self.decrease_running_resources({"jobs_concurrent": n_completed})
+                        self.nactive = n_active
+                    if n_active == 0:
+                        return  # all tasks finished
                     break
                 else:
                     if re.search("Invalid job id specified", squeue.stderr):
+                        self.decrease_running_resources({"jobs_concurrent": self.nactive})
+                        self.nactive = 0
                         return  # job terminated and record no longer in scheduler
                     self._logger(
                         f"SlurmExec failed to query job [dim](job_id={job_id})[/dim]:\n"
@@ -119,4 +132,4 @@ class SlurmExec(Executor):
                         + f"{squeue.stderr}",
                         LogLevel.INFO,
                     )
-                    time.sleep(retry_delay)
+                    time.sleep(retry_delay * 1.5**iretry)  # exponential backoff
