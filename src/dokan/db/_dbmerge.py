@@ -38,6 +38,7 @@ _dt_vstr = h5py.string_dtype()
 _dt_hist = np.dtype([("result", np.float64), ("error2", np.float64)])  # HDF5 storage: per-job, per-bin
 _dt_cmlt = np.dtype([("neval", np.int64), ("sumf", np.float64), ("sumf2", np.float64)])  # in-memory cumulants
 _chunk_size: int = 256  # chunk size along the ndat axis
+_MAD_NORMAL_SCALE: float = 0.6745  # median absolute deviation to 1-sigma for a normal distribution
 
 
 @unique
@@ -138,7 +139,7 @@ class MergeObs(Task):
             # > the final merged result; neval tracked separately as sum of all job nevals
             merged_hist = np.zeros((nrows, ncols), dtype=_dt_hist)
             neval_total: int = int(np.sum(bin_neval))
-            weights = np.full((nrows, ndat), np.nan, dtype=np.float64)  ### if self.grids else None
+            weights = np.full((nrows, ndat), np.nan, dtype=np.float64) if self.file_wgt is not None else None
 
             # > more information needed for the output
             xval = h5dat_data.dims[0][0][...] if nx > 0 else None
@@ -272,7 +273,7 @@ class MergeObs(Task):
                             bin_data["result"][_mask[:ndat]] - q50
                         )  # `ndat` entry invalid: no need for [:ndat] on lhs
                         mad = np.median(bin_buf1[_mask])
-                        threshold = trim_threshold * (mad / 0.6745)  # convert to z-score
+                        threshold = trim_threshold * (mad / _MAD_NORMAL_SCALE)  # convert to z-score
                         # > start trimming from the "worst" until we either run out or would exceed the max fraction
                         # > skip `[_mask]` since initialised to zero (makes indexing easier than for sliced arrays)
                         # X  bin_mask[bin_buf1 > threshold] = BinMask.TRIMMED
@@ -349,7 +350,7 @@ class MergeObs(Task):
 
                     merged_hist[irow, icol] = k_scan[-1][:2]
                     # > determine weights (only for the "central" prediction)
-                    if self.wgt_out is not None and icol == 0:
+                    if weights is not None and icol == 0:
                         for idat in range(ndat):
                             if (bin_mask[idat] == BinMask.INVALID) or (bin_mask[idat] == BinMask.TRIMMED):
                                 weights[irow, idat] = 0.0
@@ -410,7 +411,7 @@ class MergeObs(Task):
                     df.write(f"{np.format_float_scientific(merged_hist['error2'][irow, icol]): <25} ")
                 df.write("\n")
 
-        if self.file_wgt is not None:
+        if self.file_wgt is not None and weights is not None:
             with open(self.file_wgt, "w") as wf:
                 wf.write(f"#nx={nx} ")
                 if xval is not None:
