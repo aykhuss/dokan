@@ -328,8 +328,7 @@ class DBDispatch(DBTask):
             # > use (active - queued) = DISPATCHED + RUNNING to count truly in-flight jobs
             max_concurrent: int = self.config["run"]["jobs_max_concurrent"]
             tot_inflight: int = tot_nact - tot_nque  # DISPATCHED + RUNNING
-            queue_full = queue_full or tot_inflight >= max_concurrent
-            if queue_full:
+            if tot_inflight >= max_concurrent:
                 self._logger(
                     session,
                     self._logger_prefix
@@ -338,7 +337,10 @@ class DBDispatch(DBTask):
                     + f" v.s. {max_concurrent} max -> throttled",
                 )
                 self.part_id = 0
-                return queue_full
+                return True
+            if queue_full:
+                # > estimate accuracy reached: done adding jobs, dispatch what is already queued
+                return True  # pause repopulation
             # > break when the queue is full enough to dispatch, or budget is exhausted
             if qterm or no_new_jobs:
                 if self.part_id > 0:
