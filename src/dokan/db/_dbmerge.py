@@ -774,12 +774,12 @@ class MergePart(DBMerge):
                                     if len(data_lines) == nrows:
                                         # > no overflow rows: direct field-view assignment
                                         buf_data["result"][i] = arr[:, nx::2]
-                                        buf_data["error2"][i] = arr[:, nx + 1::2] ** 2
+                                        buf_data["error2"][i] = arr[:, nx + 1 :: 2] ** 2
                                     else:
                                         # > overflow rows present: scatter data rows back to their irow
                                         for k, irow_k in enumerate(data_irows):
                                             buf_data["result"][i, irow_k, :] = arr[k, nx::2]
-                                            buf_data["error2"][i, irow_k, :] = arr[k, nx + 1::2] ** 2
+                                            buf_data["error2"][i, irow_k, :] = arr[k, nx + 1 :: 2] ** 2
                                 assert irow == nrows
                             # > single 3D write: transpose (chunk_len, nrows, ncols) → (nrows, ncols, chunk_len)
                             # > to match HDF5 chunk layout; ascontiguousarray ensures one contiguous copy
