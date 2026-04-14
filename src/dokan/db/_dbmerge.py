@@ -5,6 +5,7 @@ constitutes the dokan workflow implementation of `nnlojet-combine.py`
 """
 
 import datetime
+import json
 import math
 import os
 import re
@@ -763,9 +764,9 @@ class MergePart(DBMerge):
                                     irow += 1
                             # > batch-parse all regular data lines in one fromstring call
                             if data_lines:
-                                arr = np.fromstring(
-                                    " ".join(data_lines), dtype=np.float64, sep=" "
-                                ).reshape(len(data_lines), nx + 2 * ncols)
+                                arr = np.fromstring(" ".join(data_lines), dtype=np.float64, sep=" ").reshape(
+                                    len(data_lines), nx + 2 * ncols
+                                )
                                 if nx > 0:
                                     if len(data_lines) == nrows:  # no overflow row
                                         assert np.array_equal(arr[:, :nx], xval)
@@ -957,6 +958,7 @@ class MergeAll(DBMerge):
         self.mrg_path: Path = self._path.joinpath("result", "merge")
         if not self.mrg_path.exists():
             self.mrg_path.mkdir(parents=True)
+        self.merge_marker: Path = self._path.joinpath("result", "merge_all.json")
 
     @property
     def select_part(self):
@@ -970,32 +972,49 @@ class MergeAll(DBMerge):
         else:
             return []
 
+    def _read_merge_marker(self) -> dict | None:
+        if not self.merge_marker.is_file():
+            return None
+        with self.merge_marker.open() as marker_file:
+            return json.load(marker_file)
+
     def complete(self) -> bool:
         # > check input requirements
         if any(not mpt.complete() for mpt in self.requires()):
             return False
 
-        # > check file modifiation time
-        timestamp: float = -1.0
-        for hist in os.scandir(self.mrg_path):
-            timestamp = max(timestamp, hist.stat().st_mtime)
-        if self.run_tag > timestamp:
+        marker = self._read_merge_marker()
+        if marker is None:
+            return False
+        marker_run_tag = float(marker.get("run_tag", -1.0))
+        if self.run_tag > marker_run_tag:
+            return False
+        marker_part_ids = marker.get("active_part_ids")
+        marker_max_part_timestamp = float(marker.get("max_part_timestamp", -1.0))
+        marker_outputs = marker.get("output_observables")
+        if not isinstance(marker_part_ids, list) or not isinstance(marker_outputs, list):
+            return False
+        if any(not (self.mrg_path / f"{obs}.dat").is_file() for obs in marker_outputs):
             return False
 
         with self.session as session:
             self._debug(
                 session,
-                self._logger_prefix + f"::complete:  files {datetime.datetime.fromtimestamp(timestamp)}",
+                self._logger_prefix
+                + f"::complete:  marker {datetime.datetime.fromtimestamp(marker_run_tag)}",
             )
-            for pt in session.scalars(self.select_part):
+            active_parts: list[Part] = session.scalars(self.select_part).all()
+            active_part_ids = [pt.id for pt in active_parts]
+            if set(active_part_ids) != set(marker_part_ids):
+                return False
+            max_part_timestamp = max((pt.timestamp for pt in active_parts), default=-1.0)
+            for pt in active_parts:
                 self._debug(
                     session,
                     self._logger_prefix
                     + f"::complete:  {pt.name} {datetime.datetime.fromtimestamp(pt.timestamp)}",
                 )
-                if pt.timestamp > timestamp:
-                    return False
-            return True
+            return max_part_timestamp <= marker_max_part_timestamp
 
     def run(self):
         with self.session as session:
@@ -1004,11 +1023,15 @@ class MergeAll(DBMerge):
 
             # > collect all input files
             in_files = dict((obs, []) for obs in self.config["run"]["histograms"])
+            active_part_ids: list[int] = []
+            max_part_timestamp: float = -1.0
             # > reconstruct optimisation target
             opt_target: str = self.config["run"]["opt_target"]
             opt_target_ref: float = 0.0
             opt_target_rel: float = 0.0
             for pt in session.scalars(self.select_part):
+                active_part_ids.append(pt.id)
+                max_part_timestamp = max(max_part_timestamp, pt.timestamp)
                 self._debug(
                     session,
                     self._logger_prefix + f"::run:  processing part {pt.name}: {pt.result} +/- {pt.error}",
@@ -1030,9 +1053,12 @@ class MergeAll(DBMerge):
             # > the above does not include penalty, which is why we override it this way
             opt_dist = self._distribute_time(session, 1.0)
             opt_target_ref = opt_dist["tot_result"]
-            opt_target_rel = abs(opt_dist["tot_error"] / opt_dist["tot_result"]) if opt_dist["tot_result"] != 0.0 else 0.0
+            opt_target_rel = (
+                abs(opt_dist["tot_error"] / opt_dist["tot_result"]) if opt_dist["tot_result"] != 0.0 else 0.0
+            )
 
             # > sum all parts
+            written_observables: list[str] = []
             for obs, hist_info in self.config["run"]["histograms"].items():
                 out_file: Path = self.mrg_path / f"{obs}.dat"
                 nx: int = hist_info["nx"]
@@ -1051,6 +1077,7 @@ class MergeAll(DBMerge):
                     except ValueError as e:
                         self._logger(session, f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR)
                 hist.write_to_file(out_file)
+                written_observables.append(obs)
                 if qwgt:
                     weights_file = out_file.with_suffix(".weights.txt")
                     weights_file.write_text(hist.to_weights())
@@ -1072,6 +1099,19 @@ class MergeAll(DBMerge):
                                 level=LogLevel.SIG_UPDXS,
                             )
                             break
+        marker = {
+            "run_tag": self.run_tag,
+            "active_part_ids": active_part_ids,
+            "n_active_parts": len(active_part_ids),
+            "max_part_timestamp": max_part_timestamp,
+            "output_observables": written_observables,
+            "generated_at": time.time(),
+        }
+        marker_tmp = self.merge_marker.with_suffix(".json.tmp")
+        with marker_tmp.open("w") as marker_file:
+            json.dump(marker, marker_file, indent=2, sort_keys=True)
+            marker_file.write("\n")
+        marker_tmp.replace(self.merge_marker)
 
 
 class MergeFinal(DBMerge):
