@@ -703,8 +703,9 @@ class MergePart(DBMerge):
 
                     # in_files_old: list[GenericPath] = [file_path.decode("utf-8") for file_path in h5dat_files]
                     in_files_old: list[GenericPath] = [file_path for file_path in h5dat_files.asstr()[:]]
+                    in_files_cur: list[GenericPath] = list(dict.fromkeys(in_files[obs]))
                     in_files_new: list[GenericPath] = [
-                        file_path for file_path in in_files[obs] if file_path not in in_files_old
+                        file_path for file_path in in_files_cur if file_path not in in_files_old
                     ]
                     ndat_new: int = len(in_files_new)
                     if ndat_new == 0:
@@ -791,7 +792,8 @@ class MergePart(DBMerge):
                             buf_data[:chunk_len].transpose(1, 2, 0)
                         )
                         resize_obs[obs] += chunk_len
-                    assert resize_obs[obs] == len(in_files[obs])
+                    expected_nfiles = len(set(in_files_old).union(in_files_cur))
+                    assert resize_obs[obs] == expected_nfiles
 
             else:
                 # > single_file is not None
