@@ -161,6 +161,23 @@ class HTCondorExec(Executor):
                 self.decrease_running_resources({"jobs_concurrent": n_completed})
                 self.nactive = n_active
 
+            if count_status[5] > 0:
+                condor_release = subprocess.run(
+                    ["condor_release", str(job_id)], capture_output=True, text=True
+                )
+                if condor_release.returncode == 0:
+                    self._logger(
+                        f"HTCondorExec released held jobs [dim](job_id={job_id}, held={count_status[5]})[/dim]",
+                        LogLevel.INFO,
+                    )
+                    break
+                self._logger(
+                    f"HTCondorExec failed to release held jobs [dim](job_id={job_id}, held={count_status[5]})[/dim]:\n"
+                    + f"{condor_release.stdout}\n"
+                    + f"{condor_release.stderr}",
+                    LogLevel.INFO,
+                )
+
             if njobs == 0:
                 self._logger(f"HTCondorExec failed to query job {job_id} with njobs = {njobs}", LogLevel.WARN)
                 return
