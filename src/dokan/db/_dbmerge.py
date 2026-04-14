@@ -433,10 +433,11 @@ class MergePart(DBMerge):
     # > merge only a specific `Part`
     part_id: int = luigi.IntParameter()
 
-    # > limit the resources on local cores
     @property
     def resources(self):
-        return super().resources | {"local_ncores": 1, f"MergePart_{self.part_id}": 1}
+        # return super().resources | {"local_ncores": 1, f"MergePart_{self.part_id}": 1}
+        # > merge is I/O-bound (HDF5): skip local_ncores, use DBTask + per-part mutex
+        return {"DBTask": 1, f"MergePart_{self.part_id}": 1}
 
     # @property
     # def select_part(self):
