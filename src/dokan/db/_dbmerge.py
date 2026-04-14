@@ -369,15 +369,16 @@ class MergeObs(Task):
                                     _iwgt = (1.0 / _ierr2) * merged_hist[irow, icol]["error2"] ** 2
                                 # > find all "nodes" that were merged into `idat`
                                 _inode: int = 0
-                                _nodes = np.array([idat])
-                                while _inode < len(_nodes):
+                                _nodes_list = [idat]
+                                while _inode < len(_nodes_list):
                                     # > find all children of the current node
-                                    # print(f"  | {_inode}:{_nodes[_inode]} | {_nodes} | {np.flatnonzero(bin_mask == -_nodes[_inode])}")
-                                    if _nodes[_inode] != 0:
-                                        _nodes = np.concatenate(
-                                            (_nodes, np.flatnonzero(bin_mask == -_nodes[_inode]))
+                                    # print(f"  | {_inode}:{_nodes_list[_inode]} | {_nodes_list} | {np.flatnonzero(bin_mask == -_nodes_list[_inode])}")
+                                    if _nodes_list[_inode] != 0:
+                                        _nodes_list.extend(
+                                            np.flatnonzero(bin_mask == -_nodes_list[_inode]).tolist()
                                         )
                                     _inode += 1
+                                _nodes = np.asarray(_nodes_list, dtype=int)
                                 # print(f" > nodes[{idat}]: {_nodes}")
                                 for _inode in _nodes:
                                     weights[irow, _inode] = _iwgt * bin_neval[_inode] / _neval
@@ -477,17 +478,18 @@ class MergePart(DBMerge):
             if pt.timestamp < self.reset_tag:
                 return False
 
-            query_job = (
-                session.query(Job)
+            select_job_count = (
+                select(func.count())
+                .select_from(Job)
                 .join(Part)
-                .filter(Part.id == self.part_id)
-                .filter(Part.active.is_(True))
-                .filter(Job.mode == ExecutionMode.PRODUCTION)
-                .filter(Job.status.in_(JobStatus.success_list()))
+                .where(Part.id == self.part_id)
+                .where(Part.active.is_(True))
+                .where(Job.mode == ExecutionMode.PRODUCTION)
+                .where(Job.status.in_(JobStatus.success_list()))
             )
 
-            c_done = query_job.filter(Job.status == JobStatus.DONE).count()
-            c_merged = query_job.filter(Job.status == JobStatus.MERGED).count()
+            c_done = session.scalar(select_job_count.where(Job.status == JobStatus.DONE)) or 0
+            c_merged = session.scalar(select_job_count.where(Job.status == JobStatus.MERGED)) or 0
 
             if (c_done + c_merged) == 0:
                 self._debug(
@@ -539,14 +541,6 @@ class MergePart(DBMerge):
         return False
 
     def run(self):
-        if self.complete():
-            with self.session as session:
-                self._debug(
-                    session,
-                    self._logger_prefix + "::run:  already complete",
-                )
-            return
-
         # > Phase 1: short DB session: collect job info, mark jobs MERGED, flag part as in-progress
         with self.session as session:
             pt: Part = session.get_one(Part, self.part_id)
