@@ -721,46 +721,75 @@ class MergePart(DBMerge):
                         h5dat_files.resize((ndat_old + ndat_new,))
                         h5dat_neval.resize((ndat_old + ndat_new,))
                         h5dat_data.resize((nrows, ncols, ndat_old + ndat_new))
-                        # > open each file and accummulate into the enlarged dataset
-                        _row_buf = np.empty(ncols, dtype=_dt_hist)  # reusable write buffer
-                        for idat, ifile in enumerate(in_files_new, start=ndat_old):
-                            # > register the file to the "old" list
-                            h5dat_files[idat] = ifile
-                            with open(self._path / ifile, "rt") as dat_file:
+                        # > pre-allocate buffers once per observable
+                        # > layout (chunk_size, nrows, ncols): buf_data["result"][i, irow, :] is
+                        # > contiguous on the last axis during parse
+                        buf_data = np.empty((_chunk_size, nrows, ncols), dtype=_dt_hist)
+                        buf_neval = np.empty(_chunk_size, dtype=np.int64)
+                        for chunk_start in range(0, ndat_new, _chunk_size):
+                            chunk_slice = in_files_new[chunk_start : chunk_start + _chunk_size]
+                            chunk_len = len(chunk_slice)
+                            # > parse job files into in-memory buffer
+                            for i, ifile in enumerate(chunk_slice):
+                                h5dat_files[ndat_old + chunk_start + i] = ifile
+                                with open(self._path / ifile, "rt") as dat_file:
+                                    lines = dat_file.read().splitlines()
+                                buf_neval[i] = -1
+                                data_lines: list[str] = []
+                                data_irows: list[int] = []
                                 irow: int = 0
-                                neval: int = -1
-                                for line in dat_file:
+                                for line in lines:
                                     line = line.strip()
                                     if not line:
-                                        continue  # skip empty lines
+                                        continue
                                     if line.startswith("#"):
-                                        if line.startswith("#overflow"):
-                                            # > parse the columns for the line, discard nx columns
+                                        if line.startswith("#neval"):
+                                            buf_neval[i] = int(line.split()[-1])
+                                        elif line.startswith("#overflow"):
+                                            # > overflow rows are rare: parse individually
                                             arr_f64 = np.fromstring(
                                                 line.split(None, nx)[nx], dtype=np.float64, sep=" "
                                             )
-                                            # > write both fields as one struct to halve chunk RMW ops
-                                            _row_buf["result"] = arr_f64[0::2]
-                                            _row_buf["error2"] = arr_f64[1::2] ** 2
-                                            h5dat_data[irow, :, idat] = _row_buf
+                                            assert len(arr_f64) == 2 * ncols
+                                            buf_data["result"][i, irow, :] = arr_f64[0::2]
+                                            buf_data["error2"][i, irow, :] = arr_f64[1::2] ** 2
                                             irow += 1
                                         elif line.startswith("#nx"):
                                             assert int(line.split()[-1]) == nx
-                                        elif line.startswith("#neval"):
-                                            neval = int(line.split()[-1])
                                     else:
-                                        arr_f64 = np.fromstring(line, dtype=np.float64, sep=" ")
-                                        if nx > 0:
-                                            assert np.all(arr_f64[:nx] == xval[irow])
-                                        assert len(arr_f64) - nx == 2 * ncols
-                                        # > write both fields as one struct to halve chunk RMW ops
-                                        _row_buf["result"] = arr_f64[nx::2]
-                                        _row_buf["error2"] = arr_f64[nx + 1 :: 2] ** 2
-                                        h5dat_data[irow, :, idat] = _row_buf
+                                        assert len(line.split()) == nx + 2 * ncols
+                                        data_lines.append(line)
+                                        data_irows.append(irow)
                                         irow += 1
-                                # > neval is per-job: write once after parsing the file
-                                h5dat_neval[idat] = neval
-                                resize_obs[obs] += 1
+                                # > batch-parse all regular data lines in one fromstring call
+                                if data_lines:
+                                    arr = np.fromstring(
+                                        " ".join(data_lines), dtype=np.float64, sep=" "
+                                    ).reshape(len(data_lines), nx + 2 * ncols)
+                                    if nx > 0:
+                                        if len(data_lines) == nrows:  # no overflow row
+                                            assert np.array_equal(arr[:, :nx], xval)
+                                        else:
+                                            assert np.array_equal(arr[:, :nx], xval[data_irows])
+                                    if len(data_lines) == nrows:
+                                        # > no overflow rows: direct field-view assignment
+                                        buf_data["result"][i] = arr[:, nx::2]
+                                        buf_data["error2"][i] = arr[:, nx + 1::2] ** 2
+                                    else:
+                                        # > overflow rows present: scatter data rows back to their irow
+                                        for k, irow_k in enumerate(data_irows):
+                                            buf_data["result"][i, irow_k, :] = arr[k, nx::2]
+                                            buf_data["error2"][i, irow_k, :] = arr[k, nx + 1::2] ** 2
+                                assert irow == nrows
+                            # > single 3D write: transpose (chunk_len, nrows, ncols) → (nrows, ncols, chunk_len)
+                            # > to match HDF5 chunk layout; ascontiguousarray ensures one contiguous copy
+                            idat_start = ndat_old + chunk_start
+                            idat_end = idat_start + chunk_len
+                            h5dat_neval[idat_start:idat_end] = buf_neval[:chunk_len]
+                            h5dat_data[:, :, idat_start:idat_end] = np.ascontiguousarray(
+                                buf_data[:chunk_len].transpose(1, 2, 0)
+                            )
+                            resize_obs[obs] += chunk_len
                         assert resize_obs[obs] == len(in_files[obs])
 
                 else:
