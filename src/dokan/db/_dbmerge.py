@@ -91,9 +91,10 @@ class MergeObs(Task):
         self.file_wgt: Path | None = self._path / self.wgt_out if self.wgt_out is not None else None
         if not self.file_hdf5.is_file():
             raise FileNotFoundError(f"MergeObs:  HDF5 input file {self.file_hdf5} does not exist!")
-        with h5py.File(self.file_hdf5, "r", libver="latest", swmr=True) as h5f:
-            h5grp_obs: h5py.Group = h5f["/".join(self.hdf5_path)]
-            self.timestamp: float = h5grp_obs.attrs.get("timestamp", 0)
+        # with h5py.File(self.file_hdf5, "r", libver="latest", swmr=True) as h5f:
+        #     h5grp_obs: h5py.Group = h5f["/".join(self.hdf5_path)]
+        #     self.timestamp: float = h5grp_obs.attrs.get("timestamp", 0)
+        self.timestamp: float = self.file_hdf5.stat().st_mtime
 
     # > limit the resources on local cores
     @property
@@ -712,9 +713,12 @@ class MergePart(DBMerge):
                         if ndat_new == 0:
                             # print(f"{pt.name}[{obs}]: nothing to append ({ndat_new}/{len(in_files_old)})")
                             continue
+                        elif h5grp_obs.attrs["timestamp"] < 0:
+                            # print(f"{pt.name}[{obs}]: HDF5 in merging stage")
+                            continue
                         else:
                             # print(f"{pt.name}[{obs}]: append {in_files_new} // {in_files_old}")
-                            h5grp_obs.attrs["timestamp"] = time.time()
+                            h5grp_obs.attrs["timestamp"] = -1.0  # flag merging state
                         assert ndat_old == len(in_files_old)
                         # > resize data structures to accommodate the new input files
                         resize_obs[obs] = ndat_old
@@ -957,7 +961,12 @@ class MergePart(DBMerge):
             # > override with registered error with the optimization target
             pt.error = abs(rel_cross_err * pt.result)
 
+            # > mark part merging as complete
             pt.timestamp = time.time()
+            with h5py.File(self._path / "raw" / f"{pt.name}.hdf5", "a", libver="latest") as h5f:
+                for h5grp_obs in h5f[pt.name].values():
+                    h5grp_obs.attrs["timestamp"] = pt.timestamp
+
             self._debug(
                 session,
                 self._logger_prefix
