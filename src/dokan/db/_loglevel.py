@@ -12,6 +12,7 @@ class LogLevel(IntEnum):
     """
 
     SIG_TERM = -10  # terminate the monitor
+    SIG_MERGE = -6  # request an out-of-band MergeAll
     SIG_DISPATCH_DONE = -5  # dynamic dispatch has reached a terminal state (budget or accuracy)
     SIG_SUB = -4  # new submission started
     SIG_FINI = -3  # finalize was triggered

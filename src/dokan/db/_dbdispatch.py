@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from dokan.db._loglevel import LogLevel
 
 from ..exe import ExecutionMode
+from ._dbmerge import MergeAll
 from ._dbrunner import DBRunner
 from ._dbtask import DBTask
 from ._jobstatus import JobStatus
@@ -484,6 +485,15 @@ class DBDispatch(DBTask):
             with self.session as session:
                 queue_full = self._repopulate(session)
             if queue_full:
+                if self.id == 0:
+                    with self.session as session:
+                        if self._consume_merge_signal(session):
+                            self._logger(session, self._logger_prefix + "::run:  SIG_MERGE → yielding MergeAll")
+                            yield [
+                                self.clone(MergeAll, force=True, reset_tag=time.time()),
+                                self.clone(DBDispatch, id=0, _n=self._n + 1),
+                            ]
+                            return
                 time.sleep(0.1 * self.config["run"]["job_max_runtime"])
 
         runners: list[DBRunner] = []
@@ -576,7 +586,12 @@ class DBDispatch(DBTask):
         # > for dynamic dispatch: yield runners alongside the next dispatcher so
         # > the next wave starts while current runners are still in flight
         next_tasks: list = list(runners)
-        if self.id == 0 and not done:
-            next_tasks.append(self.clone(DBDispatch, id=0, _n=self._n + 1))
+        if self.id == 0:
+            with self.session as session:
+                if self._consume_merge_signal(session):
+                    self._logger(session, self._logger_prefix + "::run:  SIG_MERGE → injecting MergeAll")
+                    next_tasks.append(self.clone(MergeAll, force=True, reset_tag=time.time()))
+            if not done:
+                next_tasks.append(self.clone(DBDispatch, id=0, _n=self._n + 1))
         if next_tasks:
             yield next_tasks

@@ -214,6 +214,16 @@ def main() -> None:
     parser_submit.add_argument("--channels", nargs="+", default=None)
     parser_submit.add_argument("--skip-channels", nargs="+", default=None)
 
+    # > subcommand: signal
+    _signal_map: dict[str, LogLevel] = {
+        "merge": LogLevel.SIG_MERGE,
+    }
+    parser_signal = subparsers.add_parser("signal", help="send a workflow signal")
+    parser_signal.add_argument("run_path", metavar="RUN", help="run directory")
+    parser_signal.add_argument(
+        "signal_name", metavar="SIGNAL", choices=list(_signal_map), help="signal to send"
+    )
+
     # > subcommand: doctor
     parser_doctor = subparsers.add_parser("doctor", help="your workflow wellness specialist 🩺")
     parser_doctor.add_argument("run_path", metavar="RUN", help="run directory")
@@ -247,6 +257,24 @@ def main() -> None:
     if args.action is None:
         parser.print_help()
         sys.exit("please specify a subcommand")
+
+    # > subcommand: signal (early exit: no DB init needed)
+    if args.action == "signal":
+        import sqlite3
+
+        log_db = Path(args.run_path).resolve() / "log.sqlite"
+        if not log_db.is_file():
+            sys.exit(f"log database not found: {log_db}")
+        level = _signal_map[args.signal_name]
+        conn = sqlite3.connect(str(log_db), timeout=5)
+        conn.execute(
+            "INSERT INTO log (level, timestamp, message) VALUES (?, ?, ?)",
+            (int(level), time.time(), f"signal: {args.signal_name}"),
+        )
+        conn.commit()
+        conn.close()
+        console.print(f"[green]{args.signal_name} signal sent[/green]")
+        sys.exit(0)
 
     nnlojet_exe: str | None = None
     path_exe: Path

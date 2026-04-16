@@ -94,6 +94,20 @@ class DBTask(Task, metaclass=ABCMeta):
     def complete(self) -> bool:
         return False
 
+    def _consume_merge_signal(self, session: Session) -> bool:
+        """Check for and consume SIG_MERGE log entries.
+
+        Consumed signals are downgraded to INFO to preserve the audit trail.
+        """
+        signals = list(session.scalars(select(Log).where(Log.level == LogLevel.SIG_MERGE)))
+        if not signals:
+            return False
+        for sig in signals:
+            sig.level = LogLevel.INFO
+            sig.message = f"[consumed] {sig.message}"
+        self._safe_commit(session)
+        return True
+
     def _clear_log(self):
         with self.session as session:
             for log in session.scalars(select(Log)):
