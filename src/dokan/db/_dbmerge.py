@@ -123,9 +123,10 @@ class MergeObs(Task):
             nx: int = h5grp_obs.attrs["nx"]
             h5dat_neval: h5py.Dataset = h5grp_obs["neval"]
             h5dat_data: h5py.Dataset = h5grp_obs["data"]
-            nrows, ncols, ndat = h5dat_data.shape
-            # > neval is per-job (identical across all bins): read once outside the loop
-            bin_neval: np.ndarray = h5dat_neval[:]
+            nrows, ncols, ndat_phys = h5dat_data.shape
+            ndat: int = int(h5grp_obs.attrs.get("ndat_valid", ndat_phys))
+            # > neval is per-job (identical across all bins): read only the valid slice
+            bin_neval: np.ndarray = h5dat_neval[:ndat]
             # > per-bin buffer reused across the (irow, icol) loop
             bin_data = np.empty((ndat,), dtype=_dt_hist)
             bin_cmlt = np.empty(
@@ -145,7 +146,7 @@ class MergeObs(Task):
             # > more information needed for the output
             xval = h5dat_data.dims[0][0][...] if nx > 0 else None
             labels = h5grp_obs.attrs.get("labels", None)
-            filenames = [str(self._local(f).absolute()) for f in h5grp_obs["files"].asstr()[:]]
+            filenames = [str(self._local(f).absolute()) for f in h5grp_obs["files"].asstr()[:ndat]]
 
             def combine_unweighted() -> tuple[np.float64, np.float64]:
                 # > unweigthed average as a reference
@@ -234,7 +235,7 @@ class MergeObs(Task):
             for irow in range(nrows):
                 for icol in range(ncols):
                     # > populate the arrays to perform the merge
-                    h5dat_data.read_direct(bin_data, source_sel=np.s_[irow, icol, :])
+                    h5dat_data.read_direct(bin_data, source_sel=np.s_[irow, icol, :ndat])
                     # > we operate on the f & f2 cumulants from here on, leave `bin_data` alone
                     bin_cmlt[:] = 0
                     bin_cmlt["neval"][:ndat] = bin_neval
@@ -697,12 +698,14 @@ class MergePart(DBMerge):
                     h5dat_files: h5py.Dataset = h5grp_obs["files"]
                     h5dat_neval: h5py.Dataset = h5grp_obs["neval"]
                     h5dat_data: h5py.Dataset = h5grp_obs["data"]
-                    nrows, ncols, ndat_old = h5dat_data.shape
+                    nrows, ncols, ndat_phys = h5dat_data.shape
+                    ndat_old: int = int(h5grp_obs.attrs.get("ndat_valid", ndat_phys))
                     if nx > 0:
                         xval = h5dat_data.dims[0][0][...]
 
-                    # in_files_old: list[GenericPath] = [file_path.decode("utf-8") for file_path in h5dat_files]
-                    in_files_old: list[GenericPath] = [file_path for file_path in h5dat_files.asstr()[:]]
+                    in_files_old: list[GenericPath] = [
+                        file_path for file_path in h5dat_files.asstr()[:ndat_old]
+                    ]
                     in_files_cur: list[GenericPath] = list(dict.fromkeys(in_files[obs]))
                     in_files_new: list[GenericPath] = [
                         file_path for file_path in in_files_cur if file_path not in in_files_old
@@ -717,12 +720,12 @@ class MergePart(DBMerge):
                     else:
                         # print(f"{pt_name}[{obs}]: append {in_files_new} // {in_files_old}")
                         h5grp_obs.attrs["timestamp"] = -1.0  # flag merging state
-                    assert ndat_old == len(in_files_old)
-                    # > resize data structures to accommodate the new input files
+                    # > resize datasets to accommodate new files (only extends, never shrinks)
+                    ndat_total: int = ndat_old + ndat_new
                     resize_obs[obs] = ndat_old
-                    h5dat_files.resize((ndat_old + ndat_new,))
-                    h5dat_neval.resize((ndat_old + ndat_new,))
-                    h5dat_data.resize((nrows, ncols, ndat_old + ndat_new))
+                    h5dat_files.resize((max(ndat_total, ndat_phys),))
+                    h5dat_neval.resize((max(ndat_total, ndat_phys),))
+                    h5dat_data.resize((nrows, ncols, max(ndat_total, ndat_phys)))
                     # > pre-allocate buffers once per observable
                     # > layout (chunk_size, nrows, ncols): buf_data["result"][i, irow, :] is
                     # > contiguous on the last axis during parse
@@ -794,6 +797,9 @@ class MergePart(DBMerge):
                         resize_obs[obs] += chunk_len
                     expected_nfiles = len(set(in_files_old).union(in_files_cur))
                     assert resize_obs[obs] == expected_nfiles
+                    # > update ndat_valid as the final step — crash before this leaves
+                    # > old ndat_valid intact, excess data invisible, next run re-appends idempotently
+                    h5grp_obs.attrs["ndat_valid"] = resize_obs[obs]
 
             else:
                 # > single_file is not None
@@ -805,7 +811,10 @@ class MergePart(DBMerge):
             if pt_name in h5f:
                 for obs in self.config["run"]["histograms"]:
                     if obs in h5f[pt_name] and "data" in h5f[pt_name][obs]:
-                        hdf5_obs_ready.add(obs)
+                        h5grp = h5f[pt_name][obs]
+                        nv = int(h5grp.attrs.get("ndat_valid", h5grp["data"].shape[2]))
+                        if nv > 0:
+                            hdf5_obs_ready.add(obs)
 
         # > dispatch HDF5 file to MergeObs for each observable separately
         # > include obs with new data OR obs whose dat output is missing (e.g. results dir deleted)

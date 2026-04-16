@@ -39,7 +39,7 @@ class DBTask(Task, metaclass=ABCMeta):
 
     def _create_engine(self, name: str) -> Engine:
         """Create a SQLite engine with WAL mode and concurrency settings."""
-        engine = create_engine(name, connect_args={"timeout": 3})
+        engine = create_engine(name, connect_args={"timeout": 420})
 
         # > Apply concurrency-friendly SQLite PRAGMAs
         if self.db_setup:
