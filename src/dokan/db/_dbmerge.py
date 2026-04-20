@@ -83,6 +83,9 @@ class MergeObs(Task):
     hdf5_path: list[str] = luigi.ListParameter()  # path to the observable group
     dat_out: GenericPath = luigi.Parameter()
     wgt_out: GenericPath | None = luigi.Parameter(default=None)  # only used if `grids` is True
+    # > propagated from MergePart: invalidates dat files older than the tag so config-driven
+    # > recomputation (e.g. new trim_threshold) actually re-runs the merge core, not just the DB stamp
+    reset_tag: float = luigi.FloatParameter(default=0.0)
 
     priority = 130
 
@@ -105,10 +108,12 @@ class MergeObs(Task):
         return super().resources | {"local_ncores": 1}
 
     def complete(self):
-        if self.file_dat.is_file():
-            return self.file_dat.stat().st_mtime >= self.timestamp
-        else:
+        if not self.file_dat.is_file():
             return False
+        dat_mtime = self.file_dat.stat().st_mtime
+        if dat_mtime < self.reset_tag:
+            return False
+        return dat_mtime >= self.timestamp
 
     def run(self):
         # print(
@@ -818,6 +823,7 @@ class MergePart(DBMerge):
 
         # > dispatch HDF5 file to MergeObs for each observable separately
         # > include obs with new data OR obs whose dat output is missing (e.g. results dir deleted)
+        # > OR reset_tag active: forces re-run of MergeObs so config changes (trim, k-scan) take effect
         mrg_obs_dict = {
             obs: self.clone(
                 cls=MergeObs,
@@ -827,7 +833,9 @@ class MergePart(DBMerge):
                 wgt_out=str((mrg_path / f"{obs}.weights.txt").relative_to(self._path)),
             )
             for obs in self.config["run"]["histograms"]
-            if obs in resize_obs or (obs in hdf5_obs_ready and not (mrg_path / f"{obs}.dat").exists())
+            if obs in resize_obs
+            or (obs in hdf5_obs_ready and not (mrg_path / f"{obs}.dat").exists())
+            or (self.reset_tag > 0.0 and obs in hdf5_obs_ready)
         }
         # with self.session as session:
         #     self._debug(
