@@ -488,7 +488,9 @@ class DBDispatch(DBTask):
                 if self.id == 0:
                     with self.session as session:
                         if self._consume_merge_signal(session):
-                            self._logger(session, self._logger_prefix + "::run:  SIG_MERGE → yielding MergeAll")
+                            self._logger(
+                                session, self._logger_prefix + "::run:  SIG_MERGE → yielding MergeAll"
+                            )
                             yield [
                                 self.clone(MergeAll, force=True, reset_tag=time.time()),
                                 self.clone(DBDispatch, id=0, _n=self._n + 1),

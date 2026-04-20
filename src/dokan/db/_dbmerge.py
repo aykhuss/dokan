@@ -530,7 +530,7 @@ class MergePart(DBMerge):
             if (
                 self.config["production"]["min_number"] > 0
                 and c_done > 0
-                and c_merged <= self.config["production"]["min_number"]
+                and c_merged < self.config["production"]["min_number"]
             ):
                 return False
 
@@ -1025,6 +1025,10 @@ class MergeAll(DBMerge):
             active_parts: list[Part] = session.scalars(self.select_part).all()
             active_part_ids = [pt.id for pt in active_parts]
             if set(active_part_ids) != set(marker_part_ids):
+                return False
+            # > pt.timestamp < 0 is the "merge in progress" sentinel (set in MergePart.run phase 1);
+            # > guard against a crashed MergePart leaving that state memoised by a stale marker
+            if any(pt.timestamp < 0 for pt in active_parts):
                 return False
             max_part_timestamp = max((pt.timestamp for pt in active_parts), default=-1.0)
             for pt in active_parts:
