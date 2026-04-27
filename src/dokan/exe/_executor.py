@@ -8,7 +8,7 @@ import logging
 import time
 from abc import ABCMeta, abstractmethod
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, cast
 
 import luigi
 
@@ -42,8 +42,14 @@ class Executor(luigi.Task, metaclass=ABCMeta):
 
     path: str = luigi.Parameter()
     log_level: LogLevel = luigi.OptionalIntParameter(default=LogLevel.INFO)
+    priority_bump = luigi.IntParameter(default=0)
 
-    priority = 100
+    _priority_default: ClassVar[int] = 100
+
+    @property
+    def priority(self) -> int:
+        """Scheduler priority, optionally bumped by the task that spawned this executor."""
+        return self._priority_default + cast(int, self.priority_bump)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
