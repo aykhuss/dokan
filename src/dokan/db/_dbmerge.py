@@ -549,6 +549,15 @@ class MergePart(DBMerge):
         return False
 
     def run(self):
+        # Luigi restarts run() from the top after dynamic dependencies yielded
+        # below complete.  If the part is already merged, returning here keeps
+        # the DB timestamp stable and avoids invalidating a just-finished
+        # MergeAll marker.
+        if self.complete():
+            with self.session as session:
+                self._debug(session, self._logger_prefix + "::run:  already complete")
+            return
+
         # > Phase 1: short DB session: collect job info, mark jobs MERGED, flag part as in-progress
         with self.session as session:
             pt: Part = session.get_one(Part, self.part_id)
@@ -831,6 +840,7 @@ class MergePart(DBMerge):
                 hdf5_path=[f"{pt_name}", f"{obs}"],
                 dat_out=str((mrg_path / f"{obs}.dat").relative_to(self._path)),
                 wgt_out=str((mrg_path / f"{obs}.weights.txt").relative_to(self._path)),
+                reset_tag=self.reset_tag,
             )
             for obs in self.config["run"]["histograms"]
             if obs in resize_obs
