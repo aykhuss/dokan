@@ -562,7 +562,8 @@ class MergePart(DBMerge):
         with self.session as session:
             pt: Part = session.get_one(Part, self.part_id)
             pt_name: str = pt.name
-            self._logger(session, self._logger_prefix + "::run")
+            merge_in_progress = pt.timestamp < 0.0
+            self._logger(session, self._logger_prefix + "::run: " + ("fresh" if not merge_in_progress else "continue"))
 
             # > output directory
             mrg_path: Path = self._path.joinpath("result", "part", pt_name)
@@ -612,11 +613,13 @@ class MergePart(DBMerge):
                                 + "::run:  "
                                 + f"unmatched observable {dat.group(1)}?! ({in_files.keys()})",
                             )
-                job.status = JobStatus.MERGED
-            # > this forces MergePart into an incomplete state
-            # > that persists across the MergeObs yielding below
-            pt.timestamp = -1.0
-            self._safe_commit(session)
+                if not merge_in_progress:
+                    job.status = JobStatus.MERGED
+            if not merge_in_progress:
+                # > this forces MergePart into an incomplete state
+                # > that persists across the MergeObs yielding below
+                pt.timestamp = -1.0
+                self._safe_commit(session)
         # session closed — HDF5 I/O proceeds without holding a DB connection
 
         #############################
@@ -631,193 +634,222 @@ class MergePart(DBMerge):
         # maybe an attribute to flag what of the two is stored in the datase? heler routine to convert between the two could also be nice.
         resize_max: int = max(len(files) for files in in_files.values()) if in_files else 0
         resize_obs: dict[str, int] = {}
-        with h5py.File(self._path / "raw" / f"{pt_name}.hdf5", "a", libver="latest") as h5f:
-            # > "single writer multiple reader" (SWMR) mode on for parallel reads in later processing stages
-            h5f.swmr_mode = True
+        hdf5_file = self._path / "raw" / f"{pt_name}.hdf5"
 
-            # > retrieve top-level group; init group structure & data if needed
-            h5grp_pt: h5py.Group = h5f.require_group(pt_name)
+        # > If Luigi resumed this task after yielding MergeObs, avoid touching
+        # > the HDF5 file before checking MergeObs.complete(): its mtime is part
+        # > of the freshness check for the generated .dat files.
+        hdf5_obs_ready: set[str] = set()
+        hdf5_obs_files: dict[str, set[GenericPath]] = {}
+        if merge_in_progress and hdf5_file.is_file():
+            with h5py.File(hdf5_file, "r", libver="latest", swmr=True) as h5f:
+                if pt_name in h5f:
+                    for obs in self.config["run"]["histograms"]:
+                        if obs in h5f[pt_name] and "data" in h5f[pt_name][obs]:
+                            h5grp = h5f[pt_name][obs]
+                            nv = int(h5grp.attrs.get("ndat_valid", h5grp["data"].shape[2]))
+                            if nv > 0:
+                                hdf5_obs_ready.add(obs)
+                                hdf5_obs_files[obs] = set(h5grp["files"].asstr()[:nv])
 
-            # > make sure all observables groups are in place with the correct attributes
-            for obs, hist in self.config["run"]["histograms"].items():
-                h5grp_obs: h5py.Group = h5grp_pt.require_group(f"{obs}")
-                if "timestamp" not in h5grp_obs.attrs:
-                    h5grp_obs.attrs.create("timestamp", 0, dtype=np.float64)
-                if "nx" not in h5grp_obs.attrs:
-                    h5grp_obs.attrs.create("nx", hist["nx"], dtype=np.int32)
-                if "cumulant" in hist and "cumulant" not in h5grp_obs.attrs:
-                    h5grp_obs.attrs.create("cumulant", hist["cumulant"], dtype=np.int32)
-                if "grid" in hist and "grid" not in h5grp_obs.attrs:
-                    h5grp_obs.attrs.create("grid", hist["grid"], dtype=_dt_vstr)
+        resume_hdf5 = merge_in_progress and bool(hdf5_obs_ready) and all(
+            set(files).issubset(hdf5_obs_files.get(obs, set()))
+            for obs, files in in_files.items()
+            if files
+        )
+        if resume_hdf5:
+            with self.session as session:
+                for job in session.scalars(self.select_job.where(Job.status == JobStatus.DONE)):
+                    job.status = JobStatus.MERGED
+                self._safe_commit(session)
+        if not resume_hdf5:
+            with h5py.File(hdf5_file, "a", libver="latest") as h5f:
+                # > "single writer multiple reader" mode on for parallel reads
+                h5f.swmr_mode = True
 
-            # > initialize data structures for each observable
-            if single_file is None:
-                # > separate files for each observable
-                for obs in in_files:
-                    if not in_files[obs]:
-                        continue  # skip if no files for this observable yet
-                    h5grp_obs: h5py.Group = h5grp_pt[obs]
-                    nx = h5grp_obs.attrs["nx"]
+                # > retrieve top-level group; init group structure & data if needed
+                h5grp_pt: h5py.Group = h5f.require_group(pt_name)
 
-                    if "data" not in h5grp_obs:
-                        # > crate the data structure for this observable
-                        xval: list[list[np.float64]] = []
-                        ncols: int = 0
-                        nrows: int = 0
-                        with open(self._path / in_files[obs][0], "rt") as dat_file:
-                            for line in dat_file:
-                                line = line.strip()
-                                if not line:
-                                    continue  # skip empty lines
-                                if line.startswith("#"):
-                                    if line.startswith("#overflow"):
+                # > make sure all observables groups are in place with the correct attributes
+                for obs, hist in self.config["run"]["histograms"].items():
+                    h5grp_obs: h5py.Group = h5grp_pt.require_group(f"{obs}")
+                    if "timestamp" not in h5grp_obs.attrs:
+                        h5grp_obs.attrs.create("timestamp", 0, dtype=np.float64)
+                    if "nx" not in h5grp_obs.attrs:
+                        h5grp_obs.attrs.create("nx", hist["nx"], dtype=np.int32)
+                    if "cumulant" in hist and "cumulant" not in h5grp_obs.attrs:
+                        h5grp_obs.attrs.create("cumulant", hist["cumulant"], dtype=np.int32)
+                    if "grid" in hist and "grid" not in h5grp_obs.attrs:
+                        h5grp_obs.attrs.create("grid", hist["grid"], dtype=_dt_vstr)
+
+                # > initialize data structures for each observable
+                if single_file is None:
+                    # > separate files for each observable
+                    for obs in in_files:
+                        if not in_files[obs]:
+                            continue  # skip if no files for this observable yet
+                        h5grp_obs: h5py.Group = h5grp_pt[obs]
+                        nx = h5grp_obs.attrs["nx"]
+
+                        if "data" not in h5grp_obs:
+                            # > crate the data structure for this observable
+                            xval: list[list[np.float64]] = []
+                            ncols: int = 0
+                            nrows: int = 0
+                            with open(self._path / in_files[obs][0]) as dat_file:
+                                for line in dat_file:
+                                    line = line.strip()
+                                    if not line:
+                                        continue  # skip empty lines
+                                    if line.startswith("#"):
+                                        if line.startswith("#overflow"):
+                                            nrows += 1
+                                            xval.append([np.float64(np.nan) for _ in range(nx)])
+                                        elif line.startswith("#nx"):
+                                            assert int(line.split()[-1]) == nx
+                                        elif line.startswith("#labels"):
+                                            h5grp_obs.attrs.create("labels", line, dtype=_dt_vstr)
+                                    else:
+                                        arr_f64 = np.fromstring(line, dtype=np.float64, sep=" ")
                                         nrows += 1
-                                        xval.append([np.float64(np.nan) for _ in range(nx)])
-                                    elif line.startswith("#nx"):
-                                        assert int(line.split()[-1]) == nx
-                                    elif line.startswith("#labels"):
-                                        h5grp_obs.attrs.create("labels", line, dtype=_dt_vstr)
-                                else:
-                                    arr_f64 = np.fromstring(line, dtype=np.float64, sep=" ")
-                                    nrows += 1
-                                    xval.append(arr_f64[:nx])
-                                    ncols_: int = len(arr_f64) - nx
-                                    assert ncols_ % 2 == 0
-                                    ncols_ = ncols_ // 2  # pairs of: (val,err) in columns
-                                    if ncols == 0:
-                                        ncols = ncols_
-                                    else:
-                                        assert ncols == ncols_
-                        # > create empty datasets for this observable
-                        _ = h5grp_obs.create_dataset("files", (0,), dtype=_dt_vstr, maxshape=(None,))
-                        # > neval is per-job (not per-bin): store as 1-D to avoid nrows*ncols redundancy
-                        _ = h5grp_obs.create_dataset("neval", (0,), dtype=np.int64, maxshape=(None,))
-                        h5dat_data = h5grp_obs.create_dataset(
-                            "data",
-                            (nrows, ncols, 0),
-                            dtype=_dt_hist,
-                            maxshape=(nrows, ncols, None),
-                            chunks=(1, 1, _chunk_size),  # read pattern: [irow, icol, :] → align last axis
-                            compression="lzf",  # faster (de-)compression, only for h5py
-                        )
-                        if nx > 0:
-                            h5dat_xval = h5grp_obs.create_dataset(
-                                "xval", (nrows, nx), dtype=np.float64, data=xval
+                                        xval.append(arr_f64[:nx])
+                                        ncols_: int = len(arr_f64) - nx
+                                        assert ncols_ % 2 == 0
+                                        ncols_ = ncols_ // 2  # pairs of: (val,err) in columns
+                                        if ncols == 0:
+                                            ncols = ncols_
+                                        else:
+                                            assert ncols == ncols_
+                            # > create empty datasets for this observable
+                            _ = h5grp_obs.create_dataset("files", (0,), dtype=_dt_vstr, maxshape=(None,))
+                            # > neval is per-job (not per-bin): store as 1-D to avoid nrows*ncols redundancy
+                            _ = h5grp_obs.create_dataset("neval", (0,), dtype=np.int64, maxshape=(None,))
+                            h5dat_data = h5grp_obs.create_dataset(
+                                "data",
+                                (nrows, ncols, 0),
+                                dtype=_dt_hist,
+                                maxshape=(nrows, ncols, None),
+                                chunks=(1, 1, _chunk_size),  # read pattern: [irow, icol, :] → align last axis
+                                compression="lzf",  # faster (de-)compression, only for h5py
                             )
-                            h5dat_xval.make_scale("x value")
-                            h5dat_data.dims[0].attach_scale(h5dat_xval)
-
-                    # > all structures exist at this point
-                    # > time to populate new data
-                    h5dat_files: h5py.Dataset = h5grp_obs["files"]
-                    h5dat_neval: h5py.Dataset = h5grp_obs["neval"]
-                    h5dat_data: h5py.Dataset = h5grp_obs["data"]
-                    nrows, ncols, ndat_phys = h5dat_data.shape
-                    ndat_old: int = int(h5grp_obs.attrs.get("ndat_valid", ndat_phys))
-                    if nx > 0:
-                        xval = h5dat_data.dims[0][0][...]
-
-                    in_files_old: list[GenericPath] = [
-                        file_path for file_path in h5dat_files.asstr()[:ndat_old]
-                    ]
-                    in_files_cur: list[GenericPath] = list(dict.fromkeys(in_files[obs]))
-                    in_files_new: list[GenericPath] = [
-                        file_path for file_path in in_files_cur if file_path not in in_files_old
-                    ]
-                    ndat_new: int = len(in_files_new)
-                    if ndat_new == 0:
-                        # print(f"{pt_name}[{obs}]: nothing to append ({ndat_new}/{len(in_files_old)})")
-                        continue
-                    elif h5grp_obs.attrs["timestamp"] < 0:
-                        # print(f"{pt_name}[{obs}]: HDF5 in merging stage")
-                        continue
-                    else:
-                        # print(f"{pt_name}[{obs}]: append {in_files_new} // {in_files_old}")
-                        h5grp_obs.attrs["timestamp"] = -1.0  # flag merging state
-                    # > resize datasets to accommodate new files (only extends, never shrinks)
-                    ndat_total: int = ndat_old + ndat_new
-                    resize_obs[obs] = ndat_old
-                    h5dat_files.resize((max(ndat_total, ndat_phys),))
-                    h5dat_neval.resize((max(ndat_total, ndat_phys),))
-                    h5dat_data.resize((nrows, ncols, max(ndat_total, ndat_phys)))
-                    # > pre-allocate buffers once per observable
-                    # > layout (chunk_size, nrows, ncols): buf_data["result"][i, irow, :] is
-                    # > contiguous on the last axis during parse
-                    buf_data = np.empty((_chunk_size, nrows, ncols), dtype=_dt_hist)
-                    buf_neval = np.empty(_chunk_size, dtype=np.int64)
-                    for chunk_start in range(0, ndat_new, _chunk_size):
-                        chunk_slice = in_files_new[chunk_start : chunk_start + _chunk_size]
-                        chunk_len = len(chunk_slice)
-                        # > parse job files into in-memory buffer
-                        for i, ifile in enumerate(chunk_slice):
-                            h5dat_files[ndat_old + chunk_start + i] = ifile
-                            with open(self._path / ifile, "rt") as dat_file:
-                                lines = dat_file.read().splitlines()
-                            buf_neval[i] = -1
-                            data_lines: list[str] = []
-                            data_irows: list[int] = []
-                            irow: int = 0
-                            for line in lines:
-                                line = line.strip()
-                                if not line:
-                                    continue
-                                if line.startswith("#"):
-                                    if line.startswith("#neval"):
-                                        buf_neval[i] = int(line.split()[-1])
-                                    elif line.startswith("#overflow"):
-                                        # > overflow rows are rare: parse individually
-                                        arr_f64 = np.fromstring(
-                                            line.split(None, nx)[nx], dtype=np.float64, sep=" "
-                                        )
-                                        assert len(arr_f64) == 2 * ncols
-                                        buf_data["result"][i, irow, :] = arr_f64[0::2]
-                                        buf_data["error2"][i, irow, :] = arr_f64[1::2] ** 2
-                                        irow += 1
-                                    elif line.startswith("#nx"):
-                                        assert int(line.split()[-1]) == nx
-                                else:
-                                    assert len(line.split()) == nx + 2 * ncols
-                                    data_lines.append(line)
-                                    data_irows.append(irow)
-                                    irow += 1
-                            # > batch-parse all regular data lines in one fromstring call
-                            if data_lines:
-                                arr = np.fromstring(" ".join(data_lines), dtype=np.float64, sep=" ").reshape(
-                                    len(data_lines), nx + 2 * ncols
+                            if nx > 0:
+                                h5dat_xval = h5grp_obs.create_dataset(
+                                    "xval", (nrows, nx), dtype=np.float64, data=xval
                                 )
-                                if nx > 0:
-                                    if len(data_lines) == nrows:  # no overflow row
-                                        assert np.array_equal(arr[:, :nx], xval)
-                                    else:
-                                        assert np.array_equal(arr[:, :nx], xval[data_irows])
-                                if len(data_lines) == nrows:
-                                    # > no overflow rows: direct field-view assignment
-                                    buf_data["result"][i] = arr[:, nx::2]
-                                    buf_data["error2"][i] = arr[:, nx + 1 :: 2] ** 2
-                                else:
-                                    # > overflow rows present: scatter data rows back to their irow
-                                    for k, irow_k in enumerate(data_irows):
-                                        buf_data["result"][i, irow_k, :] = arr[k, nx::2]
-                                        buf_data["error2"][i, irow_k, :] = arr[k, nx + 1 :: 2] ** 2
-                            assert irow == nrows
-                        # > single 3D write: transpose (chunk_len, nrows, ncols) → (nrows, ncols, chunk_len)
-                        # > to match HDF5 chunk layout; ascontiguousarray ensures one contiguous copy
-                        idat_start = ndat_old + chunk_start
-                        idat_end = idat_start + chunk_len
-                        h5dat_neval[idat_start:idat_end] = buf_neval[:chunk_len]
-                        h5dat_data[:, :, idat_start:idat_end] = np.ascontiguousarray(
-                            buf_data[:chunk_len].transpose(1, 2, 0)
-                        )
-                        resize_obs[obs] += chunk_len
-                    expected_nfiles = len(set(in_files_old).union(in_files_cur))
-                    assert resize_obs[obs] == expected_nfiles
-                    # > update ndat_valid as the final step — crash before this leaves
-                    # > old ndat_valid intact, excess data invisible, next run re-appends idempotently
-                    h5grp_obs.attrs["ndat_valid"] = resize_obs[obs]
+                                h5dat_xval.make_scale("x value")
+                                h5dat_data.dims[0].attach_scale(h5dat_xval)
 
-            else:
-                # > single_file is not None
-                raise NotImplementedError("single_file option not implemented yet")
+                        # > all structures exist at this point
+                        # > time to populate new data
+                        h5dat_files: h5py.Dataset = h5grp_obs["files"]
+                        h5dat_neval: h5py.Dataset = h5grp_obs["neval"]
+                        h5dat_data: h5py.Dataset = h5grp_obs["data"]
+                        nrows, ncols, ndat_phys = h5dat_data.shape
+                        ndat_old: int = int(h5grp_obs.attrs.get("ndat_valid", ndat_phys))
+                        if nx > 0:
+                            xval = h5dat_data.dims[0][0][...]
+
+                        in_files_old: list[GenericPath] = [
+                            file_path for file_path in h5dat_files.asstr()[:ndat_old]
+                        ]
+                        in_files_cur: list[GenericPath] = list(dict.fromkeys(in_files[obs]))
+                        in_files_new: list[GenericPath] = [
+                            file_path for file_path in in_files_cur if file_path not in in_files_old
+                        ]
+                        ndat_new: int = len(in_files_new)
+                        if ndat_new == 0:
+                            # print(f"{pt_name}[{obs}]: nothing to append ({ndat_new}/{len(in_files_old)})")
+                            continue
+                        elif h5grp_obs.attrs["timestamp"] < 0 and not merge_in_progress:
+                            # print(f"{pt_name}[{obs}]: HDF5 in merging stage")
+                            continue
+                        else:
+                            # print(f"{pt_name}[{obs}]: append {in_files_new} // {in_files_old}")
+                            h5grp_obs.attrs["timestamp"] = -1.0  # flag merging state
+                        # > resize datasets to accommodate new files (only extends, never shrinks)
+                        ndat_total: int = ndat_old + ndat_new
+                        resize_obs[obs] = ndat_old
+                        h5dat_files.resize((max(ndat_total, ndat_phys),))
+                        h5dat_neval.resize((max(ndat_total, ndat_phys),))
+                        h5dat_data.resize((nrows, ncols, max(ndat_total, ndat_phys)))
+                        # > pre-allocate buffers once per observable
+                        # > layout (chunk_size, nrows, ncols): buf_data["result"][i, irow, :] is
+                        # > contiguous on the last axis during parse
+                        buf_data = np.empty((_chunk_size, nrows, ncols), dtype=_dt_hist)
+                        buf_neval = np.empty(_chunk_size, dtype=np.int64)
+                        for chunk_start in range(0, ndat_new, _chunk_size):
+                            chunk_slice = in_files_new[chunk_start : chunk_start + _chunk_size]
+                            chunk_len = len(chunk_slice)
+                            # > parse job files into in-memory buffer
+                            for i, ifile in enumerate(chunk_slice):
+                                h5dat_files[ndat_old + chunk_start + i] = ifile
+                                with open(self._path / ifile) as dat_file:
+                                    lines = dat_file.read().splitlines()
+                                buf_neval[i] = -1
+                                data_lines: list[str] = []
+                                data_irows: list[int] = []
+                                irow: int = 0
+                                for line in lines:
+                                    line = line.strip()
+                                    if not line:
+                                        continue
+                                    if line.startswith("#"):
+                                        if line.startswith("#neval"):
+                                            buf_neval[i] = int(line.split()[-1])
+                                        elif line.startswith("#overflow"):
+                                            # > overflow rows are rare: parse individually
+                                            arr_f64 = np.fromstring(
+                                                line.split(None, nx)[nx], dtype=np.float64, sep=" "
+                                            )
+                                            assert len(arr_f64) == 2 * ncols
+                                            buf_data["result"][i, irow, :] = arr_f64[0::2]
+                                            buf_data["error2"][i, irow, :] = arr_f64[1::2] ** 2
+                                            irow += 1
+                                        elif line.startswith("#nx"):
+                                            assert int(line.split()[-1]) == nx
+                                    else:
+                                        assert len(line.split()) == nx + 2 * ncols
+                                        data_lines.append(line)
+                                        data_irows.append(irow)
+                                        irow += 1
+                                # > batch-parse all regular data lines in one fromstring call
+                                if data_lines:
+                                    arr = np.fromstring(
+                                        " ".join(data_lines), dtype=np.float64, sep=" "
+                                    ).reshape(len(data_lines), nx + 2 * ncols)
+                                    if nx > 0:
+                                        if len(data_lines) == nrows:  # no overflow row
+                                            assert np.array_equal(arr[:, :nx], xval)
+                                        else:
+                                            assert np.array_equal(arr[:, :nx], xval[data_irows])
+                                    if len(data_lines) == nrows:
+                                        # > no overflow rows: direct field-view assignment
+                                        buf_data["result"][i] = arr[:, nx::2]
+                                        buf_data["error2"][i] = arr[:, nx + 1 :: 2] ** 2
+                                    else:
+                                        # > overflow rows present: scatter data rows back to their irow
+                                        for k, irow_k in enumerate(data_irows):
+                                            buf_data["result"][i, irow_k, :] = arr[k, nx::2]
+                                            buf_data["error2"][i, irow_k, :] = arr[k, nx + 1 :: 2] ** 2
+                                assert irow == nrows
+                            # > single 3D write: transpose to match HDF5 layout
+                            # > to match HDF5 chunk layout; ascontiguousarray ensures one contiguous copy
+                            idat_start = ndat_old + chunk_start
+                            idat_end = idat_start + chunk_len
+                            h5dat_neval[idat_start:idat_end] = buf_neval[:chunk_len]
+                            h5dat_data[:, :, idat_start:idat_end] = np.ascontiguousarray(
+                                buf_data[:chunk_len].transpose(1, 2, 0)
+                            )
+                            resize_obs[obs] += chunk_len
+                        expected_nfiles = len(set(in_files_old).union(in_files_cur))
+                        assert resize_obs[obs] == expected_nfiles
+                        # > update ndat_valid as the final step — crash before this leaves
+                        # > old ndat_valid intact, excess data invisible, next run re-appends idempotently
+                        h5grp_obs.attrs["ndat_valid"] = resize_obs[obs]
+
+                else:
+                    # > single_file is not None
+                    raise NotImplementedError("single_file option not implemented yet")
 
         # > find all obs that have data in the HDF5 file (may exceed resize_obs if results were deleted)
         hdf5_obs_ready: set[str] = set()
@@ -853,7 +885,9 @@ class MergePart(DBMerge):
         #         self._logger_prefix
         #         + f"::run:  yield {[mrg_obs.dat_out for mrg_obs in mrg_obs_dict.values()]} for merging ...",
         #     )
-        yield list(mrg_obs_dict.values())
+        pending_mrg_obs = [mrg_obs for mrg_obs in mrg_obs_dict.values() if not mrg_obs.complete()]
+        if pending_mrg_obs:
+            yield pending_mrg_obs
 
         #############################
         # > Phase 3: post-yield cross-section computation: no DB session held
