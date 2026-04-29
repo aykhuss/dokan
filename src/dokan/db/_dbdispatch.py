@@ -51,6 +51,10 @@ class DBDispatch(DBTask):
     _n: int = luigi.IntParameter(default=0)
 
     # > execution mode and policy are fixed at queue time; dispatch reads them from the DB
+    _REPOPULATE_INTERVAL_FAC: float = 0.10
+    _SIGNAL_INTERVAL_FAC: float = 0.01
+    _DISPATCH_INTERVAL_MIN: float = 10.0
+    _DISPATCH_SIGNAL_ORDER: tuple[LogLevel, ...] = (LogLevel.SIG_MERGE,)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -469,6 +473,65 @@ class DBDispatch(DBTask):
 
         return queue_full
 
+    def _dispatch_interval(self) -> float:
+        """Return the throttled queue re-population interval in seconds."""
+        return max(
+            self._DISPATCH_INTERVAL_MIN,
+            self._REPOPULATE_INTERVAL_FAC * self.config["run"]["job_max_runtime"],
+        )
+
+    def _signal_interval(self) -> float:
+        """Return the workflow signal polling interval in seconds."""
+        return max(
+            self._DISPATCH_INTERVAL_MIN,
+            self._SIGNAL_INTERVAL_FAC * self.config["run"]["job_max_runtime"],
+        )
+
+    def _consume_merge_signal(self, session: Session) -> bool:
+        """Check for and consume SIG_MERGE log entries.
+
+        Consumed signals are downgraded to INFO to preserve the audit trail.
+        """
+        signals = list(session.scalars(select(Log).where(Log.level == LogLevel.SIG_MERGE)))
+        if not signals:
+            return False
+        for sig in signals:
+            sig.level = LogLevel.INFO
+            sig.message = f"[consumed] {sig.message}"
+        self._safe_commit(session)
+        return True
+
+    def _consume_dispatch_signals(self, session: Session) -> list[luigi.Task]:
+        """Consume pending dispatch signals in priority order and return their tasks.
+
+        Only actionable dispatch-request signals belong here.  Status markers such as
+        ``SIG_DISPATCH_DONE`` or ``SIG_COMP`` must remain untouched because other
+        tasks use them as durable completion state.
+        """
+        signal_tasks: list[luigi.Task] = []
+        for signal in self._DISPATCH_SIGNAL_ORDER:
+            if signal == LogLevel.SIG_MERGE and self._consume_merge_signal(session):
+                self._logger(session, self._logger_prefix + "::run:  SIG_MERGE \u2192 yielding MergeAll")
+                signal_tasks.append(self.clone(MergeAll, force=True, reset_tag=time.time()))
+        return signal_tasks
+
+    def _with_dispatch_continuation(self, tasks: list[luigi.Task]) -> list[luigi.Task]:
+        """Return signal tasks followed by one dynamic dispatch continuation."""
+        return [*tasks, self.clone(DBDispatch, id=0, _n=self._n + 1)]
+
+    def _poll_dispatch_signals_until(self, deadline: float) -> list[luigi.Task]:
+        """Poll dispatch signals until ``deadline`` or an actionable signal appears."""
+        while True:
+            with self.session as session:
+                signal_tasks = self._consume_dispatch_signals(session)
+            if signal_tasks:
+                return signal_tasks
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.0:
+                return []
+            time.sleep(min(self._signal_interval(), remaining))
+
     def run(self):
         """Dispatch batches of queued jobs by spawning `DBRunner`s.
 
@@ -486,17 +549,14 @@ class DBDispatch(DBTask):
                 queue_full = self._repopulate(session)
             if queue_full:
                 if self.id == 0:
-                    with self.session as session:
-                        if self._consume_merge_signal(session):
-                            self._logger(
-                                session, self._logger_prefix + "::run:  SIG_MERGE → yielding MergeAll"
-                            )
-                            yield [
-                                self.clone(MergeAll, force=True, reset_tag=time.time()),
-                                self.clone(DBDispatch, id=0, _n=self._n + 1),
-                            ]
-                            return
-                time.sleep(0.1 * self.config["run"]["job_max_runtime"])
+                    signal_tasks = self._poll_dispatch_signals_until(
+                        time.monotonic() + self._dispatch_interval()
+                    )
+                    if signal_tasks:
+                        yield self._with_dispatch_continuation(signal_tasks)
+                        return
+                else:
+                    time.sleep(self._dispatch_interval())
 
         runners: list[DBRunner] = []
         done: bool = False
@@ -590,10 +650,10 @@ class DBDispatch(DBTask):
         next_tasks: list = list(runners)
         if self.id == 0:
             with self.session as session:
-                if self._consume_merge_signal(session):
-                    self._logger(session, self._logger_prefix + "::run:  SIG_MERGE → injecting MergeAll")
-                    next_tasks.append(self.clone(MergeAll, force=True, reset_tag=time.time()))
-            if not done:
+                signal_tasks = self._consume_dispatch_signals(session)
+            if signal_tasks:
+                next_tasks.extend(self._with_dispatch_continuation(signal_tasks))
+            elif not done:
                 next_tasks.append(self.clone(DBDispatch, id=0, _n=self._n + 1))
         if next_tasks:
             yield next_tasks
