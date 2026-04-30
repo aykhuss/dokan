@@ -563,7 +563,9 @@ class MergePart(DBMerge):
             pt: Part = session.get_one(Part, self.part_id)
             pt_name: str = pt.name
             merge_in_progress = pt.timestamp < 0.0
-            self._logger(session, self._logger_prefix + "::run: " + ("fresh" if not merge_in_progress else "continue"))
+            self._logger(
+                session, self._logger_prefix + "::run: " + ("fresh" if not merge_in_progress else "continue")
+            )
 
             # > output directory
             mrg_path: Path = self._path.joinpath("result", "part", pt_name)
@@ -652,10 +654,14 @@ class MergePart(DBMerge):
                                 hdf5_obs_ready.add(obs)
                                 hdf5_obs_files[obs] = set(h5grp["files"].asstr()[:nv])
 
-        resume_hdf5 = merge_in_progress and bool(hdf5_obs_ready) and all(
-            set(files).issubset(hdf5_obs_files.get(obs, set()))
-            for obs, files in in_files.items()
-            if files
+        resume_hdf5 = (
+            merge_in_progress
+            and bool(hdf5_obs_ready)
+            and all(
+                set(files).issubset(hdf5_obs_files.get(obs, set()))
+                for obs, files in in_files.items()
+                if files
+            )
         )
         if resume_hdf5:
             with self.session as session:
