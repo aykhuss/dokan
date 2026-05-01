@@ -512,7 +512,7 @@ class DBDispatch(DBTask):
         for signal in self._DISPATCH_SIGNAL_ORDER:
             if signal == LogLevel.SIG_MERGE and self._consume_merge_signal(session):
                 self._logger(session, self._logger_prefix + "::run:  SIG_MERGE \u2192 yielding MergeAll")
-                signal_tasks.append(self.clone(MergeAll, force=True, reset_tag=time.time()))
+                signal_tasks.append(self.clone(MergeAll, force=True, reset_tag=time.time(), finalize=True))
         return signal_tasks
 
     def _with_dispatch_continuation(self, tasks: list[luigi.Task]) -> list[luigi.Task]:
