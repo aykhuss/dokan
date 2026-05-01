@@ -1298,9 +1298,43 @@ class MergeFinal(DBMerge):
                         weights_file.write_text(hist.to_weights())
                         pine_merge: Path = Path(self.config["exe"]["path"]).parent / "nnlojet-merge-pineappl"
                         if pine_merge.is_file() and os.access(pine_merge, os.X_OK):
+                            job_env = os.environ.copy()
+                            # > merge grids for each individual part before merging the final combined grid
+                            for wgt_line in weights_file.read_text().splitlines():
+                                if wgt_line.startswith("#") or not wgt_line.strip():
+                                    continue
+                                part_dat = Path(wgt_line.split()[0])
+                                part_wgt = part_dat.with_suffix(".weights.txt")
+                                part_grid = part_dat.with_suffix(".pineappl.lz4")
+                                if not part_wgt.is_file():
+                                    self._logger(
+                                        session,
+                                        self._logger_prefix + f"::run:  missing weights: {part_wgt}",
+                                        level=LogLevel.WARN,
+                                    )
+                                    continue
+                                if part_grid.is_file() and part_grid.stat().st_mtime >= part_wgt.stat().st_mtime:
+                                    continue
+                                part_log = part_dat.with_suffix(".pineappl.log")
+                                with open(part_log, "w") as log:
+                                    _ = subprocess.run(
+                                        [
+                                            pine_merge,
+                                            str(part_wgt.relative_to(part_dat.parent)),
+                                            str(part_grid.relative_to(part_dat.parent)),
+                                            "-v",
+                                            "--skip",
+                                            "--noopt",
+                                        ],
+                                        env=job_env,
+                                        cwd=part_dat.parent,
+                                        stdout=log,
+                                        stderr=log,
+                                        text=True,
+                                    )
+                            # > all parts ready -> combine into final grid
                             grid_file: Path = out_file.with_suffix(".pineappl.lz4")
                             grid_log: Path = out_file.with_suffix(".pineappl.log")
-                            job_env = os.environ.copy()
                             with open(grid_log, "w") as log:
                                 _ = subprocess.run(
                                     [
@@ -1317,7 +1351,6 @@ class MergeFinal(DBMerge):
                                     stderr=log,
                                     text=True,
                                 )
-                            pass
                         else:
                             self._logger(
                                 session,
@@ -1327,7 +1360,7 @@ class MergeFinal(DBMerge):
 
             # > shut down the monitor
             self._logger(session, "complete", level=LogLevel.SIG_COMP)
-            time.sleep(2.0 * self.config["ui"]["refresh_delay"])
+            time.sleep(self.config["ui"]["refresh_delay"])
 
             # > parse merged cross section result
             mrg_all: MergeAll = self.requires()[0]
