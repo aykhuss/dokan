@@ -1011,17 +1011,24 @@ class MergePart(DBMerge):
 
 class MergeAll(DBMerge):
     # > merge all `Part` objects that are currently active
+    finalize: bool = luigi.BoolParameter(default=False)
 
     priority = 110
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._logger_prefix: str = "MergeAll"
-        with self.session as session:
-            if self.force or self.reset_tag > 0.0:
-                self._logger_prefix = (
-                    self._logger_prefix + f"[force={self.force}, reset={time.ctime(self.reset_tag)}]"
+        if self.force or self.reset_tag > 0.0 or self.finalize:
+            self._logger_prefix += (
+                "["
+                + ", ".join(
+                    ([f"force={self.force}"] if self.force else [])
+                    + ([f"reset={time.ctime(self.reset_tag)}"] if self.reset_tag > 0.0 else [])
+                    + (["finalize"] if self.finalize else [])
                 )
+                + "]"
+            )
+        with self.session as session:
             self._debug(session, self._logger_prefix + "::init")
         # > output directory
         self.mrg_path: Path = self._path.joinpath("result", "merge")
@@ -1051,6 +1058,14 @@ class MergeAll(DBMerge):
         # > check input requirements
         if any(not mpt.complete() for mpt in self.requires()):
             return False
+
+        if self.finalize:
+            marker = self._read_merge_marker()
+            if marker is None:
+                return False
+            if self.run_tag > float(marker.get("run_tag", -1.0)):
+                return False
+            return bool(marker.get("finalized", False))
 
         marker = self._read_merge_marker()
         if marker is None:
@@ -1186,6 +1201,155 @@ class MergeAll(DBMerge):
             marker_file.write("\n")
         marker_tmp.replace(self.merge_marker)
 
+        if self.finalize:
+            fin_path: Path = self._path.joinpath("result", "final")
+            if not fin_path.exists():
+                fin_path.mkdir(parents=True)
+            mrg_parent_fin: Path = self._path.joinpath("result", "part")
+            with self.session as session:
+                for out_order in Order:
+                    select_order = select(Part)  # no need to be active: .where(Part.active.is_(True))
+                    if int(out_order) < 0:
+                        select_order = select_order.where(Part.order == out_order)
+                    else:
+                        select_order = select_order.where(func.abs(Part.order) <= out_order)
+                    matched_parts = session.scalars(select_order).all()
+
+                    # > is there even a Part at this order for this process? (NNLO for an NLO-only process)
+                    if session.query(Part).filter(func.abs(Part.order) == abs(out_order)).count() == 0:
+                        self._logger(session, self._logger_prefix + f"::run:  no parts at order {out_order}")
+                        continue
+
+                    # > in order to write out an `order` result, we need at least one complete result for each part
+                    if any(pt.ntot <= 0 for pt in matched_parts):
+                        self._logger(
+                            session,
+                            f'[red]{self._logger_prefix}::run:  skipping "{out_order}" due to incomplete parts[/red]',
+                        )
+                        continue
+
+                    self._debug(
+                        session,
+                        self._logger_prefix
+                        + f"::run:  {out_order}: {list(map(lambda x: (x.id, x.ntot), matched_parts))}",
+                    )
+
+                    in_files_fin = dict((obs, []) for obs in self.config["run"]["histograms"])
+                    for pt in matched_parts:
+                        for obs in self.config["run"]["histograms"]:
+                            in_file: Path = mrg_parent_fin / pt.name / f"{obs}.dat"
+                            if in_file.exists():
+                                in_files_fin[obs].append(str(in_file.relative_to(self._path)))
+                            else:
+                                # > can happen when new histogram added manually
+                                self._logger(
+                                    session,
+                                    self._logger_prefix + f"::run:  skipping missing file: {in_file}",
+                                    level=LogLevel.WARN,
+                                )
+
+                    # > sum all parts
+                    for obs, hist_info in self.config["run"]["histograms"].items():
+                        out_file: Path = fin_path / f"{out_order}.{obs}.dat"
+                        nx: int = hist_info["nx"]
+                        qwgt: bool = self.grids and (hist_info.get("grid") is not None)
+                        if len(in_files_fin[obs]) == 0:
+                            self._logger(
+                                session,
+                                self._logger_prefix + f"::run:  no files for {obs}",
+                                level=LogLevel.ERROR,
+                            )
+                            continue
+                        hist = NNLOJETHistogram()
+                        for in_file in in_files_fin[obs]:
+                            try:
+                                hist = hist + NNLOJETHistogram(
+                                    nx=nx, filename=self._path / in_file, weights=qwgt
+                                )
+                            except ValueError as e:
+                                self._logger(
+                                    session,
+                                    self._logger_prefix + f"::run:  error reading file {in_file} ({e!r})",
+                                    level=LogLevel.ERROR,
+                                )
+                        hist.write_to_file(out_file)
+                        if qwgt:
+                            weights_file = out_file.with_suffix(".weights.txt")
+                            weights_file.write_text(hist.to_weights())
+                            pine_merge: Path = (
+                                Path(self.config["exe"]["path"]).parent / "nnlojet-merge-pineappl"
+                            )
+                            if pine_merge.is_file() and os.access(pine_merge, os.X_OK):
+                                job_env = os.environ.copy()
+                                # > merge grids for each individual part before merging the final combined grid
+                                for wgt_line in weights_file.read_text().splitlines():
+                                    if wgt_line.startswith("#") or not wgt_line.strip():
+                                        continue
+                                    part_dat = Path(wgt_line.split()[0])
+                                    part_wgt = part_dat.with_suffix(".weights.txt")
+                                    part_grid = part_dat.with_suffix(".pineappl.lz4")
+                                    if not part_wgt.is_file():
+                                        self._logger(
+                                            session,
+                                            self._logger_prefix + f"::run:  missing weights: {part_wgt}",
+                                            level=LogLevel.WARN,
+                                        )
+                                        continue
+                                    if (
+                                        part_grid.is_file()
+                                        and part_grid.stat().st_mtime >= part_wgt.stat().st_mtime
+                                    ):
+                                        continue
+                                    part_log = part_dat.with_suffix(".pineappl.log")
+                                    with open(part_log, "w") as log:
+                                        _ = subprocess.run(
+                                            [
+                                                pine_merge,
+                                                str(part_wgt.relative_to(part_dat.parent)),
+                                                str(part_grid.relative_to(part_dat.parent)),
+                                                "-v",
+                                                "--skip",
+                                                "--noopt",
+                                            ],
+                                            env=job_env,
+                                            cwd=part_dat.parent,
+                                            stdout=log,
+                                            stderr=log,
+                                            text=True,
+                                        )
+                                # > all parts ready -> combine into final grid
+                                grid_file: Path = out_file.with_suffix(".pineappl.lz4")
+                                grid_log: Path = out_file.with_suffix(".pineappl.log")
+                                with open(grid_log, "w") as log:
+                                    _ = subprocess.run(
+                                        [
+                                            pine_merge,
+                                            str(weights_file.relative_to(out_file.parent)),
+                                            str(grid_file.relative_to(out_file.parent)),
+                                            "-v",
+                                            "--skip",
+                                            "--noopt",
+                                        ],
+                                        env=job_env,
+                                        cwd=out_file.parent,
+                                        stdout=log,
+                                        stderr=log,
+                                        text=True,
+                                    )
+                            else:
+                                self._logger(
+                                    session,
+                                    f"[red]{self._logger_prefix}::run:  missing nnlojet-merge-pineappl executable at {pine_merge}[/red]",
+                                    level=LogLevel.ERROR,
+                                )
+            # > re-write marker atomically with finalized flag added
+            marker["finalized"] = True
+            marker_tmp = self.merge_marker.with_suffix(".json.tmp")
+            with marker_tmp.open("w") as marker_file:
+                json.dump(marker, marker_file, indent=2, sort_keys=True)
+                marker_file.write("\n")
+            marker_tmp.replace(self.merge_marker)
+
 
 class MergeFinal(DBMerge):
     # > a final merge of all orders where we have parts available
@@ -1202,8 +1366,6 @@ class MergeFinal(DBMerge):
 
         # > output directory
         self.fin_path: Path = self._path.joinpath("result", "final")
-        if not self.fin_path.exists():
-            self.fin_path.mkdir(parents=True)
 
         self.result = float("nan")
         self.error = float("inf")
@@ -1211,7 +1373,7 @@ class MergeFinal(DBMerge):
     def requires(self):
         with self.session as session:
             self._debug(session, self._logger_prefix + "::requires")
-        return [self.clone(MergeAll, force=True)]
+        return [self.clone(MergeAll, force=True, finalize=True)]
 
     def complete(self) -> bool:
         with self.session as session:
@@ -1225,138 +1387,6 @@ class MergeFinal(DBMerge):
     def run(self):
         with self.session as session:
             self._logger(session, self._logger_prefix + "::run")
-            mrg_parent: Path = self._path.joinpath("result", "part")
-
-            # > create "final" files that merge parts into the different orders that are complete
-            for out_order in Order:
-                select_order = select(Part)  # no need to be active: .where(Part.active.is_(True))
-                if int(out_order) < 0:
-                    select_order = select_order.where(Part.order == out_order)
-                else:
-                    select_order = select_order.where(func.abs(Part.order) <= out_order)
-                matched_parts = session.scalars(select_order).all()
-
-                # > is there even a Part at this order for this process? (NNLO for an NLO-only process)
-                if session.query(Part).filter(func.abs(Part.order) == abs(out_order)).count() == 0:
-                    self._logger(session, self._logger_prefix + f"::run:  no parts at order {out_order}")
-                    continue
-
-                # > in order to write out an `order` result, we need at least one complete result for each part
-                if any(pt.ntot <= 0 for pt in matched_parts):
-                    self._logger(
-                        session,
-                        f'[red]MergeFinal::run:  skipping "{out_order}" due to incomplete parts[/red]',
-                    )
-                    continue
-
-                self._debug(
-                    session,
-                    self._logger_prefix
-                    + f"::run:  {out_order}: {list(map(lambda x: (x.id, x.ntot), matched_parts))}",
-                )
-
-                in_files = dict((obs, []) for obs in self.config["run"]["histograms"])
-                for pt in matched_parts:
-                    for obs in self.config["run"]["histograms"]:
-                        in_file: Path = mrg_parent / pt.name / f"{obs}.dat"
-                        if in_file.exists():
-                            in_files[obs].append(str(in_file.relative_to(self._path)))
-                        else:
-                            # > can happen when new histogram added manually
-                            self._logger(
-                                session,
-                                self._logger_prefix + f"::run:  skipping missing file: {in_file}",
-                                level=LogLevel.WARN,
-                            )
-                            # raise FileNotFoundError(f"MergeFinal::run:  missing {in_file}")
-
-                # > sum all parts
-                for obs, hist_info in self.config["run"]["histograms"].items():
-                    out_file: Path = self.fin_path / f"{out_order}.{obs}.dat"
-                    nx: int = hist_info["nx"]
-                    qwgt: bool = self.grids and (hist_info.get("grid") is not None)
-                    if len(in_files[obs]) == 0:
-                        self._logger(
-                            session,
-                            self._logger_prefix + f"::run:  no files for {obs}",
-                            level=LogLevel.ERROR,
-                        )
-                        continue
-                    hist = NNLOJETHistogram()
-                    for in_file in in_files[obs]:
-                        try:
-                            hist = hist + NNLOJETHistogram(nx=nx, filename=self._path / in_file, weights=qwgt)
-                        except ValueError as e:
-                            self._logger(
-                                session,
-                                self._logger_prefix + f"::run:  error reading file {in_file} ({e!r})",
-                                level=LogLevel.ERROR,
-                            )
-                    hist.write_to_file(out_file)
-                    if qwgt:
-                        weights_file = out_file.with_suffix(".weights.txt")
-                        weights_file.write_text(hist.to_weights())
-                        pine_merge: Path = Path(self.config["exe"]["path"]).parent / "nnlojet-merge-pineappl"
-                        if pine_merge.is_file() and os.access(pine_merge, os.X_OK):
-                            job_env = os.environ.copy()
-                            # > merge grids for each individual part before merging the final combined grid
-                            for wgt_line in weights_file.read_text().splitlines():
-                                if wgt_line.startswith("#") or not wgt_line.strip():
-                                    continue
-                                part_dat = Path(wgt_line.split()[0])
-                                part_wgt = part_dat.with_suffix(".weights.txt")
-                                part_grid = part_dat.with_suffix(".pineappl.lz4")
-                                if not part_wgt.is_file():
-                                    self._logger(
-                                        session,
-                                        self._logger_prefix + f"::run:  missing weights: {part_wgt}",
-                                        level=LogLevel.WARN,
-                                    )
-                                    continue
-                                if part_grid.is_file() and part_grid.stat().st_mtime >= part_wgt.stat().st_mtime:
-                                    continue
-                                part_log = part_dat.with_suffix(".pineappl.log")
-                                with open(part_log, "w") as log:
-                                    _ = subprocess.run(
-                                        [
-                                            pine_merge,
-                                            str(part_wgt.relative_to(part_dat.parent)),
-                                            str(part_grid.relative_to(part_dat.parent)),
-                                            "-v",
-                                            "--skip",
-                                            "--noopt",
-                                        ],
-                                        env=job_env,
-                                        cwd=part_dat.parent,
-                                        stdout=log,
-                                        stderr=log,
-                                        text=True,
-                                    )
-                            # > all parts ready -> combine into final grid
-                            grid_file: Path = out_file.with_suffix(".pineappl.lz4")
-                            grid_log: Path = out_file.with_suffix(".pineappl.log")
-                            with open(grid_log, "w") as log:
-                                _ = subprocess.run(
-                                    [
-                                        pine_merge,
-                                        str(weights_file.relative_to(out_file.parent)),
-                                        str(grid_file.relative_to(out_file.parent)),
-                                        "-v",
-                                        "--skip",
-                                        "--noopt",
-                                    ],
-                                    env=job_env,
-                                    cwd=out_file.parent,
-                                    stdout=log,
-                                    stderr=log,
-                                    text=True,
-                                )
-                        else:
-                            self._logger(
-                                session,
-                                f"[red]MergeFinal::run:  missing nnlojet-merge-pineappl executable at {pine_merge}[/red]",
-                                level=LogLevel.ERROR,
-                            )
 
             # > shut down the monitor
             self._logger(session, "complete", level=LogLevel.SIG_COMP)
