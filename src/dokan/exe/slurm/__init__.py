@@ -48,7 +48,7 @@ class SlurmExec(Executor):
             "job_path": str(self.exe_data.path.absolute()),
             "ncores": self.exe_data["policy_settings"].get("slurm_ncores", 1),
             "start_seed": min(job["seed"] for job in self.exe_data["jobs"].values()),
-            "nseed": len(self.exe_data["jobs"]),
+            "end_seed": max(job["seed"] for job in self.exe_data["jobs"].values()),
             "input_files": ", ".join(self.exe_data["input_files"]),
             "max_runtime": str(
                 datetime.timedelta(seconds=int(self.exe_data["policy_settings"]["max_runtime"]))
