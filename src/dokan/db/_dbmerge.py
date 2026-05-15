@@ -86,6 +86,7 @@ class MergeObs(Task):
     # > propagated from MergePart: invalidates dat files older than the tag so config-driven
     # > recomputation (e.g. new trim_threshold) actually re-runs the merge core, not just the DB stamp
     reset_tag: float = luigi.FloatParameter(default=0.0)
+    grids: bool = luigi.BoolParameter(default=False)
 
     priority = 130
 
@@ -113,7 +114,19 @@ class MergeObs(Task):
         dat_mtime = self.file_dat.stat().st_mtime
         if dat_mtime < self.reset_tag:
             return False
-        return dat_mtime >= self.timestamp
+        if dat_mtime < self.timestamp:
+            return False
+
+        if self.grids:
+            if self.file_wgt is None or not self.file_wgt.is_file():
+                return False
+            grid_file = self.file_dat.with_suffix(".pineappl.lz4")
+            if not grid_file.is_file():
+                return False
+            if grid_file.stat().st_mtime < self.file_wgt.stat().st_mtime:
+                return False
+
+        return True
 
     def run(self):
         # print(
@@ -437,6 +450,39 @@ class MergeObs(Task):
                             continue
                         wf.write(np.format_float_scientific(weights[irow, idat]) + " ")
                     wf.write("\n")
+
+            if self.grids:
+                pine_merge: Path = Path(self.config["exe"]["path"]).parent / "nnlojet-merge-pineappl"
+                if not pine_merge.is_file() or not os.access(pine_merge, os.X_OK):
+                    raise RuntimeError(f"Missing nnlojet-merge-pineappl executable at {pine_merge}")
+
+                grid_file = self.file_dat.with_suffix(".pineappl.lz4")
+                grid_log = self.file_dat.with_suffix(".pineappl.log")
+                job_env = os.environ.copy()
+
+                with open(grid_log, "w") as log:
+                    result = subprocess.run(
+                        [
+                            pine_merge,
+                            str(self.file_wgt.relative_to(self.file_dat.parent)),
+                            str(grid_file.relative_to(self.file_dat.parent)),
+                            "-v",
+                            "--skip",
+                            "--noopt",
+                        ],
+                        env=job_env,
+                        cwd=self.file_dat.parent,
+                        stdout=log,
+                        stderr=log,
+                        text=True,
+                    )
+                    if result.returncode != 0:
+                        raise RuntimeError(
+                            f"nnlojet-merge-pineappl failed for {self.file_dat.name}. "
+                            + f"Check {grid_log}"
+                        )
+        elif self.grids:
+            raise RuntimeError("Grid merging requires a weights output file")
 
 
 class MergePart(DBMerge):
@@ -868,9 +914,24 @@ class MergePart(DBMerge):
                         if nv > 0:
                             hdf5_obs_ready.add(obs)
 
+        stale_grid_obs: set[str] = set()
+        if self.grids:
+            for obs in hdf5_obs_ready:
+                dat_file = mrg_path / f"{obs}.dat"
+                wgt_file = mrg_path / f"{obs}.weights.txt"
+                grid_file = mrg_path / f"{obs}.pineappl.lz4"
+                if (
+                    not dat_file.exists()
+                    or not wgt_file.exists()
+                    or not grid_file.exists()
+                    or grid_file.stat().st_mtime < wgt_file.stat().st_mtime
+                ):
+                    stale_grid_obs.add(obs)
+
         # > dispatch HDF5 file to MergeObs for each observable separately
         # > include obs with new data OR obs whose dat output is missing (e.g. results dir deleted)
         # > OR reset_tag active: forces re-run of MergeObs so config changes (trim, k-scan) take effect
+        # > OR grid output is missing/stale when grid merging is enabled
         mrg_obs_dict = {
             obs: self.clone(
                 cls=MergeObs,
@@ -879,11 +940,13 @@ class MergePart(DBMerge):
                 dat_out=str((mrg_path / f"{obs}.dat").relative_to(self._path)),
                 wgt_out=str((mrg_path / f"{obs}.weights.txt").relative_to(self._path)),
                 reset_tag=self.reset_tag,
+                grids=self.grids,
             )
             for obs in self.config["run"]["histograms"]
             if obs in resize_obs
             or (obs in hdf5_obs_ready and not (mrg_path / f"{obs}.dat").exists())
             or (self.reset_tag > 0.0 and obs in hdf5_obs_ready)
+            or obs in stale_grid_obs
         }
         # with self.session as session:
         #     self._debug(
@@ -1281,42 +1344,6 @@ class MergeAll(DBMerge):
                             )
                             if pine_merge.is_file() and os.access(pine_merge, os.X_OK):
                                 job_env = os.environ.copy()
-                                # > merge grids for each individual part before merging the final combined grid
-                                for wgt_line in weights_file.read_text().splitlines():
-                                    if wgt_line.startswith("#") or not wgt_line.strip():
-                                        continue
-                                    part_dat = Path(wgt_line.split()[0])
-                                    part_wgt = part_dat.with_suffix(".weights.txt")
-                                    part_grid = part_dat.with_suffix(".pineappl.lz4")
-                                    if not part_wgt.is_file():
-                                        self._logger(
-                                            session,
-                                            self._logger_prefix + f"::run:  missing weights: {part_wgt}",
-                                            level=LogLevel.WARN,
-                                        )
-                                        continue
-                                    if (
-                                        part_grid.is_file()
-                                        and part_grid.stat().st_mtime >= part_wgt.stat().st_mtime
-                                    ):
-                                        continue
-                                    part_log = part_dat.with_suffix(".pineappl.log")
-                                    with open(part_log, "w") as log:
-                                        _ = subprocess.run(
-                                            [
-                                                pine_merge,
-                                                str(part_wgt.relative_to(part_dat.parent)),
-                                                str(part_grid.relative_to(part_dat.parent)),
-                                                "-v",
-                                                "--skip",
-                                                "--noopt",
-                                            ],
-                                            env=job_env,
-                                            cwd=part_dat.parent,
-                                            stdout=log,
-                                            stderr=log,
-                                            text=True,
-                                        )
                                 # > all parts ready -> combine into final grid
                                 grid_file: Path = out_file.with_suffix(".pineappl.lz4")
                                 grid_log: Path = out_file.with_suffix(".pineappl.log")

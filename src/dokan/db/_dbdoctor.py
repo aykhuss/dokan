@@ -89,6 +89,11 @@ class DBDoctor(DBTask):
                     # > only delete directory tree if there really are no potential "left overs"
                     if not other_files:
                         try:
+                            self._logger(
+                                session,
+                                f"{self._logger_prefix}::run: removing empty dir {exe_dir} ",
+                                level=LogLevel.WARN,
+                            )
                             shutil.rmtree(exe_dir)
                         except Exception as exc:
                             self._logger(

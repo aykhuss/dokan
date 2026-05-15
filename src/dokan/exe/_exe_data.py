@@ -288,6 +288,13 @@ class ExeData(UserDict):
         """Check if data is in the mutable state."""
         return self._mutable
 
+    @property
+    def mode(self) -> ExecutionMode:
+        """Get the execution mode from data."""
+        if "mode" not in self.data:
+            raise KeyError("missing required field 'mode'")
+        return ExecutionMode(self.data["mode"])
+
     def scan_dir(
         self,
         skip_files: list[str] | None = None,
