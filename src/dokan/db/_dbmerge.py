@@ -97,10 +97,6 @@ class MergeObs(Task):
         self.file_wgt: Path | None = self._path / self.wgt_out if self.wgt_out is not None else None
         if not self.file_hdf5.is_file():
             raise FileNotFoundError(f"MergeObs:  HDF5 input file {self.file_hdf5} does not exist!")
-        # with h5py.File(self.file_hdf5, "r", libver="latest", swmr=True) as h5f:
-        #     h5grp_obs: h5py.Group = h5f["/".join(self.hdf5_path)]
-        #     self.timestamp: float = h5grp_obs.attrs.get("timestamp", 0)
-        self.timestamp: float = self.file_hdf5.stat().st_mtime
 
     # > limit the resources on local cores
     @property
@@ -114,7 +110,17 @@ class MergeObs(Task):
         dat_mtime = self.file_dat.stat().st_mtime
         if dat_mtime < self.reset_tag:
             return False
-        if dat_mtime < self.timestamp:
+        # > read source timestamp fresh on every call — Luigi may reuse the same task instance
+        # > across multiple complete() checks, so caching in __init__ would give stale results
+        # > after MergePart appends new data to the HDF5 group.
+        with h5py.File(self.file_hdf5, "r", libver="latest", swmr=True) as h5f:
+            h5grp_obs = h5f["/".join(self.hdf5_path)]
+            src_ts = (
+                float(h5grp_obs.attrs["timestamp"])
+                if "timestamp" in h5grp_obs.attrs
+                else self.file_hdf5.stat().st_mtime
+            )
+        if dat_mtime < src_ts:
             return False
 
         if self.grids:
@@ -138,6 +144,11 @@ class MergeObs(Task):
         k_scan_maxdev_steps: float = self.config["merge"]["k_scan_maxdev_steps"]
         with h5py.File(self.file_hdf5, "r", libver="latest", swmr=True) as h5f:
             h5grp_obs: h5py.Group = h5f["/".join(self.hdf5_path)]
+            src_ts: float = (
+                float(h5grp_obs.attrs["timestamp"])
+                if "timestamp" in h5grp_obs.attrs
+                else self.file_hdf5.stat().st_mtime
+            )
             nx: int = h5grp_obs.attrs["nx"]
             h5dat_neval: h5py.Dataset = h5grp_obs["neval"]
             h5dat_data: h5py.Dataset = h5grp_obs["data"]
@@ -430,6 +441,11 @@ class MergeObs(Task):
                     df.write(f"{np.format_float_scientific(merged_hist['result'][irow, icol]): <25} ")
                     df.write(f"{np.format_float_scientific(merged_hist['error2'][irow, icol]): <25} ")
                 df.write("\n")
+        # > Make completion monotonic against both freshness gates.  Use +1.0 s so
+        # > that filesystems with 1-second mtime resolution (NFS, Lustre) always
+        # > floor to a value strictly >= src_ts, which can carry sub-second precision.
+        complete_mtime = max(time.time(), src_ts, self.reset_tag) + 1.0
+        os.utime(self.file_dat, (complete_mtime, complete_mtime))
 
         if self.file_wgt is not None and weights is not None:
             with open(self.file_wgt, "w") as wf:
@@ -898,6 +914,13 @@ class MergePart(DBMerge):
                         # > update ndat_valid as the final step — crash before this leaves
                         # > old ndat_valid intact, excess data invisible, next run re-appends idempotently
                         h5grp_obs.attrs["ndat_valid"] = resize_obs[obs]
+                        # > stable input timestamp for MergeObs freshness checks: max mtime across
+                        # > all stored files (old + new).  Never use wall-clock here — coarse-grained
+                        # > filesystem mtimes can make a freshly-written .dat look stale on fast resumes.
+                        h5grp_obs.attrs["timestamp"] = max(
+                            (self._path / file_path).stat().st_mtime
+                            for file_path in set(in_files_old) | set(in_files_cur)
+                        )
 
                 else:
                     # > single_file is not None
@@ -905,7 +928,8 @@ class MergePart(DBMerge):
 
         # > find all obs that have data in the HDF5 file (may exceed resize_obs if results were deleted)
         hdf5_obs_ready: set[str] = set()
-        with h5py.File(self._path / "raw" / f"{pt_name}.hdf5", "r") as h5f:
+        hdf5_file = self._path / "raw" / f"{pt_name}.hdf5"
+        with h5py.File(hdf5_file, "r") as h5f:
             if pt_name in h5f:
                 for obs in self.config["run"]["histograms"]:
                     if obs in h5f[pt_name] and "data" in h5f[pt_name][obs]:
@@ -1045,11 +1069,10 @@ class MergePart(DBMerge):
             raise ValueError(self._logger_prefix + f"::run:  unknown opt_target {opt_target}")
         final_error: float = abs(rel_cross_err * cross_result)
 
-        # > mark part merging as complete: stamp HDF5 then write DB result
+        # > mark part merging as complete in the DB.  HDF5 observable timestamps
+        # > represent input freshness for MergeObs and must not be advanced here:
+        # > doing so makes freshly generated .dat files look stale on resume.
         ts: float = time.time()
-        with h5py.File(self._path / "raw" / f"{pt_name}.hdf5", "a", libver="latest") as h5f:
-            for h5grp_obs in h5f[pt_name].values():
-                h5grp_obs.attrs["timestamp"] = ts
 
         # > Phase 4: short DB session: persist cross-section result and completion timestamp
         with self.session as session:
