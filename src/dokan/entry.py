@@ -109,9 +109,9 @@ class Entry(DBTask):
             yield self.clone(MergeAll, force=True, reset_tag=self.run_tag)
 
             self._logger(session, f"{self._logger_prefix}::run:  complete MergeAll -> dispatch")
-            dispatch: list = [self.clone(DBDispatch, id=0, _n=0)]
-            _ = dispatch[0]._reset_dispatch_done(session)
-            _ = dispatch[0]._repopulate(session)
+            dispatch_task = self.clone(DBDispatch, id=0, _n=0)
+            _ = dispatch_task._repopulate(session)
+            dispatch: list = [] if dispatch_task.complete() else [dispatch_task]
             # > add production resurrection tasks
             if self._resurrect_jobs:
                 dispatch = [
@@ -122,8 +122,9 @@ class Entry(DBTask):
                         if ExecutionMode(jd["mode"]) == ExecutionMode.PRODUCTION
                     }
                 ] + dispatch
-            self._debug(session, f"{self._logger_prefix}::run:  yield dispatch")
-            yield dispatch
+            if dispatch:
+                self._debug(session, f"{self._logger_prefix}::run:  yield dispatch")
+                yield dispatch
 
             self._logger(session, f"{self._logger_prefix}::run:  complete dispatch -> MergeFinal")
             yield self.clone(MergeFinal, force=True)
