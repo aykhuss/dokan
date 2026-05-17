@@ -135,10 +135,10 @@ def main() -> None:
                 raise RuntimeError(
                     f"process name in template {runcard.data['process_name']} does not match "
                     f"the one in the config {_cfg['process']['name']}"
-                )
+                ) from exc
             for pdf in runcard.data["PDFs"]:
                 if not check_PDF(_cfg["exe"]["path"], pdf):
-                    raise RuntimeError(f'PDF set: "{pdf}" not found')
+                    raise RuntimeError(f'PDF set: "{pdf}" not found') from exc
 
             _cfg["run"]["name"] = runcard.data["run_name"]
             _cfg["run"]["histograms"] = runcard.data["histograms"]
@@ -439,7 +439,8 @@ def main() -> None:
                     console.print(f"[dim]raw_path = {config['run']['raw_path']!r}[/dim]")
 
                 console.print(
-                    "[dim]more advanced settings in config.json (consult documentation in src/dokan/config.py)[/dim]"
+                    "[dim]more advanced settings in config.json "
+                    "(consult documentation in src/dokan/config.py)[/dim]"
                 )
 
                 # > config with flags skip the default config options
@@ -497,7 +498,9 @@ def main() -> None:
             # > restore default setting from config.json shipped with dokan
             if args.restore_defaults:
                 # > recursive function to traverse full config tree
-                def restore(cfg, parents: list = []) -> None:
+                def restore(cfg, parents: list | None = None) -> None:
+                    if parents is None:
+                        parents = []
                     for k, v in cfg.items():
                         # > some settings we don't want to overwrite
                         if k in [
@@ -515,8 +518,8 @@ def main() -> None:
                         else:
                             default_val = v
                             current_ref = config
-                            for l in level[:-1]:
-                                current_ref = current_ref[l]
+                            for p_level in level[:-1]:
+                                current_ref = current_ref[p_level]
                             current_val = current_ref[level[-1]]
                             if default_val != current_val and Confirm.ask(
                                 f"restore default value for {'.'.join(level)}? "
@@ -537,7 +540,8 @@ def main() -> None:
             'these defaults can be reconfigured later with the [italic]"config"[/italic] subcommand'
         )
         console.print(
-            "consult the subcommand help `submit --help` how these settings can be overridden for each submission"
+            "consult the subcommand help `submit --help` "
+            "how these settings can be overridden for each submission"
         )
 
         new_policy: ExecutionPolicy = ExecutionPolicyPrompt.ask(
@@ -953,7 +957,7 @@ def main() -> None:
             local_scheduler=True,
             log_level="WARNING",
         )  # 'WARNING', 'INFO', 'DEBUG''
-        if not luigi_result.scheduling_succeeded:
+        if not getattr(luigi_result, "scheduling_succeeded", True):
             console.print(luigi_result.summary_text)
 
         # console.print("\n" + luigi_result.one_line_summary)
