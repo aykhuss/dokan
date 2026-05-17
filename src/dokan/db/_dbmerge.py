@@ -23,7 +23,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .._types import GenericPath
-from ..combine import NNLOJETContainer, NNLOJETHistogram
+from ..combine import NNLOJETHistogram
 from ..exe._exe_config import ExecutionMode
 from ..exe._exe_data import ExeData
 from ..order import Order
@@ -68,7 +68,7 @@ class DBMerge(DBTask, metaclass=ABCMeta):
 
     # > limit the resources on local cores
     @property
-    def resources(self):
+    def resources(self):  # type: ignore
         return super().resources | {"local_ncores": 1}
 
     def _make_prefix(self, session: Session | None = None) -> str:
@@ -105,7 +105,7 @@ class MergeObs(Task):
 
     # > limit the resources on local cores
     @property
-    def resources(self):
+    def resources(self):  # type: ignore
         # return super().resources | {"local_ncores": 1, "MergeObs": 1}
         return super().resources | {"local_ncores": 1}
 
@@ -499,8 +499,7 @@ class MergeObs(Task):
                     )
                     if result.returncode != 0:
                         raise RuntimeError(
-                            f"nnlojet-merge-pineappl failed for {self.file_dat.name}. "
-                            + f"Check {grid_log}"
+                            f"nnlojet-merge-pineappl failed for {self.file_dat.name}. " + f"Check {grid_log}"
                         )
         elif self.grids:
             raise RuntimeError("Grid merging requires a weights output file")
@@ -511,7 +510,7 @@ class MergePart(DBMerge):
     part_id: int = luigi.IntParameter()
 
     @property
-    def resources(self):
+    def resources(self):  # type: ignore
         # return super().resources | {"local_ncores": 1, f"MergePart_{self.part_id}": 1}
         # > merge is I/O-bound (HDF5): skip local_ncores, use DBTask + per-part mutex
         return {"DBTask": 1, f"MergePart_{self.part_id}": 1}
@@ -1314,7 +1313,9 @@ class MergeAll(DBMerge):
                     matched_parts = session.scalars(select_order).all()
 
                     # > is there even a Part at this order for this process? (NNLO for an NLO-only process)
-                    if session.query(Part).filter(func.abs(Part.order) == abs(out_order)).count() == 0:
+                    if not session.scalars(
+                        select(Part).where(func.abs(Part.order) == abs(out_order))
+                    ).first():
                         self._logger(session, self._logger_prefix + f"::run:  no parts at order {out_order}")
                         continue
 

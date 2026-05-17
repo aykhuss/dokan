@@ -22,14 +22,17 @@ class LocalExec(Executor):
         number of cores to use on the local machine
     """
 
-    local_ncores: int = luigi.OptionalIntParameter(default=1)
+    local_ncores = luigi.IntParameter(default=1)
 
 
 class BatchLocalExec(LocalExec):
     """Wrapper task to batch-execute multiple local jobs"""
 
     def requires(self):
-        return [self.clone(cls=SingleLocalExec, job_id=job_id) for job_id in self.exe_data["jobs"]]
+        return [
+            self.clone(cls=SingleLocalExec, job_id=job_id, priority_bump=self.priority_bump)
+            for job_id in self.exe_data["jobs"]
+        ]
 
     def exe(self):
         pass
@@ -44,10 +47,10 @@ class SingleLocalExec(LocalExec):
         id of the job defined in exe_data to execute
     """
 
-    job_id: int = luigi.IntParameter()
+    job_id = luigi.IntParameter()
 
     @property
-    def resources(self):
+    def resources(self) -> dict[str, int]:  # type: ignore
         return {
             "local_ncores": self.local_ncores,
             "jobs_concurrent": 1,
@@ -61,7 +64,7 @@ class SingleLocalExec(LocalExec):
         self.file_out: Path = Path(self.path) / f"job.s{self.seed}.out"
         self.file_err: Path = Path(self.path) / f"job.s{self.seed}.err"
 
-    def output(self):
+    def output(self) -> list[luigi.Target]:
         return [luigi.LocalTarget(self.file_out)]
 
     def exe(self):

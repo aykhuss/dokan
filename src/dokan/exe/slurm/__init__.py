@@ -14,7 +14,7 @@ class SlurmExec(Executor):
     _file_sub: str = "job.sub"
 
     @property
-    def resources(self):
+    def resources(self):  # type: ignore
         return {"jobs_concurrent": self.njobs}
 
     def __init__(self, *args, **kwargs):
@@ -65,7 +65,7 @@ class SlurmExec(Executor):
             f.write(string.Template(t.read()).substitute(slurm_settings))
 
         job_env = os.environ.copy()
-        job_env["OMP_NUM_THREADS"] = "{}".format(slurm_settings["ncores"])
+        job_env["OMP_NUM_THREADS"] = f"{slurm_settings['ncores']}"
         job_env["OMP_STACKSIZE"] = "1024M"
 
         cluster_id: int = -1  # init failed state

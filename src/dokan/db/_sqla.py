@@ -3,6 +3,8 @@
 module defining the job database
 """
 
+import math
+
 from sqlalchemy import BigInteger, ForeignKey
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -37,7 +39,7 @@ class Part(DokanDB):
     Ttot: Mapped[float] = mapped_column(default=0.0)
     ntot: Mapped[float] = mapped_column(BigInteger(), default=0)
     result: Mapped[float] = mapped_column(default=0.0)
-    error: Mapped[float] = mapped_column(default=float("inf"))
+    error: Mapped[float] = mapped_column(default=math.inf)
     # number of jobs?
 
     # > all jobs associated with this part
@@ -70,8 +72,8 @@ class Job(DokanDB):
     niter: Mapped[int] = mapped_column(default=0)
     elapsed_time: Mapped[float] = mapped_column(default=0.0)
     result: Mapped[float] = mapped_column(default=0.0)
-    error: Mapped[float] = mapped_column(default=float("inf"))
-    chi2dof: Mapped[float] = mapped_column(default=float("inf"))
+    error: Mapped[float] = mapped_column(default=math.inf)
+    chi2dof: Mapped[float] = mapped_column(default=math.inf)
 
     def __repr__(self) -> str:
         return f"Job(id={self.id!r}, part_id={self.part_id!r}, status={JobStatus(self.status)!r}, timestamp={self.timestamp!r}, seed={self.seed}, rel_path={self.rel_path}, mode={ExecutionMode(self.mode)!r}, policy={ExecutionPolicy(self.policy)!r})"

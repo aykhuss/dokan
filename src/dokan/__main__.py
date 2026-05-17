@@ -22,7 +22,7 @@ import luigi
 from rich.console import Console
 from rich.prompt import Confirm, FloatPrompt, IntPrompt, InvalidResponse, Prompt, PromptBase
 from rich.syntax import Syntax
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from .__about__ import __version__
 from .bib import make_bib
@@ -862,9 +862,11 @@ def main() -> None:
 
         # > collect job statistics
         with db_init.session as session:
-            nactive_part = session.query(Part).filter(Part.active.is_(True)).count()
-            nactive_job = session.query(Job).filter(Job.status.in_(JobStatus.active_list())).count()
-            nfailed_job = session.query(Job).filter(Job.status.in_([JobStatus.FAILED])).count()
+            nactive_part = session.scalar(select(func.count(Part.id)).where(Part.active.is_(True)))
+            nactive_job = session.scalar(
+                select(func.count(Job.id)).where(Job.status.in_(JobStatus.active_list()))
+            )
+            nfailed_job = session.scalar(select(func.count(Job.id)).where(Job.status.in_([JobStatus.FAILED])))
         console.print(f"active parts: {nactive_part}")
         if nactive_part == 0:
             console.print("[red]calculation has no active part?![/red]")

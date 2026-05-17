@@ -29,7 +29,7 @@ class HTCondorExec(Executor):
 
     # @todo consider using `concurrency_limits` instead?
     @property
-    def resources(self):
+    def resources(self):  # type: ignore
         return {"jobs_concurrent": self.njobs}
 
     def __init__(self, *args, **kwargs):
@@ -71,7 +71,7 @@ class HTCondorExec(Executor):
             f.write(string.Template(t.read()).substitute(condor_settings))
 
         job_env = os.environ.copy()
-        job_env["OMP_NUM_THREADS"] = "{}".format(condor_settings["ncores"])
+        job_env["OMP_NUM_THREADS"] = f"{condor_settings['ncores']}"
         job_env["OMP_STACKSIZE"] = "1024M"
 
         cluster_id: int = -1  # init failed state

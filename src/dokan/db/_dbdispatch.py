@@ -64,7 +64,7 @@ class DBDispatch(DBTask):
         self.part_id: int = 0  # set in `_repopulate`
 
     @property
-    def resources(self):
+    def resources(self):  # type: ignore
         """Return Luigi resource locks for this dispatch instance."""
         if self.id == 0:
             return super().resources | {"DBDispatch": 1}
@@ -244,12 +244,11 @@ class DBDispatch(DBTask):
 
         def job_count_subquery(js_list: list[JobStatus]):
             """Return a subquery of (part_id, job_count) for jobs in the given statuses."""
-            nonlocal session
             return (
-                session.query(Job.part_id, func.count(Job.id).label("job_count"))
-                .filter(Job.run_tag == self.run_tag)
-                .filter(Job.mode == ExecutionMode.PRODUCTION)
-                .filter(Job.status.in_(js_list))
+                select(Job.part_id, func.count(Job.id).label("job_count"))
+                .where(Job.run_tag == self.run_tag)
+                .where(Job.mode == ExecutionMode.PRODUCTION)
+                .where(Job.status.in_(js_list))
                 .group_by(Job.part_id)
                 .subquery()
             )
@@ -266,17 +265,17 @@ class DBDispatch(DBTask):
             job_count_running = job_count_subquery([JobStatus.RUNNING])
             job_count_success = job_count_subquery(JobStatus.success_list())
             job_min_id_queued = (
-                session.query(Job.part_id, func.min(Job.id).label("job_id"))
-                .filter(Job.run_tag == self.run_tag)
-                .filter(Job.mode == ExecutionMode.PRODUCTION)
-                .filter(Job.status.in_([JobStatus.QUEUED]))
+                select(Job.part_id, func.min(Job.id).label("job_id"))
+                .where(Job.run_tag == self.run_tag)
+                .where(Job.mode == ExecutionMode.PRODUCTION)
+                .where(Job.status.in_([JobStatus.QUEUED]))
                 .group_by(Job.part_id)
                 .subquery()
             )
             # > get tuples (Part, #queued, #active, #running, #success, min_job_id) ordered by min_job_id
-            sorted_parts = (
-                session.query(
-                    Part,  # Part.id only?
+            sorted_parts = session.execute(
+                select(
+                    Part,
                     job_count_queued.c.job_count,
                     job_count_active.c.job_count,
                     job_count_running.c.job_count,
@@ -288,11 +287,9 @@ class DBDispatch(DBTask):
                 .outerjoin(job_count_running, Part.id == job_count_running.c.part_id)
                 .outerjoin(job_count_success, Part.id == job_count_success.c.part_id)
                 .outerjoin(job_min_id_queued, Part.id == job_min_id_queued.c.part_id)
-                .filter(Part.active.is_(True))
-                # .order_by(job_count_queued.c.job_count.desc())
+                .where(Part.active.is_(True))
                 .order_by(job_min_id_queued.c.job_id.asc())
-                .all()
-            )
+            ).all()
 
             # > termination condition based on #queued of individual jobs
             # > separate variable avoid interfere with other termination conditions (rel acc, etc.)

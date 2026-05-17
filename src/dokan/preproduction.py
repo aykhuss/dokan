@@ -55,7 +55,7 @@ class PreProduction(DBTask):
     priority = 150
 
     @property
-    def resources(self):
+    def resources(self):  # type: ignore
         # > each part can only have one active pre-production
         return super().resources | {f"PreProduction_{self.part_id}": 1}
 
@@ -185,9 +185,9 @@ class PreProduction(DBTask):
         NW_niter: int = LW.niter
         NW_ntot: int = NW_ncall * NW_niter
         NW_time_estimate: float = LW.elapsed_time * float(NW_ntot) / float(LW_ntot)
-        # > try accommodate runtime limt by reducing iterations
+        # > try to accommodate runtime limit by reducing iterations
         if NW_time_estimate > self.config["run"]["job_max_runtime"]:
-            NW_niter = float(NW_niter) * self.config["run"]["job_max_runtime"] // NW_time_estimate
+            NW_niter = int(NW_niter * self.config["run"]["job_max_runtime"] / NW_time_estimate)
             if NW_niter <= 0:
                 wflag |= WarmupFlag.RUNTIME
                 return -int(wflag)
@@ -267,19 +267,7 @@ class PreProduction(DBTask):
             .order_by(Job.id.asc())
         ).first()
         if active_production:
-            # print(f"active production: {active_production!r}")
             return active_production.id
-
-        # > already have a successful production: done.
-        success_production = session.scalars(
-            select(Job)
-            .where(Job.part_id == self.part_id)
-            .where(Job.mode == ExecutionMode.PRODUCTION)
-            .where(Job.policy == self.config["exe"]["policy"])
-            .where(Job.status.in_(JobStatus.success_list()))
-        ).first()
-        if success_production:
-            return -1
 
         # > not successful termination => failure
         FPP = session.scalars(
@@ -304,7 +292,7 @@ class PreProduction(DBTask):
             return queue_production(PP_ncall, self.config["production"]["niter"])
 
         # > queue up a pre-production (PP) with time estimates from the
-        # > highest-statistics warumup job we got.
+        # > highest-statistics warmup job we got.
         # > runtime penalty warmup -> production: 1:10
         penalty: float = self.config["production"]["penalty_wrt_warmup"]
 

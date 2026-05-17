@@ -6,6 +6,7 @@ from abc import ABCMeta, abstractmethod
 import luigi
 from rich.console import Console
 from sqlalchemy import Engine, create_engine, select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session  # , scoped_session, sessionmaker
 
 from ..exe import ExecutionMode, ExecutionPolicy, ExeData
@@ -34,7 +35,7 @@ class DBTask(Task, metaclass=ABCMeta):
 
     # > threadsafety using resource = 1, where read/write needed
     @property
-    def resources(self):
+    def resources(self):  # type: ignore
         return super().resources | {"DBTask": 1}
 
     def _create_engine(self, name: str) -> Engine:
@@ -65,8 +66,6 @@ class DBTask(Task, metaclass=ABCMeta):
         )
 
     def _safe_commit(self, session: Session) -> None:
-        from sqlalchemy.exc import OperationalError
-
         dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         for i in range(10):  # maximum number of tries
             try:
@@ -109,11 +108,11 @@ class DBTask(Task, metaclass=ABCMeta):
             print(job)
 
     def _logger(self, session: Session, message: str, level: LogLevel = LogLevel.INFO) -> None:
-        # > negative values are signals: always store in databese (workflow relies on this)
+        # > negative values are signals: always store in database (workflow relies on this)
         if level < 0:
             session.add(Log(level=level, timestamp=time.time(), message=message))
             self._safe_commit(session)
-        # > pass through log level & all signales
+        # > pass through log level & all signals
         if level >= 0 and level < self.config["ui"]["log_level"]:
             return
         # > print out
@@ -316,17 +315,17 @@ class DBTask(Task, metaclass=ABCMeta):
 
     def _remainders(self, session: Session) -> tuple[int, float]:
         # > remaining resources available
-        query_alloc = (  # active contains time estimates
-            session.query(Job)
+        alloc_jobs = session.scalars(  # active contains time estimates
+            select(Job)
             .join(Part)
-            .filter(Part.active.is_(True))
-            .filter(Job.run_tag == self.run_tag)
-            .filter(Job.mode == ExecutionMode.PRODUCTION)
-            .filter(Job.status.in_(JobStatus.success_list() + JobStatus.active_list()))
-        )
-        njobs_alloc: int = query_alloc.count()
+            .where(Part.active.is_(True))
+            .where(Job.run_tag == self.run_tag)
+            .where(Job.mode == ExecutionMode.PRODUCTION)
+            .where(Job.status.in_(JobStatus.success_list() + JobStatus.active_list()))
+        ).all()
+        njobs_alloc: int = len(alloc_jobs)
         njobs_rem: int = self.config["run"]["jobs_max_total"] - njobs_alloc
-        t_alloc: float = sum(job.elapsed_time for job in query_alloc)
+        t_alloc: float = sum(job.elapsed_time for job in alloc_jobs)
         t_rem: float = self.config["run"]["jobs_max_total"] * self.config["run"]["job_max_runtime"] - t_alloc
         return njobs_rem, t_rem
 
@@ -373,7 +372,7 @@ class DBTask(Task, metaclass=ABCMeta):
             # > runtime estimate based on *all* successful jobs
             if job.status in JobStatus.success_list():
                 # >--------
-                # A > previously we weighted the longer jobs with a heigher weight
+                # A > previously we weighted the longer jobs with a higher weight
                 # A > but this could lead to a bias towards the runtime-limit
                 # cache[job.part_id]["sum"] += job.elapsed_time
                 # cache[job.part_id]["sum2"] += (job.elapsed_time) ** 2 / float(ntot)
@@ -395,8 +394,8 @@ class DBTask(Task, metaclass=ABCMeta):
             #  to see if they hit the runtime limit?
 
         # > check every active part has an entry; compute the min/max/avg error; accumulate tot result & error
-        pt_min_error: float = +float("inf")
-        pt_max_error: float = -float("inf")
+        pt_min_error: float = math.inf
+        pt_max_error: float = -math.inf
         pt_avg_error: float = 0.0  # avg error on part to get target accuracy
         tot_result: float = 0.0
         tot_error: float = 0.0
