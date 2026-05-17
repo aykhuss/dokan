@@ -3,10 +3,13 @@
 # Slurm template
 ############
 
-#SBATCH --array=${start_seed}-${end_seed}
+#SBATCH --array=0-${njobs_minus_1}
 #SBATCH --cpus-per-task=${ncores}
 #SBATCH --time=${max_runtime}
-#SBATCH --output=job.s%a.out
-#SBATCH --error=job.s%a.err
+#SBATCH --output=slurm-%A_%a.out
+#SBATCH --error=slurm-%A_%a.err
 
-${exe} --run job.run --iseed $$SLURM_ARRAY_TASK_ID
+SEEDS=(${all_seeds})
+SEED=$${SEEDS[$$SLURM_ARRAY_TASK_ID]}
+
+${exe} --run job.run --iseed $$SEED > job.s$${SEED}.out 2> job.s$${SEED}.err

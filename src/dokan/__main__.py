@@ -916,6 +916,9 @@ def main() -> None:
             2 * (jobs_max // nactive_part) + 1,
             config["run"]["jobs_batch_unit_size"],
         )
+        if config["exe"]["policy"] == ExecutionPolicy.SLURM:
+            config["run"]["jobs_batch_size"] = min(config["run"]["jobs_batch_size"], 1000)
+
         console.print(f"# workers: {nworkers}")
         console.print(f"# batch size: {config['run']['jobs_batch_size']}")
 

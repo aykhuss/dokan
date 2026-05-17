@@ -1,4 +1,3 @@
-import datetime
 import os
 import re
 import string
@@ -33,6 +32,13 @@ class SlurmExec(Executor):
     def templates() -> list[GenericPath]:
         return [Path(__file__).parent.resolve() / "slurm.template"]
 
+    def _format_slurm_time(self, seconds: int) -> str:
+        """Format seconds to d-hh:mm:ss for SLURM."""
+        m, s = divmod(seconds, 60)
+        h, m = divmod(m, 60)
+        d, h = divmod(h, 24)
+        return f"{d}-{h:02d}:{m:02d}:{s:02d}"
+
     def exe(self):
         # > recovery mode
         if (
@@ -47,12 +53,12 @@ class SlurmExec(Executor):
             "exe": self.exe_data["exe"],
             "job_path": str(self.exe_data.path.absolute()),
             "ncores": self.exe_data["policy_settings"].get("slurm_ncores", 1),
+            "njobs_minus_1": len(self.exe_data["jobs"]) - 1,
+            "all_seeds": " ".join(str(job["seed"]) for job in self.exe_data["jobs"].values()),
             "start_seed": min(job["seed"] for job in self.exe_data["jobs"].values()),
             "end_seed": max(job["seed"] for job in self.exe_data["jobs"].values()),
             "input_files": ", ".join(self.exe_data["input_files"]),
-            "max_runtime": str(
-                datetime.timedelta(seconds=int(self.exe_data["policy_settings"]["max_runtime"]))
-            ),
+            "max_runtime": self._format_slurm_time(int(self.exe_data["policy_settings"]["max_runtime"])),
             # "max_runtime": int(self.exe_data["policy_settings"]["max_runtime"]),
         }
         with open(self.slurm_template) as t, open(self.file_sub, "w") as f:
