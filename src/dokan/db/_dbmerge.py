@@ -42,6 +42,11 @@ _chunk_size: int = 256  # chunk size along the ndat axis
 _MAD_NORMAL_SCALE: float = 0.6745  # median absolute deviation to 1-sigma for a normal distribution
 
 
+def _obs_has_grid(hist_info: dict) -> bool:
+    """Return whether this observable has an associated PineAPPL grid."""
+    return hist_info.get("grid") is not None
+
+
 @unique
 class BinMask(IntEnum):
     """possible values for the bin mask"""
@@ -82,7 +87,7 @@ class MergeObs(Task):
     hdf5_in: GenericPath = luigi.Parameter()
     hdf5_path: list[str] = luigi.ListParameter()  # path to the observable group
     dat_out: GenericPath = luigi.Parameter()
-    wgt_out: GenericPath | None = luigi.Parameter(default=None)  # only used if `grids` is True
+    wgt_out: GenericPath | None = luigi.OptionalParameter(default=None)  # only used if `grids` is True
     # > propagated from MergePart: invalidates dat files older than the tag so config-driven
     # > recomputation (e.g. new trim_threshold) actually re-runs the merge core, not just the DB stamp
     reset_tag: float = luigi.FloatParameter(default=0.0)
@@ -941,6 +946,9 @@ class MergePart(DBMerge):
         stale_grid_obs: set[str] = set()
         if self.grids:
             for obs in hdf5_obs_ready:
+                hist_info = self.config["run"]["histograms"][obs]
+                if not _obs_has_grid(hist_info):
+                    continue
                 dat_file = mrg_path / f"{obs}.dat"
                 wgt_file = mrg_path / f"{obs}.weights.txt"
                 grid_file = mrg_path / f"{obs}.pineappl.lz4"
@@ -962,11 +970,15 @@ class MergePart(DBMerge):
                 hdf5_in=str((self._path / "raw" / f"{pt_name}.hdf5").relative_to(self._path)),
                 hdf5_path=[f"{pt_name}", f"{obs}"],
                 dat_out=str((mrg_path / f"{obs}.dat").relative_to(self._path)),
-                wgt_out=str((mrg_path / f"{obs}.weights.txt").relative_to(self._path)),
+                wgt_out=(
+                    str((mrg_path / f"{obs}.weights.txt").relative_to(self._path))
+                    if self.grids and _obs_has_grid(hist_info)
+                    else None
+                ),
                 reset_tag=self.reset_tag,
-                grids=self.grids,
+                grids=self.grids and _obs_has_grid(hist_info),
             )
-            for obs in self.config["run"]["histograms"]
+            for obs, hist_info in self.config["run"]["histograms"].items()
             if obs in resize_obs
             or (obs in hdf5_obs_ready and not (mrg_path / f"{obs}.dat").exists())
             or (self.reset_tag > 0.0 and obs in hdf5_obs_ready)
@@ -1236,7 +1248,7 @@ class MergeAll(DBMerge):
             for obs, hist_info in self.config["run"]["histograms"].items():
                 out_file: Path = self.mrg_path / f"{obs}.dat"
                 nx: int = hist_info["nx"]
-                qwgt: bool = self.grids and (hist_info.get("grid") is not None)
+                qwgt: bool = self.grids and _obs_has_grid(hist_info)
                 if len(in_files[obs]) == 0:
                     self._logger(
                         session,
@@ -1338,7 +1350,7 @@ class MergeAll(DBMerge):
                     for obs, hist_info in self.config["run"]["histograms"].items():
                         out_file: Path = fin_path / f"{out_order}.{obs}.dat"
                         nx: int = hist_info["nx"]
-                        qwgt: bool = self.grids and (hist_info.get("grid") is not None)
+                        qwgt: bool = self.grids and _obs_has_grid(hist_info)
                         if len(in_files_fin[obs]) == 0:
                             self._logger(
                                 session,
