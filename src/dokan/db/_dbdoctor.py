@@ -24,8 +24,8 @@ class DBDoctor(DBTask):
     `Job` rows via `_update_job`.
     """
 
-    rel_paths: list[str] = luigi.ListParameter()
-    scan_dir: bool = luigi.BoolParameter(default=False)
+    rel_paths: list[str] = luigi.ListParameter()  # type: ignore[assignment]
+    scan_dir: bool = luigi.BoolParameter(default=False)  # type: ignore[assignment]
 
     priority = 200
 

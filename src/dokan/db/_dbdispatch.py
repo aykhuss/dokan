@@ -44,11 +44,11 @@ class DBDispatch(DBTask):
     # >   0  — dynamic global scheduling
     # >  >0  — dispatch a specific Job by its primary key
     # >  <0  — restrict dispatch to all jobs of Part abs(id)
-    id: int = luigi.IntParameter(default=0)
+    id: int = luigi.IntParameter(default=0)  # type: ignore[assignment]
 
     # > _n distinguishes successive id==0 dispatchers in the chain
     # > (Luigi deduplicates tasks by parameters, so _n must differ per wave)
-    _n: int = luigi.IntParameter(default=0)
+    _n: int = luigi.IntParameter(default=0)  # type: ignore[assignment]
 
     # > execution mode and policy are fixed at queue time; dispatch reads them from the DB
     _REPOPULATE_INTERVAL_FAC: float = 0.10
@@ -529,7 +529,7 @@ class DBDispatch(DBTask):
                 return []
             time.sleep(min(self._signal_interval(), remaining))
 
-    def run(self):
+    def run(self):  # type: ignore[override]
         """Dispatch batches of queued jobs by spawning `DBRunner`s.
 
         Loops over `_repopulate` until no more parts need dispatching, collecting

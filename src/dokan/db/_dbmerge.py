@@ -58,11 +58,11 @@ class BinMask(IntEnum):
 
 class DBMerge(DBTask, metaclass=ABCMeta):
     # > flag to force a re-merge (if new jobs are in a `done` state but not yet `merged`)
-    force: bool = luigi.BoolParameter(default=False)
+    force: bool = luigi.BoolParameter(default=False)  # type: ignore[assignment]
     # > tag to trigger a reset to initiate a re-merge from scratch (timestamp)
-    reset_tag: float = luigi.FloatParameter(default=0.0)
+    reset_tag: float = luigi.FloatParameter(default=0.0)  # type: ignore[assignment]
     # > flag to trigger write-out of weights for interpolation grids
-    grids: bool = luigi.BoolParameter(default=False)
+    grids: bool = luigi.BoolParameter(default=False)  # type: ignore[assignment]
 
     priority = 120
 
@@ -84,14 +84,14 @@ class DBMerge(DBTask, metaclass=ABCMeta):
 
 
 class MergeObs(Task):
-    hdf5_in: GenericPath = luigi.Parameter()
-    hdf5_path: list[str] = luigi.ListParameter()  # path to the observable group
-    dat_out: GenericPath = luigi.Parameter()
-    wgt_out: GenericPath | None = luigi.OptionalParameter(default=None)  # only used if `grids` is True
+    hdf5_in: GenericPath = luigi.Parameter()  # type: ignore[assignment]
+    hdf5_path: list[str] = luigi.ListParameter()  # type: ignore[assignment]  # path to the observable group
+    dat_out: GenericPath = luigi.Parameter()  # type: ignore[assignment]
+    wgt_out: GenericPath | None = luigi.OptionalParameter(default=None)  # type: ignore[assignment]  # only used if `grids` is True
     # > propagated from MergePart: invalidates dat files older than the tag so config-driven
     # > recomputation (e.g. new trim_threshold) actually re-runs the merge core, not just the DB stamp
-    reset_tag: float = luigi.FloatParameter(default=0.0)
-    grids: bool = luigi.BoolParameter(default=False)
+    reset_tag: float = luigi.FloatParameter(default=0.0)  # type: ignore[assignment]
+    grids: bool = luigi.BoolParameter(default=False)  # type: ignore[assignment]
 
     priority = 130
 
@@ -139,7 +139,7 @@ class MergeObs(Task):
 
         return True
 
-    def run(self):
+    def run(self):  # type: ignore[override]
         # print(
         #     f"MergeObs:  {self.hdf5_in}:{self.hdf5_path} > {self.dat_out} & {self.wgt_out if self.wgt_out else '(no weights)'}"
         # )
@@ -507,7 +507,7 @@ class MergeObs(Task):
 
 class MergePart(DBMerge):
     # > merge only a specific `Part`
-    part_id: int = luigi.IntParameter()
+    part_id: int = luigi.IntParameter()  # type: ignore[assignment]
 
     @property
     def resources(self):  # type: ignore
@@ -614,7 +614,7 @@ class MergePart(DBMerge):
 
         return False
 
-    def run(self):
+    def run(self):  # type: ignore[override]
         # Luigi restarts run() from the top after dynamic dependencies yielded
         # below complete.  If the part is already merged, returning here keeps
         # the DB timestamp stable and avoids invalidating a just-finished
@@ -1108,7 +1108,7 @@ class MergePart(DBMerge):
 
 class MergeAll(DBMerge):
     # > merge all `Part` objects that are currently active
-    finalize: bool = luigi.BoolParameter(default=False)
+    finalize: bool = luigi.BoolParameter(default=False)  # type: ignore[assignment]
 
     priority = 110
 
@@ -1201,7 +1201,7 @@ class MergeAll(DBMerge):
                 )
             return max_part_timestamp <= marker_max_part_timestamp
 
-    def run(self):
+    def run(self):  # type: ignore[override]
         with self.session as session:
             self._logger(session, self._logger_prefix + "::run")
             mrg_parent: Path = self._path.joinpath("result", "part")
@@ -1447,7 +1447,7 @@ class MergeFinal(DBMerge):
                 return True
         return False
 
-    def run(self):
+    def run(self):  # type: ignore[override]
         with self.session as session:
             self._logger(session, self._logger_prefix + "::run")
 

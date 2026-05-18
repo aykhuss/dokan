@@ -41,8 +41,8 @@ class DBRunner(DBTask):
 
     _file_run: str = "job.run"
 
-    ids: list[int] = luigi.ListParameter()
-    part_id: int = luigi.IntParameter()
+    ids: list[int] = luigi.ListParameter()  # type: ignore[assignment]
+    part_id: int = luigi.IntParameter()  # type: ignore[assignment]
 
     priority = 10
 
@@ -176,7 +176,7 @@ class DBRunner(DBTask):
             db_job.status = JobStatus.RUNNING
         self._safe_commit(session)
 
-    def run(self):
+    def run(self):  # type: ignore[override]
         """Execute the runner task."""
         exe_data = ExeData(self.job_path)
 

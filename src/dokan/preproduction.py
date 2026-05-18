@@ -50,7 +50,7 @@ class WarmupFlag(IntFlag):
 
 
 class PreProduction(DBTask):
-    part_id: int = luigi.IntParameter()
+    part_id: int = luigi.IntParameter()  # type: ignore[assignment]
 
     priority = 150
 
@@ -319,7 +319,7 @@ class PreProduction(DBTask):
 
         return queue_production(PP_ncall, self.config["production"]["niter"])
 
-    def run(self):
+    def run(self):  # type: ignore[override]
         with self.session as session:
             pt: Part = session.get_one(Part, self.part_id)
             self._logger(session, f"PreProduction::run[{pt.name}]:")

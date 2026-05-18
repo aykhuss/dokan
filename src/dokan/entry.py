@@ -24,7 +24,7 @@ class Entry(DBTask):
     3. final merge and completion signaling.
     """
 
-    resurrect_jobs: dict = luigi.DictParameter(default={})
+    resurrect_jobs: dict = luigi.DictParameter(default={})  # type: ignore[assignment]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -75,7 +75,7 @@ class Entry(DBTask):
                 job.run_tag = self.run_tag
         self._safe_commit(session)
 
-    def run(self):
+    def run(self):  # type: ignore[override]
         """Execute one full workflow iteration."""
         if self.complete():
             return

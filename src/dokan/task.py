@@ -27,8 +27,8 @@ class Task(luigi.Task):
         path *relative* (local) to CONFIG.job_path as a list of directory names
     """
 
-    config: dict = luigi.DictParameter(visibility=ParameterVisibility.HIDDEN)
-    local_path: list[str] = luigi.ListParameter(default=[])
+    config: dict = luigi.DictParameter(visibility=ParameterVisibility.HIDDEN)  # type: ignore[assignment]
+    local_path: list[str] = luigi.ListParameter(default=[])  # type: ignore[assignment]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

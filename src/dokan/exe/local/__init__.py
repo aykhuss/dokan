@@ -22,7 +22,7 @@ class LocalExec(Executor):
         number of cores to use on the local machine
     """
 
-    local_ncores = luigi.IntParameter(default=1)
+    local_ncores: int = luigi.IntParameter(default=1)  # type: ignore[assignment]
 
 
 class BatchLocalExec(LocalExec):
@@ -47,7 +47,7 @@ class SingleLocalExec(LocalExec):
         id of the job defined in exe_data to execute
     """
 
-    job_id = luigi.IntParameter()
+    job_id: int = luigi.IntParameter()  # type: ignore[assignment]
 
     @property
     def resources(self) -> dict[str, int]:  # type: ignore

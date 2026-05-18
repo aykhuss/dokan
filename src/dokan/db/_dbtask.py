@@ -21,7 +21,7 @@ _console = Console()
 class DBTask(Task, metaclass=ABCMeta):
     """the task class to interact with the database"""
 
-    run_tag: float = luigi.FloatParameter()
+    run_tag: float = luigi.FloatParameter()  # type: ignore[assignment]
 
     # > database queries should jump the scheduler queue?
     # priority = 1

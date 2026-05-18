@@ -34,8 +34,8 @@ class DBResurrect(DBTask):
 
     """
 
-    rel_path: str = luigi.Parameter()
-    recover_jobs: dict = luigi.DictParameter(default={})
+    rel_path: str = luigi.Parameter()  # type: ignore[assignment]
+    recover_jobs: dict = luigi.DictParameter(default={})  # type: ignore[assignment]
 
     priority = 200
 

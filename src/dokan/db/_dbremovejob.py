@@ -27,7 +27,7 @@ class DBRemoveJob(DBTask):
     seed-tagged output files are detected there.
     """
 
-    job_id: int = luigi.IntParameter()
+    job_id: int = luigi.IntParameter()  # type: ignore[assignment]
 
     priority = 200
 

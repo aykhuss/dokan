@@ -35,12 +35,12 @@ class DBInit(DBTask):
 
     """
 
-    channels: dict = luigi.DictParameter()  # all channels
-    order: int = luigi.IntParameter(default=Order.NNLO)
+    channels: dict = luigi.DictParameter()  # type: ignore[assignment]  # all channels
+    order: int = luigi.IntParameter(default=Order.NNLO)  # type: ignore[assignment]
     # > if select_channels is non-empty, we ignore the order
-    select_channels: list[str] = luigi.ListParameter(default=[])
+    select_channels: list[str] = luigi.ListParameter(default=[])  # type: ignore[assignment]
     # > we also allow to specify a list of channels to skip
-    skip_channels: list[str] = luigi.ListParameter(default=[])
+    skip_channels: list[str] = luigi.ListParameter(default=[])  # type: ignore[assignment]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
