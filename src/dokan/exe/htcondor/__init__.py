@@ -158,7 +158,7 @@ class HTCondorExec(Executor):
             n_active = count_status[1] + count_status[2]  # Idle + Running
             n_completed = self.nactive - n_active
             if n_completed > 0:
-                self.decrease_running_resources({"jobs_concurrent": n_completed})
+                self.decrease_running_resources({"jobs_concurrent": n_completed})  # type: ignore[attr-defined]
                 self.nactive = n_active
 
             if count_status[5] > 0:
@@ -167,12 +167,14 @@ class HTCondorExec(Executor):
                 )
                 if condor_release.returncode == 0:
                     self._logger(
-                        f"HTCondorExec released held jobs [dim](job_id={job_id}, held={count_status[5]})[/dim]",
+                        "HTCondorExec released held jobs"
+                        + f" [dim](job_id={job_id}, held={count_status[5]})[/dim]",
                         LogLevel.INFO,
                     )
                     break
                 self._logger(
-                    f"HTCondorExec failed to release held jobs [dim](job_id={job_id}, held={count_status[5]})[/dim]:\n"
+                    "HTCondorExec failed to release held jobs"
+                    + f" [dim](job_id={job_id}, held={count_status[5]})[/dim]:\n"
                     + f"{condor_release.stdout}\n"
                     + f"{condor_release.stderr}",
                     LogLevel.INFO,

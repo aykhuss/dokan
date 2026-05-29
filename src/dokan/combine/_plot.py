@@ -1,3 +1,4 @@
+# ruff: noqa: E501, RUF001
 def plot_merge_and(**kwargs):
     gnuplot = r"""
 set terminal pdfcairo enhanced color size 10cm,10cm dashed  # font "Iosevka,7" fontscale 0.65

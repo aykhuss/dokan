@@ -122,14 +122,14 @@ class SlurmExec(Executor):
                     n_active = sum(1 for s in squeue.stdout.splitlines() if s.strip() in _active_states)
                     n_completed = self.nactive - n_active
                     if n_completed > 0:
-                        self.decrease_running_resources({"jobs_concurrent": n_completed})
+                        self.decrease_running_resources({"jobs_concurrent": n_completed})  # type: ignore[attr-defined]
                         self.nactive = n_active
                     if n_active == 0:
                         return  # all tasks finished
                     break
                 else:
                     if re.search("Invalid job id specified", squeue.stderr):
-                        self.decrease_running_resources({"jobs_concurrent": self.nactive})
+                        self.decrease_running_resources({"jobs_concurrent": self.nactive})  # type: ignore[attr-defined]
                         self.nactive = 0
                         return  # job terminated and record no longer in scheduler
                     self._logger(

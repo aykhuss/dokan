@@ -93,7 +93,7 @@ _schema: dict = {
         "fac_increment": float,  # the factor by which we increment the statistics each round
         "max_chi2dof": float,  # maximum chi2/dof from iterations of the warmup to accept
         "max_err_rel_var": float,  # maximum relative variation of the errors between iterations to accept
-        "scaling_window": float,  # the tolerance we allow for the scaling to follow the 1/sqrt(N) MC error scaling
+        "scaling_window": float,  # tolerance for 1/sqrt(N) MC error scaling
         "frozen": bool,  # flag to freeze the warmup stage
     },
     "production": {
@@ -101,7 +101,7 @@ _schema: dict = {
         "ncall_start": int,  # initial number of events (per iteration)
         "niter": int,  # number of iterations in a single job (>=2 for chi2dof)
         "penalty_wrt_warmup": float,  # factor that takes into account the slowdown from warmup -> production
-        "fac_merge_trigger": float,  # factor that triggers a merge if ((#done+#merged)/(#merged+1)) > fac_merge_trigger
+        "fac_merge_trigger": float,  # triggers a merge if (#done+#merged)/(#merged+1) > fac_merge_trigger
         "min_number": int,  # minimum #of production jobs beyond pre-production (defaults to 1)
     },
     "merge": {
@@ -127,8 +127,8 @@ class Config(UserDict):
         default_ok: bool = kwargs.pop("default_ok", True)
         self.check_md5: bool = kwargs.pop("check_md5", True)
         super().__init__(*args, **kwargs)
-        self.path: Path = None
-        self.file_cfg: Path = None
+        self.path: Path | None = None
+        self.file_cfg: Path | None = None
         if path:
             if not default_ok:
                 self.set_path(path, load=True)
@@ -156,13 +156,11 @@ class Config(UserDict):
             and self.data["warmup"]["min_increment_steps"] < 2
         ):
             return False
-        if (
+        return not (
             "production" in self.data
             and "min_number" in self.data["production"]
             and self.data["production"]["min_number"] < 1
-        ):
-            return False
-        return True
+        )
 
     def __setitem__(self, key, item) -> None:
         super().__setitem__(key, item)

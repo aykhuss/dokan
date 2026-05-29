@@ -821,9 +821,6 @@ class NNLOJETContainer:
         for i_file in range(n_files):
             # skip trimmed data points
             if self._mask[i_row, i_col, i_file] != 0:
-                # if self._mask[i_row, i_col, i_file] == 1: print("* [{}] trimmed: (yval, yerr) = ({}, {})".format(i_file, self._yval[i_row, i_col, i_file], self._yerr[i_row, i_col, i_file]))
-                # if self._mask[i_row, i_col, i_file] == 2: print("* [{}] invalid: (yval, yerr) = ({}, {})".format(i_file, self._yval[i_row, i_col, i_file], self._yerr[i_row, i_col, i_file]))
-                # if self._mask[i_row, i_col, i_file] <  0: print("* [{}]  -> {}:  (yval, yerr) = ({}, {})".format(i_file, -1-self._mask[i_row, i_col, i_file], self._yval[i_row, i_col, i_file], self._yerr[i_row, i_col, i_file]))
                 continue
             # skip zero's to avoid nan's
             if self._yerr[i_row, i_col, i_file] == 0.0:
@@ -1030,7 +1027,7 @@ class NNLOJETContainer:
         if maxdev_unwgt is not None:
             ref_hist = self.merge()
 
-        (n_rows, n_cols, n_files) = self._yval.shape
+        (n_rows, n_cols, _) = self._yval.shape
         # if self._buffer_size is not None:
         #     n_files = self._size
 
@@ -1049,7 +1046,7 @@ class NNLOJETContainer:
 
                 while n_unmasked > 1:
                     # do a weighted average over all runs
-                    (yval_wgt, yerr_wgt, wgts) = self._merge_weighted_bin(i_row, i_col, skip_wgt=True)
+                    (yval_wgt, yerr_wgt, _) = self._merge_weighted_bin(i_row, i_col, skip_wgt=True)
                     # save history
                     history.append((yval_wgt, yerr_wgt))
 
@@ -1062,7 +1059,6 @@ class NNLOJETContainer:
                         delta = abs(yval_wgt - ref_hist._yval[i_row, i_col])
                         sigma = math.sqrt(yerr_wgt**2 + ref_hist._yerr[i_row, i_col] ** 2)
                         term_cond1 = delta < maxdev_unwgt * sigma
-                        # print(">>>", yval_wgt, yerr_wgt, ref_hist._yval[i_row, i_col], ref_hist._yerr[i_row, i_col], delta, sigma, delta/sigma)
 
                     # --- termination condition 2 ---
                     # check for `maxdev_steps` * sigma compatibility the last `nsteps` steps
@@ -1072,9 +1068,8 @@ class NNLOJETContainer:
                             for jstep in range(istep - 1, -nsteps - 1, -1):
                                 delta = abs(history[istep][0] - history[jstep][0])
                                 sigma = math.sqrt(history[istep][1] ** 2 + history[jstep][1] ** 2)
-                                # > each step is based on the identical dataset so just standard variance is not a suitable measure
+                                # > each step uses identical data so standard variance is not suitable
                                 # > taking the smaller of the two uncertainties ensures
-                                # sigma = max(abs(history[istep][1]-history[jstep][1]),min(history[istep][1],history[jstep][1]))
                                 term_cond2 = term_cond2 and delta < maxdev_steps * sigma
 
                     # --- termination of merges ---
@@ -1130,8 +1125,6 @@ class NNLOJETContainer:
                             )
                             / ntot_pair
                         )
-
-                        # print("pair", low, upp, neval[low], neval[upp], ">>>", ntot_pair, yval_pair, yerr_pair)
 
                         # merge low into upp
                         self._mask[i_row, i_col, low] = -(upp + 1)  # upp can be zero: shift!

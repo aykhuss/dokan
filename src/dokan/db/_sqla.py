@@ -46,7 +46,11 @@ class Part(DokanDB):
     jobs: Mapped[list["Job"]] = relationship(back_populates="part")
 
     def __repr__(self) -> str:
-        return f"Part(id={self.id!r}, name={self.name!r}, part={self.part!r}, part_num={self.part_num!r}, region={self.region!r}, order={self.order!r}, active={self.active!r}, result={self.result!r}, error={self.error!r})"
+        return (
+            f"Part(id={self.id!r}, name={self.name!r}, part={self.part!r}, part_num={self.part_num!r},"
+            f" region={self.region!r}, order={self.order!r}, active={self.active!r},"
+            f" result={self.result!r}, error={self.error!r})"
+        )
 
 
 class Job(DokanDB):
@@ -76,7 +80,11 @@ class Job(DokanDB):
     chi2dof: Mapped[float] = mapped_column(default=math.inf)
 
     def __repr__(self) -> str:
-        return f"Job(id={self.id!r}, part_id={self.part_id!r}, status={JobStatus(self.status)!r}, timestamp={self.timestamp!r}, seed={self.seed}, rel_path={self.rel_path}, mode={ExecutionMode(self.mode)!r}, policy={ExecutionPolicy(self.policy)!r})"
+        return (
+            f"Job(id={self.id!r}, part_id={self.part_id!r}, status={JobStatus(self.status)!r},"
+            f" timestamp={self.timestamp!r}, seed={self.seed}, rel_path={self.rel_path},"
+            f" mode={ExecutionMode(self.mode)!r}, policy={ExecutionPolicy(self.policy)!r})"
+        )
 
     def to_dict(self) -> dict:
         return {column.name: getattr(self, column.name) for column in self.__table__.columns}
@@ -95,4 +103,7 @@ class Log(DokanLog):
     message: Mapped[str] = mapped_column(default="")
 
     def __repr__(self) -> str:
-        return f"Log(id={self.id!r}, level={self.level!r}, timestamp={(self.timestamp)!r}, message={self.message!r})"
+        return (
+            f"Log(id={self.id!r}, level={self.level!r},"
+            f" timestamp={(self.timestamp)!r}, message={self.message!r})"
+        )

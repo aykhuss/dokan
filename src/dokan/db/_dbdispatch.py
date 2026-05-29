@@ -602,7 +602,8 @@ class DBDispatch(DBTask):
                         .where(Job.mode == jobs[0].mode)
                         .where(Job.seed.is_not(None))
                         .where(Job.seed > self.config["run"]["seed_offset"])
-                        # @todo not good enough, need a max to shield from another batch-job starting at larger value of seed?
+                        # @todo not good enough, need a max to shield from another batch-job
+                        #       starting at larger value of seed?
                         # determine upper bound by the max number of jobs? -> seems like a good idea
                         .order_by(Job.seed.desc())
                     ).first()
@@ -635,7 +636,7 @@ class DBDispatch(DBTask):
                         ),
                     )
                     runners.append(
-                        self.clone(cls=DBRunner, ids=[job.id for job in jobs], part_id=self.part_id)
+                        self.clone(cls=DBRunner, ids=[job.id for job in jobs], part_id=self.part_id)  # type: ignore[arg-type]
                     )
                 else:
                     # > repopulate selected a part but no jobs were found: stop

@@ -125,9 +125,9 @@ def main() -> None:
             if not Confirm.ask("Update the configuration? (do at your own risk!)", default=False):
                 sys.exit(1)
 
-            rp: Path = _cfg.path / _cfg["run"]["template"]
+            rp_path: Path = _cfg.path / _cfg["run"]["template"]
             tmp_path: Path = _cfg.path / (_cfg["run"]["template"] + ".bak")
-            shutil.move(rp, tmp_path)
+            shutil.move(rp_path, tmp_path)
 
             runcard = Runcard(runcard=tmp_path)
 
@@ -306,7 +306,7 @@ def main() -> None:
             sys.exit("Please select a different output folder.")
         config.set_path(target_path)
 
-        console.print(f"run folder: [italic]{(config.path).absolute()}[/italic]")
+        console.print(f"run folder: [italic]{(config.path).absolute()}[/italic]")  # type: ignore[union-attr]
 
         config["exe"]["path"] = nnlojet_exe
         config["run"]["dokan_version"] = __version__
@@ -328,7 +328,7 @@ def main() -> None:
         config.write()
 
         # > do a dry run to check that the runcard is valid
-        tmp_path: Path = config.path / "tmp"
+        tmp_path: Path = config.path / "tmp"  # type: ignore[operator]
         if tmp_path.exists():
             shutil.rmtree(tmp_path)
         tmp_path.mkdir(parents=True)
@@ -355,7 +355,7 @@ def main() -> None:
         try:
             bibout, bibtex = make_bib(runcard.data["process_name"], config.path)
             console.print(f'process: "[bold]{runcard.data["process_name"]}[/bold]"')
-            console.print(f"bibliography: [italic]{bibout.relative_to(config.path)}[/italic]")
+            console.print(f"bibliography: [italic]{bibout.relative_to(config.path)}[/italic]")  # type: ignore[arg-type]
             # console.print(f" - {bibtex.relative_to(config.path)}")
             # with open(bibout, "r") as bib:
             #     syntx = Syntax(bib.read(), "bibtex")
@@ -423,8 +423,8 @@ def main() -> None:
                 ):
                     if raw_path is None:
                         raw_path = Prompt.ask("New path for raw data")
-                        if not raw_path.endswith("/" + config.path.name):
-                            raw_path = raw_path + "/" + config.path.name
+                        if not raw_path.endswith("/" + config.path.name):  # type: ignore[union-attr]
+                            raw_path = raw_path + "/" + config.path.name  # type: ignore[union-attr]
                     else:
                         console.print(f"current raw data path: [italic]{raw_path}[/italic]")
                         if Confirm.ask("Do you want to change the raw data path?", default=False):
@@ -534,7 +534,7 @@ def main() -> None:
                 return
 
         console.print(
-            f"setting default values for the run configuration at [italic]{config.path.absolute()!s}[/italic]"
+            f"setting default values for the run configuration at [italic]{config.path.absolute()!s}[/italic]"  # type: ignore[union-attr]
         )
         console.print(
             'these defaults can be reconfigured later with the [italic]"config"[/italic] subcommand'
@@ -862,11 +862,13 @@ def main() -> None:
 
         # > collect job statistics
         with db_init.session as session:
-            nactive_part = session.scalar(select(func.count(Part.id)).where(Part.active.is_(True)))
-            nactive_job = session.scalar(
-                select(func.count(Job.id)).where(Job.status.in_(JobStatus.active_list()))
+            nactive_part = session.scalar(select(func.count(Part.id)).where(Part.active.is_(True))) or 0
+            nactive_job = (
+                session.scalar(select(func.count(Job.id)).where(Job.status.in_(JobStatus.active_list()))) or 0
             )
-            nfailed_job = session.scalar(select(func.count(Job.id)).where(Job.status.in_([JobStatus.FAILED])))
+            nfailed_job = (
+                session.scalar(select(func.count(Job.id)).where(Job.status.in_([JobStatus.FAILED]))) or 0
+            )
         console.print(f"active parts: {nactive_part}")
         if nactive_part == 0:
             console.print("[red]calculation has no active part?![/red]")
@@ -960,7 +962,7 @@ def main() -> None:
             log_level="WARNING",
         )  # 'WARNING', 'INFO', 'DEBUG''
         if not getattr(luigi_result, "scheduling_succeeded", True):
-            console.print(luigi_result.summary_text)
+            console.print(luigi_result.summary_text)  # type: ignore[union-attr]
 
         # console.print("\n" + luigi_result.one_line_summary)
         # console.print(luigi_result.status)

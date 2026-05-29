@@ -339,7 +339,8 @@ class PreProduction(DBTask):
             assert job_id < 0, f"PreProduction::run[{pt.name}]:  warmup job_id = {job_id} < 0 expected!"
             self._logger(
                 session,
-                f"PreProduction::run[{pt.name}]:  warmup done [dim]{WarmupFlag.print_flags(WarmupFlag(-job_id))}[/dim]",
+                f"PreProduction::run[{pt.name}]:  warmup done"
+                + f" [dim]{WarmupFlag.print_flags(WarmupFlag(-job_id))}[/dim]",
             )
             if (job_id := self._append_production(session)) > 0:
                 self._logger(

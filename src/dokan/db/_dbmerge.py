@@ -140,9 +140,6 @@ class MergeObs(Task):
         return True
 
     def run(self):  # type: ignore[override]
-        # print(
-        #     f"MergeObs:  {self.hdf5_in}:{self.hdf5_path} > {self.dat_out} & {self.wgt_out if self.wgt_out else '(no weights)'}"
-        # )
         trim_threshold: float = self.config["merge"]["trim_threshold"]
         trim_max_fraction: float = self.config["merge"]["trim_max_fraction"]
         k_scan_nsteps: int = self.config["merge"]["k_scan_nsteps"]
@@ -275,7 +272,7 @@ class MergeObs(Task):
                     bin_cmlt["neval"][:ndat] = bin_neval
                     # X  bin_cmlt["sumf"][:ndat] = bin_neval * bin_data["result"]
                     np.multiply(bin_neval, bin_data["result"], out=bin_cmlt["sumf"][:ndat])
-                    # X  bin_cmlt["sumf2"][:ndat] = bin_neval ** 2 * bin_data["error2"] + bin_neval * bin_data["result"] ** 2
+                    # X  bin_cmlt["sumf2"][:ndat] = bin_neval**2 * bin_data["error2"] + bin_neval * bin_data["result"]**2  # noqa: E501
                     bin_buf1[:] = 0
                     bin_buf2[:] = 0
                     np.square(bin_neval, out=bin_buf1[:ndat])
@@ -310,8 +307,8 @@ class MergeObs(Task):
                         )  # `ndat` entry invalid: no need for [:ndat] on lhs
                         mad = np.median(bin_buf1[_mask])
                         threshold = trim_threshold * (mad / _MAD_NORMAL_SCALE)  # convert to z-score
-                        # > start trimming from the "worst" until we either run out or would exceed the max fraction
-                        # > skip `[_mask]` since initialised to zero (makes indexing easier than for sliced arrays)
+                        # > start trimming from the "worst" until we either run out or exceed the max fraction
+                        # > skip `[_mask]`: initialised to zero (makes indexing easier than for sliced arrays)
                         # X  bin_mask[bin_buf1 > threshold] = BinMask.TRIMMED
                         avg_neval = np.sum(bin_cmlt["neval"][_mask]) / (np.sum(_mask) + 0.1)
                         ntrim: int = 0
@@ -321,12 +318,11 @@ class MergeObs(Task):
                                 break
                             if (ntrim + 1) > trim_max_fraction * ndat:
                                 break
-                            # > we correct for the fact that the data samples can be based on different statistics
+                            # > correct for the fact that data samples can be based on different statistics
                             if bin_buf1[itrim] > threshold * np.sqrt(avg_neval / bin_cmlt["neval"][itrim]):
                                 bin_mask[itrim] = BinMask.TRIMMED
                                 ntrim += 1
-                                # print(f" > trim {irow},{icol} [{itrim}] {bin_buf1[itrim]:.3f} > {threshold * np.sqrt(avg_neval / bin_cmlt['neval'][itrim]):.3f} ({ntrim}/{ndat})")
-                        # > we will not discard the trimmed datasets but actually accumulate them into a mega "outlier" dataset
+                        # > trimmed datasets are accumulated into a mega "outlier" dataset
                         # > which will eventually be suppressed in the weighted average by the large error
                         _mask = bin_mask == BinMask.TRIMMED
                         bin_cmlt["neval"][ndat] = np.sum(bin_cmlt["neval"][_mask])
@@ -338,15 +334,12 @@ class MergeObs(Task):
                         #     print(f"trimmed {bin_cmlt['neval'][ndat]} [{irow},{icol}]")
                         bin_mask[ndat] = BinMask.INVALID  # keep it trimmed for now
 
-                    # print(f"\n### {self.hdf5_path[0]}__{self.hdf5_path[1]}__{irow}__{icol}  active = {np.sum(bin_mask == BinMask.ACTIVE)}, non-zero = {np.sum(bin_cmlt['error2'] > 0.0)}")
-
-                    # > weighted average cannot deal with "zero bins" but those jobs still matter and should not be discarded
-                    # > do a pairwise merge of (pseudo-)jobs until there are no "zero bins" or there's only one psuedo-job left
+                    # > weighted average cannot deal with "zero bins" but those jobs still matter
+                    # > do a pairwise merge until there are no "zero bins" or only one pseudo-job is left
                     while True:
                         _mask = bin_mask == BinMask.ACTIVE
                         if np.sum(_mask) <= 1 or np.sum(bin_cmlt["sumf2"][_mask] == 0.0) <= 0:
                             break
-                        # print(f"  > merge {np.sum(bin_mask == BinMask.ACTIVE)} active bins, {np.sum(bin_cmlt['error2'] > 0.0)} non-zero bins")
                         merge_pair()
 
                     # > perform the k-scan
@@ -369,11 +362,10 @@ class MergeObs(Task):
                             for jstep in range(istep - 1, -k_scan_nsteps - 1, -1):
                                 delta = np.abs(k_scan[istep][0] - k_scan[jstep][0])
                                 sigma = np.sqrt(k_scan[istep][1] ** 2 + k_scan[jstep][1] ** 2)
-                                # > each step is based on the identical dataset so just standard variance is not a suitable measure
+                                # > each step uses identical data so standard variance is not suitable
                                 # > taking the smaller of the two uncertainties better?
-                                # sigma = max(abs(k_scan[istep][1]-k_scan[jstep][1]),min(k_scan[istep][1],k_scan[jstep][1]))
+                                # sigma = max(abs(k_scan[istep][1]-k_scan[jstep][1]),min(k_scan[istep][1],k_scan[jstep][1]))  # noqa: E501
                                 if delta > k_scan_maxdev_steps * sigma:
-                                    # print(f"  X  {istep} <-> {jstep}: {delta:.6f} > {k_scan_maxdev_steps * sigma:.6f}")
                                     qplateau = False
                                     break
                         if qplateau:
@@ -409,7 +401,6 @@ class MergeObs(Task):
                                 _nodes_list = [idat]
                                 while _inode < len(_nodes_list):
                                     # > find all children of the current node
-                                    # print(f"  | {_inode}:{_nodes_list[_inode]} | {_nodes_list} | {np.flatnonzero(bin_mask == -_nodes_list[_inode])}")
                                     if _nodes_list[_inode] != 0:
                                         _nodes_list.extend(
                                             np.flatnonzero(bin_mask == -_nodes_list[_inode]).tolist()
@@ -455,14 +446,14 @@ class MergeObs(Task):
         if self.file_wgt is not None and weights is not None:
             with open(self.file_wgt, "w") as wf:
                 wf.write(f"#nx={nx} ")
-                if xval is not None:
-                    if nx == 3:
-                        for irow in range(nrows):
-                            if np.all(np.isnan(xval[irow])):
-                                continue
-                            wf.write(
-                                f"[{np.format_float_scientific(xval[irow][0])},{np.format_float_scientific(xval[irow][-1])}] "
-                            )
+                if xval is not None and nx == 3:
+                    for irow in range(nrows):
+                        if np.all(np.isnan(xval[irow])):
+                            continue
+                        wf.write(
+                            f"[{np.format_float_scientific(xval[irow][0])},"
+                            f"{np.format_float_scientific(xval[irow][-1])}] "
+                        )
                 wf.write("\n")
                 for idat in range(ndat):
                     wf.write(filenames[idat] + " ")
@@ -696,10 +687,9 @@ class MergePart(DBMerge):
         # * add a mask? -> no! MergeObs should only read
         # @todo refactor into separate member routine?
         # @todo: add move to `raw_path`
-        # @todo: add compression (?works for vlen?); alternatively use fixed-size arrays with a copy-to-larger-shape-delete-original-rename workflow?
-        # @todo: better to save sumf & sumf2? -> not so convenient for outliers and weighted avg but very convenient for unweighted combination and this also for the k-scan algorithm.
-        # could start by storing res & err, then switch to sumf & sumf2 later when we want to apply the k-scan?
-        # maybe an attribute to flag what of the two is stored in the datase? heler routine to convert between the two could also be nice.
+        # @todo: better to save sumf & sumf2? more convenient for unweighted combination and the k-scan.
+        # Could start by storing res & err, then switch to sumf & sumf2 later.
+        # Maybe an attribute to flag what of the two is stored? Helper routine to convert could also help.
         resize_max: int = max(len(files) for files in in_files.values()) if in_files else 0
         resize_obs: dict[str, int] = {}
         hdf5_file = self._path / "raw" / f"{pt_name}.hdf5"
@@ -1094,7 +1084,8 @@ class MergePart(DBMerge):
             self._debug(
                 session,
                 self._logger_prefix
-                + f"::run: {max_rel_hist_err=}  pt.result = {pt.result} +/- {pt.error} (rel_err = {rel_cross_err:.3e})",
+                + f"::run: {max_rel_hist_err=}  pt.result = {pt.result} +/- {pt.error}"
+                + f" (rel_err = {rel_cross_err:.3e})",
             )
             self._safe_commit(session)
 
@@ -1280,7 +1271,8 @@ class MergeAll(DBMerge):
                                 # f"[blue]cross = ({res} +/- {err}) fb  \[{rel * 1e2:.3}%][/blue]\n"
                                 f"[blue]cross = {res} fb[/blue]\n"
                                 + f'[magenta][dim]current "{opt_target}" error:[/dim]\n'
-                                + f"{opt_target_rel * 1e2:.3}% (requested: {self.config['run']['target_rel_acc'] * 1e2:.3}%)[/magenta]",
+                                + f"{opt_target_rel * 1e2:.3}%"
+                                + f" (requested: {self.config['run']['target_rel_acc'] * 1e2:.3}%)[/magenta]",
                                 level=LogLevel.SIG_UPDXS,
                             )
                             break
@@ -1319,11 +1311,12 @@ class MergeAll(DBMerge):
                         self._logger(session, self._logger_prefix + f"::run:  no parts at order {out_order}")
                         continue
 
-                    # > in order to write out an `order` result, we need at least one complete result for each part
+                    # > writing an `order` result requires at least one complete result for each part
                     if any(pt.ntot <= 0 for pt in matched_parts):
                         self._logger(
                             session,
-                            f'[red]{self._logger_prefix}::run:  skipping "{out_order}" due to incomplete parts[/red]',
+                            f'[red]{self._logger_prefix}::run:  skipping "{out_order}"'
+                            + " due to incomplete parts[/red]",
                         )
                         continue
 
@@ -1402,7 +1395,9 @@ class MergeAll(DBMerge):
                             else:
                                 self._logger(
                                     session,
-                                    f"[red]{self._logger_prefix}::run:  missing nnlojet-merge-pineappl executable at {pine_merge}[/red]",
+                                    f"[red]{self._logger_prefix}::run:"
+                                    + "  missing nnlojet-merge-pineappl executable",
+                                    +f"  at {pine_merge}[/red]",
                                     level=LogLevel.ERROR,
                                 )
             # > re-write marker atomically with finalized flag added
@@ -1488,14 +1483,14 @@ class MergeFinal(DBMerge):
             if rel_acc <= self.config["run"]["target_rel_acc"] * (1.05):
                 self._logger(
                     session,
-                    f"[green]reached rel. acc. {rel_acc * 1e2:.3}% on {opt_target}[/green] "
-                    + f"(requested: {self.config['run']['target_rel_acc'] * 1e2:.3}%)",
+                    f"[green]reached rel. acc. {rel_acc * 1e2:.3}% on {opt_target}[/green]"
+                    + f" (requested: {self.config['run']['target_rel_acc'] * 1e2:.3}%)",
                 )
             else:
                 self._logger(
                     session,
-                    f"[red]reached rel. acc. {rel_acc * 1e2:.3}% on {opt_target}[/red] "
-                    + f"(requested: {self.config['run']['target_rel_acc'] * 1e2:.3}%)",
+                    f"[red]reached rel. acc. {rel_acc * 1e2:.3}% on {opt_target}[/red]"
+                    + f" (requested: {self.config['run']['target_rel_acc'] * 1e2:.3}%)",
                 )
                 T_target: float = opt_dist["T_target"]
                 # > because of inequality constraints, need to loop to find reliable estimate
@@ -1506,8 +1501,8 @@ class MergeFinal(DBMerge):
                 njobs_target: int = sum(ires["njobs"] for _, ires in opt_dist["part"].items())
                 self._logger(
                     session,
-                    "still require about "
-                    + f"[bold]{format_time_interval(T_target)}[/bold]"
+                    "still require about"
+                    + f" [bold]{format_time_interval(T_target)}[/bold]"
                     + " of runtime to reach desired target accuracy"
                     + f" [dim](approx. {njobs_target} jobs)[/dim]",
                 )

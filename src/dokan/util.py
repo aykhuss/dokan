@@ -1,3 +1,5 @@
+# ruff: noqa: E501
+
 """utility module for the dokan workflow
 
 refactor common functions and patterns here

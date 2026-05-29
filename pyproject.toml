@@ -53,7 +53,11 @@ select = [
     "SIM", # flake8-simplify
     "RUF", # ruff-specific rules
 ]
-ignore = []
+ignore = [
+    "N802", # physics/math function names (is_outlier_MAD, check_PDF, …) intentionally uppercase
+    "N803", # physics/math argument names (PDF, …) intentionally uppercase
+    "N806", # physics/math local variables (T, NW, PP, LW, MAD, IQR, …) intentionally uppercase
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["dokan"]

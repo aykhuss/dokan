@@ -106,6 +106,6 @@ class DBDoctor(DBTask):
                         self._logger(
                             session,
                             f"{self._logger_prefix}::run: not removing dir {exe_dir} "
-                            + f"even though ExeData is empty since other files ({other_files}) are still present",
+                            + f"even though ExeData is empty since other files are present: {other_files}",
                             level=LogLevel.WARN,
                         )

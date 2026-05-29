@@ -110,7 +110,7 @@ class Entry(DBTask):
 
             self._logger(session, f"{self._logger_prefix}::run:  complete MergeAll -> dispatch")
             dispatch_task = self.clone(DBDispatch, id=0, _n=0)
-            _ = dispatch_task._repopulate(session)
+            _ = dispatch_task._repopulate(session)  # type: ignore[attr-defined]
             dispatch: list = [] if dispatch_task.complete() else [dispatch_task]
             # > add production resurrection tasks
             if self._resurrect_jobs:
