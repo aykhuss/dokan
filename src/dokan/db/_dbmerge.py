@@ -294,45 +294,54 @@ class MergeObs(Task):
                     # > error = zero should only happen if result is also zero
                     assert np.all(bin_data["result"][bin_data["error2"] == 0.0] == 0.0)
 
-                    # > appy outlier trimming
-                    # > we'll use MAD instead of IQR as it is easier to convert to a standard z-score
+                    # > apply outlier trimming
+                    # > a two-sided ("double") MAD is used instead of a single, symmetric
+                    # > scale: the per-job result distribution can be strongly skewed (heavy
+                    # > tailed event weights), so estimating the robust 1-sigma separately
+                    # > below and above the median avoids biasing the rejection towards the
+                    # > longer tail. MAD is preferred over the IQR as it maps onto a z-score.
                     _mask = (bin_mask == BinMask.ACTIVE) & (
                         bin_cmlt["sumf2"] > 0.0
                     )  # exclude "zero bins" from being trimmed
-                    if trim_threshold > 0.0 and np.sum(_mask) > 1:
-                        q25, q50, q75 = np.quantile(bin_data["result"][_mask[:ndat]], [0.25, 0.50, 0.75])
-                        bin_buf1[:] = 0
-                        bin_buf1[_mask] = np.abs(
-                            bin_data["result"][_mask[:ndat]] - q50
-                        )  # `ndat` entry invalid: no need for [:ndat] on lhs
-                        mad = np.median(bin_buf1[_mask])
-                        threshold = trim_threshold * (mad / _MAD_NORMAL_SCALE)  # convert to z-score
-                        # > start trimming from the "worst" until we either run out or exceed the max fraction
-                        # > skip `[_mask]`: initialised to zero (makes indexing easier than for sliced arrays)
-                        # X  bin_mask[bin_buf1 > threshold] = BinMask.TRIMMED
-                        avg_neval = np.sum(bin_cmlt["neval"][_mask]) / (np.sum(_mask) + 0.1)
-                        ntrim: int = 0
-                        # for itrim in np.argsort(bin_buf1)[::-1]:
-                        for itrim in np.argsort(-bin_buf1):  # largest defiation first
-                            if bin_buf1[itrim] <= threshold:
-                                break
-                            if (ntrim + 1) > trim_max_fraction * ndat:
-                                break
-                            # > correct for the fact that data samples can be based on different statistics
-                            if bin_buf1[itrim] > threshold * np.sqrt(avg_neval / bin_cmlt["neval"][itrim]):
+                    n_active = int(np.sum(_mask))
+                    if trim_threshold > 0.0 and n_active > 1:
+                        # > `_mask[ndat]` is INVALID here, so `_mask[:ndat]` selects the same jobs
+                        res = bin_data["result"][_mask[:ndat]]
+                        dev = res - np.median(res)
+                        below = dev < 0.0
+                        above = dev > 0.0
+                        # > robust 1-sigma scale on each side of the median (NaN-safe via `.any()`)
+                        scale_lo = float(np.median(-dev[below])) / _MAD_NORMAL_SCALE if below.any() else 0.0
+                        scale_hi = float(np.median(dev[above])) / _MAD_NORMAL_SCALE if above.any() else 0.0
+                        # > fall back to the populated side if one half-sample has no spread
+                        scale_lo = scale_lo or scale_hi
+                        scale_hi = scale_hi or scale_lo
+                        if scale_lo > 0.0 and scale_hi > 0.0:
+                            # > side-aware robust z-score, weighted by the per-job statistics:
+                            # > a better-sampled job (larger neval) is penalised more for the same
+                            # > offset, i.e. trim when `|dev| / sigma * sqrt(neval / <neval>)` is large
+                            avg_neval = np.sum(bin_cmlt["neval"][_mask]) / (n_active + 0.1)
+                            bin_buf1[:] = 0.0  # `ndat` entry stays 0, so it sorts last and is never trimmed
+                            bin_buf1[_mask] = (
+                                np.abs(dev)
+                                / np.where(below, scale_lo, scale_hi)
+                                * np.sqrt(bin_cmlt["neval"][_mask] / avg_neval)
+                            )
+                            # > trim the most significant offsets first, stopping once we drop below
+                            # > the threshold or reach the maximum fraction of jobs we may trim
+                            max_trim = trim_max_fraction * ndat
+                            for ntrim, itrim in enumerate(np.argsort(-bin_buf1)):  # most significant first
+                                if bin_buf1[itrim] <= trim_threshold or (ntrim + 1) > max_trim:
+                                    break
                                 bin_mask[itrim] = BinMask.TRIMMED
-                                ntrim += 1
-                        # > trimmed datasets are accumulated into a mega "outlier" dataset
-                        # > which will eventually be suppressed in the weighted average by the large error
-                        _mask = bin_mask == BinMask.TRIMMED
-                        bin_cmlt["neval"][ndat] = np.sum(bin_cmlt["neval"][_mask])
-                        bin_cmlt["sumf"][ndat] = np.sum(bin_cmlt["sumf"][_mask])
-                        bin_cmlt["sumf2"][ndat] = np.sum(bin_cmlt["sumf2"][_mask])
-                        bin_cmlt[_mask] = 0
-                        bin_mask[ndat] = BinMask.ACTIVE if bin_cmlt["neval"][ndat] > 0 else BinMask.INVALID
-                        # if bin_mask[ndat] == BinMask.ACTIVE:
-                        #     print(f"trimmed {bin_cmlt['neval'][ndat]} [{irow},{icol}]")
-                        bin_mask[ndat] = BinMask.INVALID  # keep it trimmed for now
+                            # > trimmed datasets are accumulated into a mega "outlier" dataset
+                            # > which will eventually be suppressed in the weighted average by the large error
+                            _mask = bin_mask == BinMask.TRIMMED
+                            bin_cmlt["neval"][ndat] = np.sum(bin_cmlt["neval"][_mask])
+                            bin_cmlt["sumf"][ndat] = np.sum(bin_cmlt["sumf"][_mask])
+                            bin_cmlt["sumf2"][ndat] = np.sum(bin_cmlt["sumf2"][_mask])
+                            bin_cmlt[_mask] = 0
+                            bin_mask[ndat] = BinMask.INVALID  # keep it trimmed for now
 
                     # > weighted average cannot deal with "zero bins" but those jobs still matter
                     # > do a pairwise merge until there are no "zero bins" or only one pseudo-job is left
