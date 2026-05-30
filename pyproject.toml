@@ -26,6 +26,7 @@ Source = "https://github.com/aykhuss/dokan"
 
 [project.scripts]
 nnlojet-run = "dokan:main"
+nnlojet-merge = "dokan.merge.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
