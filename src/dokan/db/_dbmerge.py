@@ -23,7 +23,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .._types import GenericPath
-from ..combine import NNLOJETHistogram
 from ..exe._exe_config import ExecutionMode
 from ..exe._exe_data import ExeData
 from ..order import Order
@@ -54,6 +53,233 @@ class BinMask(IntEnum):
     ACTIVE = 0
     TRIMMED = 1
     INVALID = 2
+
+
+_comment_prefix = "#"
+
+
+def _write_dat(
+    path: Path,
+    labels: str | None,
+    neval: int,
+    nx: int,
+    xval: np.ndarray | None,
+    hist: np.ndarray,
+) -> None:
+    """Write a merged histogram to a `.dat` file.
+
+    `hist` is an `(nrows, ncols)` array of `_dt_hist` records (its `error2` field
+    holds the standard error, not the variance). `xval` is `(nrows, nx)` or `None`
+    when `nx == 0`; overflow rows are flagged by all-NaN `xval` entries. The number
+    format is the single source of truth shared with the per-`Part` merge. A
+    trailing `#nx:` line records the x-column count, matching the NNLOJET input
+    files (see `_read_dat`).
+    """
+    nrows, ncols = hist.shape
+    with open(path, "w") as df:
+        if labels is not None:
+            df.write(labels + "\n")
+        df.write(f"#neval: {neval}\n")
+        for irow in range(nrows):
+            if xval is not None:
+                if np.all(np.isnan(xval[irow])):
+                    if nx == 3:
+                        df.write("#overflow:lower center upper ")
+                    else:
+                        df.write("#overflow: ")
+                else:
+                    for x in xval[irow]:
+                        df.write(f"{np.format_float_scientific(x): <25} ")
+            for icol in range(ncols):
+                df.write(f"{np.format_float_scientific(hist['result'][irow, icol]): <25} ")
+                df.write(f"{np.format_float_scientific(hist['error2'][irow, icol]): <25} ")
+            df.write("\n")
+        df.write(f"#nx: {nx}\n")
+
+
+def _write_weights(
+    path: Path,
+    nx: int,
+    xval: np.ndarray | None,
+    filenames: list[str],
+    weights: np.ndarray,
+) -> None:
+    """Write the interpolation-grid weights file.
+
+    `weights` is an `(nrows, ndat)` array; row `i`, column `j` is the weight of
+    input `filenames[j]` in bin `i`. Overflow rows (all-NaN `xval`) are skipped.
+    """
+    nrows = weights.shape[0]
+    ndat = len(filenames)
+    with open(path, "w") as wf:
+        wf.write(f"#nx={nx} ")
+        if xval is not None and nx == 3:
+            for irow in range(nrows):
+                if np.all(np.isnan(xval[irow])):
+                    continue
+                wf.write(
+                    f"[{np.format_float_scientific(xval[irow][0])},"
+                    f"{np.format_float_scientific(xval[irow][-1])}] "
+                )
+        wf.write("\n")
+        for idat in range(ndat):
+            wf.write(filenames[idat] + " ")
+            for irow in range(nrows):
+                if xval is not None and np.all(np.isnan(xval[irow])):
+                    continue
+                wf.write(np.format_float_scientific(weights[irow, idat]) + " ")
+            wf.write("\n")
+
+
+def _read_dat(path: Path, nx: int) -> tuple[str | None, int, np.ndarray | None, np.ndarray]:
+    """Read a merged `.dat` file written by `_write_dat`.
+
+    Returns `(labels, neval, xval, hist)` where `hist` is an `(nrows, ncols)` array
+    of `_dt_hist` records and `xval` is `(nrows, nx)` (NaN for overflow rows) or
+    `None` when `nx == 0`. `nx` is supplied by the caller; if the file carries an
+    `#nx:` line it is checked for compatibility. Raises `ValueError` on a malformed
+    file or an `#nx:` mismatch.
+    """
+    labels: str | None = None
+    neval: int | None = None
+    rows: list[tuple[bool, list[str]]] = []  # (is_overflow, tokens)
+    with open(path) as f:
+        for raw in f:
+            line = raw.strip()
+            if not line:
+                continue
+            if line.startswith(_comment_prefix):
+                body = line[len(_comment_prefix) :].lstrip().lower()
+                if body.startswith("overflow"):
+                    rows.append((True, line.split()))
+                elif body.startswith("labels"):
+                    labels = line
+                elif body.startswith("neval"):
+                    neval = int(line.split()[1])
+                elif body.startswith("nx"):
+                    # > validate the x-column count against the caller's expectation
+                    file_nx = int(line.split()[-1])
+                    if file_nx != nx:
+                        raise ValueError(f"nx mismatch in {path}: {file_nx} != {nx}")
+                # > any other comment line is ignored
+                continue
+            rows.append((False, line.split()))
+    if neval is None:
+        raise ValueError(f"missing #neval in {path}")
+    # > determine the number of (val, err) column pairs from a non-overflow row;
+    # > overflow rows have a variable-length marker, so we read data from the tail
+    ncols: int | None = None
+    for is_overflow, tokens in rows:
+        if not is_overflow:
+            ndata = len(tokens) - nx
+            if ndata <= 0 or ndata % 2 != 0:
+                raise ValueError(f"malformed data row in {path}")
+            ncols = ndata // 2
+            break
+    if ncols is None:
+        raise ValueError(f"no data rows in {path}")
+    nrows = len(rows)
+    hist = np.empty((nrows, ncols), dtype=_dt_hist)
+    xval = np.empty((nrows, nx), dtype=np.float64) if nx > 0 else None
+    for irow, (is_overflow, tokens) in enumerate(rows):
+        ydata = tokens[-2 * ncols :]
+        if len(ydata) != 2 * ncols:
+            raise ValueError(f"column count mismatch in {path}")
+        hist["result"][irow] = [float(ydata[2 * i]) for i in range(ncols)]
+        hist["error2"][irow] = [float(ydata[2 * i + 1]) for i in range(ncols)]
+        if xval is not None:
+            if is_overflow:
+                xval[irow] = np.nan
+            else:
+                xval[irow] = [float(t) for t in tokens[:nx]]
+    return labels, neval, xval, hist
+
+
+def _accumulate_dat(
+    files: list[str],
+    nx: int,
+    base_path: Path,
+    on_error=None,
+) -> tuple[str | None, int, np.ndarray | None, np.ndarray, list[str]] | None:
+    """Sum already-merged per-`Part` `.dat` files for one observable.
+
+    Files are resolved relative to `base_path`. Accumulation is purely additive:
+    results are summed bin-by-bin, errors in quadrature, and `neval` summed. A file
+    that cannot be read, or whose binning is inconsistent with the running total
+    (labels, x-values/overflow position, or bin count), is skipped; if `on_error`
+    is given it is called as `on_error(file, exception)`.
+
+    Returns `(labels, neval, xval, hist, used_files)` or `None` if no file could be
+    accumulated. `hist['error2']` holds the combined standard error.
+    """
+    labels: str | None = None
+    neval: int = 0
+    xval: np.ndarray | None = None
+    hist: np.ndarray | None = None
+    used: list[str] = []
+    for in_file in files:
+        try:
+            f_labels, f_neval, f_xval, f_hist = _read_dat(base_path / in_file, nx)
+            if hist is None:
+                labels, xval = f_labels, f_xval
+                hist = f_hist.copy()
+                # > start the running sum-of-squares for quadrature error combination
+                np.square(hist["error2"], out=hist["error2"])
+                neval = f_neval
+            else:
+                if f_hist.shape != hist.shape:
+                    raise ValueError(f"shape mismatch: {f_hist.shape} != {hist.shape}")
+                if f_labels != labels:
+                    raise ValueError("labels mismatch")
+                if (xval is None) != (f_xval is None):
+                    raise ValueError("xval mismatch")
+                if (
+                    xval is not None
+                    and f_xval is not None
+                    and not np.array_equal(xval, f_xval, equal_nan=True)
+                ):
+                    raise ValueError("xval mismatch")
+                hist["result"] += f_hist["result"]
+                hist["error2"] += np.square(f_hist["error2"])
+                neval += f_neval
+            used.append(in_file)
+        except (ValueError, OSError) as e:
+            if on_error is not None:
+                on_error(in_file, e)
+    if hist is None:
+        return None
+    np.sqrt(hist["error2"], out=hist["error2"])
+    return labels, neval, xval, hist, used
+
+
+def _run_pineappl_merge(pine_merge: Path, wgt_file: Path, grid_file: Path, check: bool = True) -> int:
+    """Combine per-input PineAPPL grids into `grid_file` using `nnlojet-merge-pineappl`.
+
+    `wgt_file` lists each input file and its per-bin weight. Returns the subprocess
+    return code; with `check=True` a non-zero exit raises. The caller is responsible
+    for verifying `pine_merge` exists and is executable.
+    """
+    grid_log = grid_file.with_suffix(".log")
+    cwd = grid_file.parent
+    with open(grid_log, "w") as log:
+        result = subprocess.run(
+            [
+                str(pine_merge),
+                str(wgt_file.relative_to(cwd)),
+                str(grid_file.relative_to(cwd)),
+                "-v",
+                "--skip",
+                "--noopt",
+            ],
+            env=os.environ.copy(),
+            cwd=cwd,
+            stdout=log,
+            stderr=log,
+            text=True,
+        )
+    if check and result.returncode != 0:
+        raise RuntimeError(f"nnlojet-merge-pineappl failed for {grid_file.name}. Check {grid_log}")
+    return result.returncode
 
 
 class DBMerge(DBTask, metaclass=ABCMeta):
@@ -428,24 +654,7 @@ class MergeObs(Task):
                         #     print(f" > mask: {bin_mask}")
                         #     time.sleep(5)
 
-        with open(self.file_dat, "w") as df:
-            if labels is not None:
-                df.write(labels + "\n")
-            df.write(f"#neval: {neval_total}\n")
-            for irow in range(nrows):
-                if xval is not None:
-                    if np.all(np.isnan(xval[irow])):
-                        if nx == 3:
-                            df.write("#overflow:lower center upper ")
-                        else:
-                            df.write("#overflow: ")
-                    else:
-                        for x in xval[irow]:
-                            df.write(f"{np.format_float_scientific(x): <25} ")
-                for icol in range(ncols):
-                    df.write(f"{np.format_float_scientific(merged_hist['result'][irow, icol]): <25} ")
-                    df.write(f"{np.format_float_scientific(merged_hist['error2'][irow, icol]): <25} ")
-                df.write("\n")
+        _write_dat(self.file_dat, labels, neval_total, nx, xval, merged_hist)
         # > Make completion monotonic against both freshness gates.  Use +1.0 s so
         # > that filesystems with 1-second mtime resolution (NFS, Lustre) always
         # > floor to a value strictly >= src_ts, which can carry sub-second precision.
@@ -453,54 +662,14 @@ class MergeObs(Task):
         os.utime(self.file_dat, (complete_mtime, complete_mtime))
 
         if self.file_wgt is not None and weights is not None:
-            with open(self.file_wgt, "w") as wf:
-                wf.write(f"#nx={nx} ")
-                if xval is not None and nx == 3:
-                    for irow in range(nrows):
-                        if np.all(np.isnan(xval[irow])):
-                            continue
-                        wf.write(
-                            f"[{np.format_float_scientific(xval[irow][0])},"
-                            f"{np.format_float_scientific(xval[irow][-1])}] "
-                        )
-                wf.write("\n")
-                for idat in range(ndat):
-                    wf.write(filenames[idat] + " ")
-                    for irow in range(nrows):
-                        if xval is not None and np.all(np.isnan(xval[irow])):
-                            continue
-                        wf.write(np.format_float_scientific(weights[irow, idat]) + " ")
-                    wf.write("\n")
+            _write_weights(self.file_wgt, nx, xval, filenames, weights)
 
             if self.grids:
                 pine_merge: Path = Path(self.config["exe"]["path"]).parent / "nnlojet-merge-pineappl"
                 if not pine_merge.is_file() or not os.access(pine_merge, os.X_OK):
                     raise RuntimeError(f"Missing nnlojet-merge-pineappl executable at {pine_merge}")
-
                 grid_file = self.file_dat.with_suffix(".pineappl.lz4")
-                grid_log = self.file_dat.with_suffix(".pineappl.log")
-                job_env = os.environ.copy()
-
-                with open(grid_log, "w") as log:
-                    result = subprocess.run(
-                        [
-                            pine_merge,
-                            str(self.file_wgt.relative_to(self.file_dat.parent)),
-                            str(grid_file.relative_to(self.file_dat.parent)),
-                            "-v",
-                            "--skip",
-                            "--noopt",
-                        ],
-                        env=job_env,
-                        cwd=self.file_dat.parent,
-                        stdout=log,
-                        stderr=log,
-                        text=True,
-                    )
-                    if result.returncode != 0:
-                        raise RuntimeError(
-                            f"nnlojet-merge-pineappl failed for {self.file_dat.name}. " + f"Check {grid_log}"
-                        )
+                _run_pineappl_merge(pine_merge, self.file_wgt, grid_file, check=True)
         elif self.grids:
             raise RuntimeError("Grid merging requires a weights output file")
 
@@ -1255,17 +1424,29 @@ class MergeAll(DBMerge):
                         level=LogLevel.ERROR,
                     )
                     continue
-                hist = NNLOJETHistogram()
-                for in_file in in_files[obs]:
-                    try:
-                        hist = hist + NNLOJETHistogram(nx=nx, filename=self._path / in_file, weights=qwgt)
-                    except ValueError as e:
-                        self._logger(session, f"error reading file {in_file} ({e!r})", level=LogLevel.ERROR)
-                hist.write_to_file(out_file)
+                acc = _accumulate_dat(
+                    in_files[obs],
+                    nx,
+                    self._path,
+                    on_error=lambda f, e: self._logger(
+                        session, f"error reading file {f} ({e!r})", level=LogLevel.ERROR
+                    ),
+                )
+                if acc is None:
+                    self._logger(
+                        session,
+                        self._logger_prefix + f"::run:  no usable files for {obs}",
+                        level=LogLevel.ERROR,
+                    )
+                    continue
+                labels, neval, xval, hist, used = acc
+                _write_dat(out_file, labels, neval, nx, xval, hist)
                 written_observables.append(obs)
                 if qwgt:
                     weights_file = out_file.with_suffix(".weights.txt")
-                    weights_file.write_text(hist.to_weights())
+                    filenames = [(self._path / f).as_posix() for f in used]
+                    weights = np.ones((hist.shape[0], len(filenames)), dtype=np.float64)
+                    _write_weights(weights_file, nx, xval, filenames, weights)
                 if obs == "cross":
                     with open(out_file) as cross:
                         for line in cross:
@@ -1361,46 +1542,37 @@ class MergeAll(DBMerge):
                                 level=LogLevel.ERROR,
                             )
                             continue
-                        hist = NNLOJETHistogram()
-                        for in_file in in_files_fin[obs]:
-                            try:
-                                hist = hist + NNLOJETHistogram(
-                                    nx=nx, filename=self._path / in_file, weights=qwgt
-                                )
-                            except ValueError as e:
-                                self._logger(
-                                    session,
-                                    self._logger_prefix + f"::run:  error reading file {in_file} ({e!r})",
-                                    level=LogLevel.ERROR,
-                                )
-                        hist.write_to_file(out_file)
+                        acc = _accumulate_dat(
+                            in_files_fin[obs],
+                            nx,
+                            self._path,
+                            on_error=lambda f, e: self._logger(
+                                session,
+                                self._logger_prefix + f"::run:  error reading file {f} ({e!r})",
+                                level=LogLevel.ERROR,
+                            ),
+                        )
+                        if acc is None:
+                            self._logger(
+                                session,
+                                self._logger_prefix + f"::run:  no usable files for {obs}",
+                                level=LogLevel.ERROR,
+                            )
+                            continue
+                        labels, neval, xval, hist, used = acc
+                        _write_dat(out_file, labels, neval, nx, xval, hist)
                         if qwgt:
                             weights_file = out_file.with_suffix(".weights.txt")
-                            weights_file.write_text(hist.to_weights())
+                            filenames = [(self._path / f).as_posix() for f in used]
+                            weights = np.ones((hist.shape[0], len(filenames)), dtype=np.float64)
+                            _write_weights(weights_file, nx, xval, filenames, weights)
                             pine_merge: Path = (
                                 Path(self.config["exe"]["path"]).parent / "nnlojet-merge-pineappl"
                             )
                             if pine_merge.is_file() and os.access(pine_merge, os.X_OK):
-                                job_env = os.environ.copy()
                                 # > all parts ready -> combine into final grid
                                 grid_file: Path = out_file.with_suffix(".pineappl.lz4")
-                                grid_log: Path = out_file.with_suffix(".pineappl.log")
-                                with open(grid_log, "w") as log:
-                                    _ = subprocess.run(
-                                        [
-                                            pine_merge,
-                                            str(weights_file.relative_to(out_file.parent)),
-                                            str(grid_file.relative_to(out_file.parent)),
-                                            "-v",
-                                            "--skip",
-                                            "--noopt",
-                                        ],
-                                        env=job_env,
-                                        cwd=out_file.parent,
-                                        stdout=log,
-                                        stderr=log,
-                                        text=True,
-                                    )
+                                _run_pineappl_merge(pine_merge, weights_file, grid_file, check=False)
                             else:
                                 self._logger(
                                     session,
