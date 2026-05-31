@@ -17,6 +17,7 @@ import ast
 import configparser
 import glob
 import json
+import logging
 import os
 import re
 import sys
@@ -38,6 +39,9 @@ from ._core import (
 
 # > NNLOJET seed-file pattern: <proc>.<...>.<...>.<obs>.s<seed>.dat -> group(2) is the observable
 _OBS_FILE_RE = re.compile(r".*?/?([^./]+\.){3}([^/]+)\.s[0-9]+\.dat")
+
+
+_log = logging.getLogger(__name__)
 
 
 def _warn(msg: str) -> None:
@@ -266,6 +270,8 @@ class CombinePart(Task):
         hdf5_dir.mkdir(parents=True, exist_ok=True)
         hdf5_file = hdf5_dir / f"{self.part_dir}.hdf5"
 
+        n_files = sum(len(v) for v in inputs.values())
+        _log.info("Part %s: staging %d seed file(s) for %d observable(s)", self.alias, n_files, len(inputs))
         histograms = self.config["run"]["histograms"]
         try:
             build_obs_group(hdf5_file, str(self.part_dir), inputs, histograms, self._path)
@@ -298,6 +304,8 @@ class CombinePart(Task):
             if not mrg.complete():
                 pending.append(mrg)
         if pending:
+            for mrg in pending:
+                _log.info("Part %s: merging %s", self.alias, mrg.hdf5_path[-1])
             yield pending
 
 
@@ -348,6 +356,7 @@ class _CombineSum(Task):
             in_files = self._in_files(obs)
             if not in_files:
                 continue
+            _log.info("%s [%s]: combining %d file(s)", self.name, obs, len(in_files))
             # > nx is read from the operand `.dat` headers (single source of truth)
             nx = _read_nx(self._path / in_files[0])
             if nx is None:
