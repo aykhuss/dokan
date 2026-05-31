@@ -9,6 +9,7 @@ shared by the dokan workflow (`dokan.db._dbmerge`) and the standalone
 """
 
 import os
+import re
 import subprocess
 import time
 from enum import IntEnum, unique
@@ -21,18 +22,6 @@ import numpy as np
 from .._types import GenericPath
 from ..task import Task
 
-# > some variable definitions
-_dt_vstr = h5py.string_dtype()
-_dt_hist = np.dtype([("result", np.float64), ("error2", np.float64)])  # HDF5 storage: per-job, per-bin
-_dt_cmlt = np.dtype([("neval", np.int64), ("sumf", np.float64), ("sumf2", np.float64)])  # in-memory cumulants
-_chunk_size: int = 256  # chunk size along the ndat axis
-_MAD_NORMAL_SCALE: float = 0.6745  # median absolute deviation to 1-sigma for a normal distribution
-
-
-def _obs_has_grid(hist_info: dict) -> bool:
-    """Return whether this observable has an associated PineAPPL grid."""
-    return hist_info.get("grid") is not None
-
 
 @unique
 class BinMask(IntEnum):
@@ -44,6 +33,22 @@ class BinMask(IntEnum):
 
 
 _comment_prefix = "#"
+_NX_RE = re.compile(
+    rf"^\s*{re.escape(_comment_prefix)}\s*nx\s*(?::|=)?\s*(\d+)\s*$",
+    re.IGNORECASE,
+)
+
+# > some variable definitions
+_dt_vstr = h5py.string_dtype()
+_dt_hist = np.dtype([("result", np.float64), ("error2", np.float64)])  # HDF5 storage: per-job, per-bin
+_dt_cmlt = np.dtype([("neval", np.int64), ("sumf", np.float64), ("sumf2", np.float64)])  # in-memory cumulants
+_chunk_size: int = 256  # chunk size along the ndat axis
+_MAD_NORMAL_SCALE: float = 0.6745  # median absolute deviation to 1-sigma for a normal distribution
+
+
+def _obs_has_grid(hist_info: dict) -> bool:
+    """Return whether this observable has an associated PineAPPL grid."""
+    return hist_info.get("grid") is not None
 
 
 def _write_dat(
@@ -119,17 +124,56 @@ def _write_weights(
             wf.write("\n")
 
 
-def _read_dat(path: Path, nx: int) -> tuple[str | None, int, np.ndarray | None, np.ndarray]:
+def _parse_nx_marker(line: str) -> int | None:
+    """Parse a `#nx` marker line, returning `None` for non-`#nx` comments."""
+    if match := _NX_RE.fullmatch(line):
+        return int(match.group(1))
+
+    body = line.strip()
+    if body.startswith(_comment_prefix):
+        body = body[len(_comment_prefix) :].lstrip().lower()
+        if body.startswith("nx") and (len(body) == 2 or body[2] in " \t:="):
+            raise ValueError(f"malformed #nx marker: {line!r}")
+    return None
+
+
+def _read_nx(path: Path) -> int | None:
+    """Read the trailing `#nx` marker from an NNLOJET/dokan `.dat` file.
+
+    `nx` is the number of x-columns (bin edges) and is the authoritative property
+    of an observable's binning.  The marker is written as the final line (see
+    `_write_dat`, matching the NNLOJET seed files), so only the file tail is read
+    to avoid pulling large histograms into memory.  Returns `None` if no `#nx`
+    marker is found (or the file cannot be read). Raises `ValueError` when a
+    malformed `#nx` marker is present.
+    """
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - 4096))
+            tail = f.read().decode("utf-8", "replace")
+    except OSError:
+        return None
+    for line in reversed(tail.splitlines()):
+        nx = _parse_nx_marker(line)
+        if nx is not None:
+            return nx
+    return None
+
+
+def _read_dat(path: Path, nx: int | None = None) -> tuple[str | None, int, np.ndarray | None, np.ndarray]:
     """Read a merged `.dat` file written by `_write_dat`.
 
     Returns `(labels, neval, xval, hist)` where `hist` is an `(nrows, ncols)` array
     of `_dt_hist` records and `xval` is `(nrows, nx)` (NaN for overflow rows) or
-    `None` when `nx == 0`. `nx` is supplied by the caller; if the file carries an
-    `#nx:` line it is checked for compatibility. Raises `ValueError` on a malformed
-    file or an `#nx:` mismatch.
+    `None` when `nx == 0`. When `nx` is `None` it is taken from the file's `#nx:`
+    line (the single source of truth); when supplied it is validated against that
+    line. Raises `ValueError` on a malformed file or an `#nx:` mismatch.
     """
     labels: str | None = None
     neval: int | None = None
+    file_nx: int | None = None
     rows: list[tuple[bool, list[str]]] = []  # (is_overflow, tokens)
     with open(path) as f:
         for raw in f:
@@ -138,22 +182,28 @@ def _read_dat(path: Path, nx: int) -> tuple[str | None, int, np.ndarray | None, 
                 continue
             if line.startswith(_comment_prefix):
                 body = line[len(_comment_prefix) :].lstrip().lower()
-                if body.startswith("overflow"):
+                parsed_nx = _parse_nx_marker(line)
+                if parsed_nx is not None:
+                    file_nx = parsed_nx
+                elif body.startswith("overflow"):
                     rows.append((True, line.split()))
                 elif body.startswith("labels"):
                     labels = line
                 elif body.startswith("neval"):
                     neval = int(line.split()[1])
-                elif body.startswith("nx"):
-                    # > validate the x-column count against the caller's expectation
-                    file_nx = int(line.split()[-1])
-                    if file_nx != nx:
-                        raise ValueError(f"nx mismatch in {path}: {file_nx} != {nx}")
                 # > any other comment line is ignored
                 continue
             rows.append((False, line.split()))
     if neval is None:
         raise ValueError(f"missing #neval in {path}")
+    # > resolve nx: trust the file when the caller leaves it unspecified, otherwise
+    # > validate the caller's expectation against the file's own marker
+    if nx is None:
+        if file_nx is None:
+            raise ValueError(f"missing #nx in {path}")
+        nx = file_nx
+    elif file_nx is not None and file_nx != nx:
+        raise ValueError(f"nx mismatch in {path}: {file_nx} != {nx}")
     # > determine the number of (val, err) column pairs from a non-overflow row;
     # > overflow rows have a variable-length marker, so we read data from the tail
     ncols: int | None = None
@@ -185,13 +235,15 @@ def _read_dat(path: Path, nx: int) -> tuple[str | None, int, np.ndarray | None, 
 
 def _accumulate_dat(
     files: list[str],
-    nx: int,
-    base_path: Path,
+    nx: int | None = None,
+    base_path: Path = Path(),
     on_error=None,
 ) -> tuple[str | None, int, np.ndarray | None, np.ndarray, list[str]] | None:
     """Sum already-merged per-`Part` `.dat` files for one observable.
 
-    Files are resolved relative to `base_path`. Accumulation is purely additive:
+    Files are resolved relative to `base_path`. `nx` may be left `None`, in which
+    case it is read from each file's `#nx:` marker (binning consistency is then
+    enforced via the per-file shape check). Accumulation is purely additive:
     results are summed bin-by-bin, errors in quadrature, and `neval` summed. A file
     that cannot be read, or whose binning is inconsistent with the running total
     (labels, x-values/overflow position, or bin count), is skipped; if `on_error`
@@ -298,13 +350,33 @@ def build_obs_group(
         # > retrieve top-level group; init group structure & data if needed
         h5grp_pt: h5py.Group = h5f.require_group(group_name)
 
-        # > make sure all observables groups are in place with the correct attributes
+        # > make sure all observables groups are in place with the correct attributes.
+        # > `nx` is sourced from the input file's `#nx` marker when the caller leaves
+        # > it unspecified (the standalone tool); the DB workflow passes the runcard
+        # > `nx` (which also carries `cumulant`/`grid` not present in the `.dat` files).
         for obs, hist in histograms.items():
+            hist_nx = hist.get("nx")
+            nx: int | None = int(hist_nx) if hist_nx is not None else None
+            if nx is None:
+                files = in_files.get(obs)
+                if not files:
+                    continue  # no data to stage yet and no nx given: nothing to set up
+                file_nx = _read_nx(base_path / files[0])
+                if file_nx is None:
+                    raise ValueError(f"could not determine #nx for observable '{obs}' from {files[0]}")
+                nx = file_nx
             h5grp_obs: h5py.Group = h5grp_pt.require_group(f"{obs}")
+            if "nx" in h5grp_obs.attrs and int(h5grp_obs.attrs["nx"]) != nx:
+                # > pre-existing group with a different binning ⇒ stale cache; fail loudly
+                # > rather than silently discard staged data (the caller owns rebuilding)
+                raise ValueError(
+                    f"stale HDF5 cache: observable '{obs}' in {Path(hdf5_file).name}: "
+                    f"stored nx={int(h5grp_obs.attrs['nx'])} != input nx={nx}"
+                )
             if "timestamp" not in h5grp_obs.attrs:
                 h5grp_obs.attrs.create("timestamp", 0, dtype=np.float64)
             if "nx" not in h5grp_obs.attrs:
-                h5grp_obs.attrs.create("nx", hist["nx"], dtype=np.int32)
+                h5grp_obs.attrs.create("nx", nx, dtype=np.int32)
             if "cumulant" in hist and "cumulant" not in h5grp_obs.attrs:
                 h5grp_obs.attrs.create("cumulant", hist["cumulant"], dtype=np.int32)
             if "grid" in hist and "grid" not in h5grp_obs.attrs:
@@ -320,7 +392,7 @@ def build_obs_group(
                 nx: int = h5grp_obs.attrs["nx"]
 
                 if "data" not in h5grp_obs:
-                    # > crate the data structure for this observable
+                    # > create the data structure for this observable
                     xval: list[list[np.float64]] = []
                     ncols: int = 0
                     nrows: int = 0
@@ -330,11 +402,16 @@ def build_obs_group(
                             if not line:
                                 continue  # skip empty lines
                             if line.startswith("#"):
-                                if line.startswith("#overflow"):
+                                parsed_nx = _parse_nx_marker(line)
+                                if parsed_nx is not None:
+                                    if parsed_nx != nx:
+                                        raise ValueError(
+                                            f"nx mismatch in {base_path / in_files[obs][0]}: "
+                                            f"{parsed_nx} != {nx}"
+                                        )
+                                elif line.startswith("#overflow"):
                                     nrows += 1
                                     xval.append([np.float64(np.nan) for _ in range(nx)])
-                                elif line.startswith("#nx"):
-                                    assert int(line.split()[-1]) == nx
                                 elif line.startswith("#labels"):
                                     h5grp_obs.attrs.create("labels", line, dtype=_dt_vstr)
                             else:
@@ -377,23 +454,15 @@ def build_obs_group(
                 if nx > 0:
                     xval = h5dat_data.dims[0][0][...]
 
-                in_files_old: list[GenericPath] = [
-                    file_path for file_path in h5dat_files.asstr()[:ndat_old]
-                ]
+                in_files_old: list[GenericPath] = [file_path for file_path in h5dat_files.asstr()[:ndat_old]]
                 in_files_cur: list[GenericPath] = list(dict.fromkeys(in_files[obs]))
                 in_files_new: list[GenericPath] = [
                     file_path for file_path in in_files_cur if file_path not in in_files_old
                 ]
                 ndat_new: int = len(in_files_new)
-                if ndat_new == 0:
-                    # print(f"{group_name}[{obs}]: nothing to append ({ndat_new}/{len(in_files_old)})")
+                if ndat_new == 0 or (h5grp_obs.attrs["timestamp"] < 0 and not merge_in_progress):
                     continue
-                elif h5grp_obs.attrs["timestamp"] < 0 and not merge_in_progress:
-                    # print(f"{group_name}[{obs}]: HDF5 in merging stage")
-                    continue
-                else:
-                    # print(f"{group_name}[{obs}]: append {in_files_new} // {in_files_old}")
-                    h5grp_obs.attrs["timestamp"] = -1.0  # flag merging state
+                h5grp_obs.attrs["timestamp"] = -1.0  # flag merging state
                 # > resize datasets to accommodate new files (only extends, never shrinks)
                 ndat_total: int = ndat_old + ndat_new
                 resize_obs[obs] = ndat_old
@@ -422,7 +491,13 @@ def build_obs_group(
                             if not line:
                                 continue
                             if line.startswith("#"):
-                                if line.startswith("#neval"):
+                                parsed_nx = _parse_nx_marker(line)
+                                if parsed_nx is not None:
+                                    if parsed_nx != nx:
+                                        raise ValueError(
+                                            f"nx mismatch in {base_path / ifile}: {parsed_nx} != {nx}"
+                                        )
+                                elif line.startswith("#neval"):
                                     buf_neval[i] = int(line.split()[-1])
                                 elif line.startswith("#overflow"):
                                     # > overflow rows are rare: parse individually
@@ -433,8 +508,6 @@ def build_obs_group(
                                     buf_data["result"][i, irow, :] = arr_f64[0::2]
                                     buf_data["error2"][i, irow, :] = arr_f64[1::2] ** 2
                                     irow += 1
-                                elif line.startswith("#nx"):
-                                    assert int(line.split()[-1]) == nx
                             else:
                                 assert len(line.split()) == nx + 2 * ncols
                                 data_lines.append(line)
@@ -442,9 +515,9 @@ def build_obs_group(
                                 irow += 1
                         # > batch-parse all regular data lines in one fromstring call
                         if data_lines:
-                            arr = np.fromstring(
-                                " ".join(data_lines), dtype=np.float64, sep=" "
-                            ).reshape(len(data_lines), nx + 2 * ncols)
+                            arr = np.fromstring(" ".join(data_lines), dtype=np.float64, sep=" ").reshape(
+                                len(data_lines), nx + 2 * ncols
+                            )
                             if nx > 0:
                                 if len(data_lines) == nrows:  # no overflow row
                                     assert np.array_equal(arr[:, :nx], xval)
@@ -622,9 +695,6 @@ class MergeObs(Task):
                 _ibuf = np.argsort(bin_cmlt["neval"])
                 _mask = bin_mask == BinMask.ACTIVE
                 nstart = np.sum(_mask)
-                # print(f"{bin_cmlt["neval"]=}")
-                # print(f"{_ibuf=}")
-                # print(f"{_mask=}")
                 # > init indices
                 ilow: int = 0
                 iupp: int = ndat
@@ -632,21 +702,16 @@ class MergeObs(Task):
                 upp: int = _ibuf[iupp]
                 # > loop over pairs
                 while ilow < iupp:
-                    # print(f"  | start pair {ilow} ({low}) <-> {iupp} ({upp})")
                     # > skip invalid lower
                     while ilow < ndat and not _mask[low]:
-                        # print(f"{ilow} ({low}): {_mask[low]=}")
                         ilow += 1
                         low = _ibuf[ilow]
                     # > skip invalid upper
                     while iupp > 0 and not _mask[upp]:
-                        # print(f"{iupp} ({upp}): {_mask[upp]=}")
                         iupp -= 1
                         upp = _ibuf[iupp]
-                    # print(f"  | first valid pair {ilow} ({low}) <-> {iupp} ({upp})")
                     # > out of pairs to merge
                     if ilow >= iupp:
-                        # print(f"  | complete one iteration of pairwise merging: {ilow} >= {iupp}")
                         break
                     # > unweighted combinations of two (pseudo-)runs
                     # > we always absorb the lower index into the higher one
@@ -659,7 +724,6 @@ class MergeObs(Task):
                     bin_cmlt[low] = 0  # reset
                     bin_mask[low] = -upp
                     _mask[low] = False
-                    # print(f"  >  merged {low} into {upp}")
                     # > move to next pair
                     ilow += 1
                     iupp -= 1
@@ -675,9 +739,7 @@ class MergeObs(Task):
                     # > we operate on the f & f2 cumulants from here on, leave `bin_data` alone
                     bin_cmlt[:] = 0
                     bin_cmlt["neval"][:ndat] = bin_neval
-                    # X  bin_cmlt["sumf"][:ndat] = bin_neval * bin_data["result"]
                     np.multiply(bin_neval, bin_data["result"], out=bin_cmlt["sumf"][:ndat])
-                    # X  bin_cmlt["sumf2"][:ndat] = bin_neval**2 * bin_data["error2"] + bin_neval * bin_data["result"]**2  # noqa: E501
                     bin_buf1[:] = 0
                     bin_buf2[:] = 0
                     np.square(bin_neval, out=bin_buf1[:ndat])
@@ -757,16 +819,14 @@ class MergeObs(Task):
                         merge_pair()
 
                     # > perform the k-scan
-                    _neval = sum(bin_cmlt["neval"])  # no mask(!) since err=0 events also count
+                    _neval = int(np.sum(bin_cmlt["neval"]))  # no mask(!) since err=0 events also count
                     k_scan: list[tuple[np.float64, np.float64, np.int32]] = []
                     while True:
                         _result, _error = combine_weighted()
                         _mask = bin_mask == BinMask.ACTIVE
-                        # print(f"#  appending {_result} +/- {_error} [{np.sum(_mask)}]")
                         k_scan.append((_result, _error, np.sum(_mask)))
                         # > no k-scan active or nothing left to merge
                         if (k_scan_nsteps <= 0) or (np.sum(_mask) <= 1):
-                            # print(f"k-scan done: {np.sum(_mask)} pseudo-runs left")
                             break
                         # > check for a plateau spanning the last k_scan_nsteps steps
                         qplateau: bool = len(k_scan) >= k_scan_nsteps  # enough steps?
@@ -777,15 +837,10 @@ class MergeObs(Task):
                                 delta = np.abs(k_scan[istep][0] - k_scan[jstep][0])
                                 sigma = np.sqrt(k_scan[istep][1] ** 2 + k_scan[jstep][1] ** 2)
                                 # > each step uses identical data so standard variance is not suitable
-                                # > taking the smaller of the two uncertainties better?
-                                # sigma = max(abs(k_scan[istep][1]-k_scan[jstep][1]),min(k_scan[istep][1],k_scan[jstep][1]))  # noqa: E501
                                 if delta > k_scan_maxdev_steps * sigma:
                                     qplateau = False
                                     break
                         if qplateau:
-                            # print("found plateau:")
-                            # for r,e,n in k_scan:
-                            #     print(f"  >> {r:.6f} +/- {e:.6f} ({n})")
                             break
                         # > prepare for the next step (pair up two pseudoruns into a single one)
                         merge_pair()
@@ -821,17 +876,11 @@ class MergeObs(Task):
                                         )
                                     _inode += 1
                                 _nodes = np.asarray(_nodes_list, dtype=int)
-                                # print(f" > nodes[{idat}]: {_nodes}")
                                 for _inode in _nodes:
                                     weights[irow, _inode] = _iwgt * bin_neval[_inode] / _neval
-                        # print(f" > weights: {weights[irow,:]}")
-                        # print(f" > sum of weights [{irow}] = {np.sum(weights[irow, :]):.3f}")
                         assert np.all(
                             np.isfinite(weights[irow, :])
                         )  # check that we have weights for all entries
-                        # if not np.all(np.isfinite(weights[irow, :])):
-                        #     print(f" > mask: {bin_mask}")
-                        #     time.sleep(5)
 
         _write_dat(self.file_dat, labels, neval_total, nx, xval, merged_hist)
         # > Make completion monotonic against both freshness gates.  Use +1.0 s so
@@ -851,4 +900,3 @@ class MergeObs(Task):
                 _run_pineappl_merge(pine_merge, self.file_wgt, grid_file, check=True)
         elif self.grids:
             raise RuntimeError("Grid merging requires a weights output file")
-

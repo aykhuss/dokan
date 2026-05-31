@@ -30,6 +30,7 @@ from ..task import Task
 from ._core import (
     MergeObs,
     _accumulate_dat,
+    _read_nx,
     _write_dat,
     _write_weights,
     build_obs_group,
@@ -37,16 +38,10 @@ from ._core import (
 
 # > NNLOJET seed-file pattern: <proc>.<...>.<...>.<obs>.s<seed>.dat -> group(2) is the observable
 _OBS_FILE_RE = re.compile(r".*?/?([^./]+\.){3}([^/]+)\.s[0-9]+\.dat")
-_CROSS_RE = re.compile(r".*cross.*")
 
 
 def _warn(msg: str) -> None:
     print(f"[nnlojet-merge] warning: {msg}", file=sys.stderr)
-
-
-def _nx_for(obs: str) -> int:
-    """`nx=0` for cross-section observables, `nx=3` for differential ones."""
-    return 0 if _CROSS_RE.match(obs) else 3
 
 
 def _stamp(path: Path, ref_mtime: float) -> None:
@@ -128,27 +123,33 @@ def _parse_operands(spec: str) -> list[str]:
 def _discover_observables(
     obs_options: list[str], raw_dir: Path, part_dirs: list[str], recursive: bool
 ) -> dict[str, dict]:
-    """Resolve the observable set (and each `nx`) from `[Observables]`.
+    """Resolve the observable *name* set from `[Observables]`.
 
-    `ALL` triggers a filesystem auto-scan of every Part directory; any other
-    entries are taken as explicit observable names.  Returns the `histograms`
-    metadata mapping consumed by the merge core.
+    `ALL` triggers a filesystem scan of every Part directory (filenames only — no
+    file contents are read); any other entries are taken as explicit observable
+    names.  Each observable's `nx` is deliberately **not** resolved here: it is
+    read from the `#nx` marker of the data files during staging (`build_obs_group`)
+    and the additive stages (`_CombineSum`), so the file is the single source of
+    truth.  Returns the `histograms` mapping (per-observable metadata is filled in
+    downstream from the files).
     """
-    names: list[str] = list(obs_options)
-    if "ALL" in names:
-        names.remove("ALL")
+    discover_all = "ALL" in obs_options
+    names: list[str] = [obs for obs in obs_options if obs != "ALL"]
+
+    if discover_all:
         for part_dir in part_dirs:
             base = raw_dir / part_dir
             pattern = str(base / "**" / "*.dat") if recursive else str(base / "*.dat")
             for f in glob.glob(pattern, recursive=recursive):
                 m = _OBS_FILE_RE.search(f)
-                if m:
-                    obs = m.group(2)
-                    if obs not in names:
-                        names.append(obs)
-                else:
+                if not m:
                     _warn(f"could not extract observable name from file: {f}")
-    return {obs: {"nx": _nx_for(obs)} for obs in names}
+                    continue
+                obs = m.group(2)
+                if obs not in names:
+                    names.append(obs)
+
+    return {obs: {} for obs in names}
 
 
 def build_config(ini_path: str | os.PathLike) -> dict:
@@ -265,9 +266,17 @@ class CombinePart(Task):
         hdf5_dir.mkdir(parents=True, exist_ok=True)
         hdf5_file = hdf5_dir / f"{self.part_dir}.hdf5"
 
-        build_obs_group(
-            hdf5_file, str(self.part_dir), inputs, self.config["run"]["histograms"], self._path
-        )
+        histograms = self.config["run"]["histograms"]
+        try:
+            build_obs_group(hdf5_file, str(self.part_dir), inputs, histograms, self._path)
+        except ValueError as e:
+            if not str(e).startswith("stale HDF5 cache:"):
+                raise
+            # > the HDF5 file is a disposable cache; an incompatible one (e.g. written
+            # > before nx was sourced from the file headers) is rebuilt from scratch
+            _warn(f"rebuilding stale HDF5 cache {hdf5_file.name}: {e}")
+            hdf5_file.unlink(missing_ok=True)
+            build_obs_group(hdf5_file, str(self.part_dir), inputs, histograms, self._path)
 
         weights = self.config["combine"]["weights"]
         pending: list[MergeObs] = []
@@ -335,11 +344,15 @@ class _CombineSum(Task):
         out_dir = self._path / self._out_subdir
         out_dir.mkdir(parents=True, exist_ok=True)
         weights = self.config["combine"]["weights"]
-        for obs, hist_info in self.config["run"]["histograms"].items():
+        for obs in self.config["run"]["histograms"]:
             in_files = self._in_files(obs)
             if not in_files:
                 continue
-            nx: int = hist_info["nx"]
+            # > nx is read from the operand `.dat` headers (single source of truth)
+            nx = _read_nx(self._path / in_files[0])
+            if nx is None:
+                _warn(f"{self.name}.{obs}: could not determine #nx from {in_files[0]}; skipping")
+                continue
             acc = _accumulate_dat(in_files, nx, self._path, on_error=lambda f, e: _warn(f"{f}: {e!r}"))
             if acc is None:
                 _warn(f"{self.name}.{obs}: no usable input files")
