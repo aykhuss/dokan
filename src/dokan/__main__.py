@@ -51,6 +51,39 @@ def reset_and_exit(sig: int, frame) -> None:
     sys.exit(f'\ncaught signal: "{signal.Signals(sig).name}", exiting')
 
 
+# > shtab completion markers attached to argparse actions via their ``.complete``
+# > attribute. These mirror ``shtab.FILE`` / ``shtab.DIRECTORY`` as plain dict
+# > literals so that the (heavy) ``shtab`` import only happens lazily when the
+# > ``--print-completion`` flag actually fires, never on the normal CLI hot path.
+_COMPLETE_FILE = {"bash": "_shtab_compgen_files", "zsh": "_files", "tcsh": "f"}
+_COMPLETE_DIR = {"bash": "_shtab_compgen_dirs", "zsh": "_files -/", "tcsh": "d"}
+# > NNLOJET runcards: complete to directories *and* ``*.run`` files
+_COMPLETE_RUNCARD = {"bash": "_nnlojet_compgen_run", "zsh": "_files -g '*.run'", "tcsh": "f"}
+_COMPLETE_PREAMBLE = {
+    "bash": r"""
+# complete to directories and NNLOJET runcards (*.run)
+_nnlojet_compgen_run() {
+  compgen -d -- "$1"
+  compgen -f -X '!*.run' -- "$1"
+}
+"""
+}
+
+
+class PrintCompletionAction(argparse.Action):
+    """argparse action that prints an shtab completion script and exits.
+
+    ``shtab`` is imported lazily here so that ordinary invocations of the CLI do
+    not pay for the import.
+    """
+
+    def __call__(self, parser, namespace, values, option_string=None) -> None:
+        import shtab
+
+        print(shtab.complete(parser, shell=values, preamble=_COMPLETE_PREAMBLE))
+        parser.exit()
+
+
 # Keep Ctrl-C behavior consistent across CLI subcommands.
 signal.signal(signal.SIGINT, reset_and_exit)
 
@@ -154,17 +187,27 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="dokan: an automated NNLOJET workflow")
     parser.add_argument("--exe", dest="exe", help="path to NNLOJET executable")
     parser.add_argument("-v", "--version", action="version", version="%(prog)s " + __version__)
+    parser.add_argument(
+        "--print-completion",
+        choices=("bash", "zsh", "tcsh"),
+        action=PrintCompletionAction,
+        help="print a shell completion script for the given shell and exit",
+    )
     subparsers = parser.add_subparsers(dest="action")
 
     # > subcommand: init
     parser_init = subparsers.add_parser("init", help="initialise a run")
-    parser_init.add_argument("runcard", metavar="RUNCARD", help="NNLOJET runcard")
-    parser_init.add_argument("-o", "--output", dest="run_path", help="destination of the run directory")
+    parser_init.add_argument(
+        "runcard", metavar="RUNCARD", help="NNLOJET runcard"
+    ).complete = _COMPLETE_RUNCARD  # type: ignore[attr-defined]
+    parser_init.add_argument(
+        "-o", "--output", dest="run_path", help="destination of the run directory"
+    ).complete = _COMPLETE_DIR  # type: ignore[attr-defined]
     parser_init.add_argument("--no-lumi", action="store_true", help="skip the luminosity breakdown")
 
     # > subcommand: config
     parser_config = subparsers.add_parser("config", help="set defaults for the run configuration")
-    parser_config.add_argument("run_path", metavar="RUN", help="run directory")
+    parser_config.add_argument("run_path", metavar="RUN", help="run directory").complete = _COMPLETE_DIR  # type: ignore[attr-defined]
     parser_config.add_argument("--merge", action="store_true", help="set default merge parameters")
     parser_config.add_argument("--advanced", action="store_true", help="advanced settings")
     parser_config.add_argument(
@@ -173,7 +216,7 @@ def main() -> None:
 
     # > subcommand: submit
     parser_submit = subparsers.add_parser("submit", help="submit a run")
-    parser_submit.add_argument("run_path", metavar="RUN", help="run directory")
+    parser_submit.add_argument("run_path", metavar="RUN", help="run directory").complete = _COMPLETE_DIR  # type: ignore[attr-defined]
     parser_submit.add_argument(
         "--policy",
         type=ExecutionPolicy.argparse,
@@ -219,21 +262,21 @@ def main() -> None:
         "merge": LogLevel.SIG_MERGE,
     }
     parser_signal = subparsers.add_parser("signal", help="send a workflow signal")
-    parser_signal.add_argument("run_path", metavar="RUN", help="run directory")
+    parser_signal.add_argument("run_path", metavar="RUN", help="run directory").complete = _COMPLETE_DIR  # type: ignore[attr-defined]
     parser_signal.add_argument(
         "signal_name", metavar="SIGNAL", choices=list(_signal_map), help="signal to send"
     )
 
     # > subcommand: doctor
     parser_doctor = subparsers.add_parser("doctor", help="your workflow wellness specialist 🩺")
-    parser_doctor.add_argument("run_path", metavar="RUN", help="run directory")
+    parser_doctor.add_argument("run_path", metavar="RUN", help="run directory").complete = _COMPLETE_DIR  # type: ignore[attr-defined]
     parser_doctor.add_argument(
         "--scan-dir", help="re-scan execution directory for job output", action=argparse.BooleanOptionalAction
     )
 
     # > subcommand: finalize
     parser_finalize = subparsers.add_parser("finalize", help="merge completed jobs into a final result")
-    parser_finalize.add_argument("run_path", metavar="RUN", help="run directory")
+    parser_finalize.add_argument("run_path", metavar="RUN", help="run directory").complete = _COMPLETE_DIR  # type: ignore[attr-defined]
     parser_finalize.add_argument("--trim-threshold", type=float, help="threshold to flag outliers")
     parser_finalize.add_argument(
         "--trim-max-fraction", type=float, help="maximum fraction allowed to trim away"

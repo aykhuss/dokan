@@ -21,6 +21,20 @@ _merge_log.setLevel(logging.INFO)
 _merge_log.addHandler(_handler)
 _merge_log.propagate = False
 
+# > mirror ``shtab.FILE`` as a plain literal so ``shtab`` is only imported lazily
+# > when ``--print-completion`` fires (see PrintCompletionAction).
+_COMPLETE_FILE = {"bash": "_shtab_compgen_files", "zsh": "_files", "tcsh": "f"}
+
+
+class PrintCompletionAction(argparse.Action):
+    """argparse action that prints an shtab completion script and exits."""
+
+    def __call__(self, parser, namespace, values, option_string=None) -> None:
+        import shtab
+
+        print(shtab.complete(parser, shell=values))
+        parser.exit()
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -28,8 +42,14 @@ def main() -> None:
         description="Merge NNLOJET histogram files using the dokan merge core.",
     )
     parser.add_argument(
-        "-C", "--config", default="combine.ini", help="combine configuration file (default: combine.ini)"
+        "--print-completion",
+        choices=("bash", "zsh", "tcsh"),
+        action=PrintCompletionAction,
+        help="print a shell completion script for the given shell and exit",
     )
+    parser.add_argument(
+        "-C", "--config", default="combine.ini", help="combine configuration file (default: combine.ini)"
+    ).complete = _COMPLETE_FILE  # type: ignore[attr-defined]
     parser.add_argument(
         "-j",
         "--jobs",
