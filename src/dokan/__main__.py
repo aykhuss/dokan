@@ -78,7 +78,7 @@ class PrintCompletionAction(argparse.Action):
     """
 
     def __call__(self, parser, namespace, values, option_string=None) -> None:
-        import shtab
+        import shtab  # type: ignore[import-not-found]
 
         print(shtab.complete(parser, shell=values, preamble=_COMPLETE_PREAMBLE))
         parser.exit()

@@ -120,34 +120,27 @@ nnlojet-run finalize my_run_dir
 
 ## Shell Completion
 
-Both `nnlojet-run` and `nnlojet-merge` can generate their own shell completion
-scripts (for `bash`, `zsh`, and `tcsh`) directly from their argument parsers via
-the `--print-completion` flag, so the completions never go out of sync with the
-CLI.
+Dokan generates shell completion scripts for `bash`, `zsh`, and `tcsh` via the `--print-completion` flag. Add the appropriate lines to your shell startup file:
 
-The quickest way is to source the generated script in your shell startup file.
-For **bash** (`~/.bashrc`):
-
+**bash** (`~/.bashrc`):
 ```shell
 source <(nnlojet-run --print-completion bash)
 source <(nnlojet-merge --print-completion bash)
 ```
 
-For **zsh** (`~/.zshrc`), replace `bash` with `zsh`; for **tcsh** (`~/.tcshrc`),
-use `tcsh` and `eval` the output:
+**zsh** (`~/.zshrc`):
+```shell
+eval "$(nnlojet-run --print-completion zsh)"
+eval "$(nnlojet-merge --print-completion zsh)"
+```
 
+**tcsh** (`~/.tcshrc`):
 ```shell
 eval "`nnlojet-run --print-completion tcsh`"
+eval "`nnlojet-merge --print-completion tcsh`"
 ```
 
-The `source <(...)` form regenerates the script on every new shell. If you'd
-rather avoid that small startup cost, write the script to a file once and source
-that instead, regenerating only after upgrading dokan:
-
-```shell
-nnlojet-run --print-completion bash > ~/.local/share/bash-completion/completions/nnlojet-run
-nnlojet-merge --print-completion bash > ~/.local/share/bash-completion/completions/nnlojet-merge
-```
+For faster shell startup, you can write the completions to a static file and source that instead (e.g., `nnlojet-run --print-completion bash > ~/.local/share/bash-completion/completions/nnlojet-run`), updating it only when upgrading dokan.
 
 ## License
 

@@ -30,7 +30,7 @@ class PrintCompletionAction(argparse.Action):
     """argparse action that prints an shtab completion script and exits."""
 
     def __call__(self, parser, namespace, values, option_string=None) -> None:
-        import shtab
+        import shtab  # type: ignore[import-not-found]
 
         print(shtab.complete(parser, shell=values))
         parser.exit()
