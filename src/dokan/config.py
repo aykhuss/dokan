@@ -156,11 +156,21 @@ class Config(UserDict):
             and self.data["warmup"]["min_increment_steps"] < 2
         ):
             return False
-        return not (
-            "production" in self.data
-            and "min_number" in self.data["production"]
-            and self.data["production"]["min_number"] < 1
-        )
+        if "production" in self.data:
+            if (
+                "min_number" in self.data["production"]
+                and self.data["production"]["min_number"] < 1
+            ):
+                return False
+            # > the merge trigger ratio (#done+#merged+1)/(#merged+1) is exactly 1.0 once a
+            # > part is fully merged, so `fac_merge_trigger <= 1.0` would make MergePart.complete()
+            # > never settle (infinite re-merge loop). require it strictly above 1.0.
+            if (
+                "fac_merge_trigger" in self.data["production"]
+                and self.data["production"]["fac_merge_trigger"] <= 1.0
+            ):
+                return False
+        return True
 
     def __setitem__(self, key, item) -> None:
         super().__setitem__(key, item)

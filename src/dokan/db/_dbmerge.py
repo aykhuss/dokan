@@ -144,6 +144,13 @@ class MergePart(DBMerge):
             if self.force and c_done > 0:
                 return False
 
+            # > nothing new to merge: the part is fully merged.  Guarding on c_done here
+            # > keeps `complete()` independent of `fac_merge_trigger`: the ratio test below
+            # > evaluates to exactly 1.0 when c_done == 0, so any `fac_merge_trigger <= 1.0`
+            # > would otherwise make a fully-merged part read as incomplete forever (livelock).
+            if c_done == 0:
+                return True
+
             # > this is incorrect, as we need to wait for *all* pre-productions to be complete
             # > before we can merge. The merge is triggered manually in the `Entry` task
             # if c_merged == 0 and c_done > 0:
@@ -216,7 +223,18 @@ class MergePart(DBMerge):
             pt.ntot = 0
             for job in session.scalars(self.select_job):
                 if not job.rel_path:
-                    continue  # @todo raise warning in logger?
+                    # > a successful job without a run directory cannot contribute data and can
+                    # > never be marked MERGED below; demote it to FAILED so it leaves the
+                    # > success_list the counts filter on (otherwise c_done stays > 0 and a
+                    # > forced MergePart/MergeAll never completes -> infinite re-merge loop).
+                    self._logger(
+                        session,
+                        self._logger_prefix
+                        + f"::run:  job {job.id} is {JobStatus(job.status)!s} without rel_path => FAILED",
+                        level=LogLevel.WARN,
+                    )
+                    job.status = JobStatus.FAILED
+                    continue
                 self._debug(session, self._logger_prefix + f"::run:  appending {job!r}")
                 pt.Ttot += job.elapsed_time
                 pt.ntot += job.niter * job.ncall
