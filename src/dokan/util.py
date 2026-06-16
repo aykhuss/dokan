@@ -5,8 +5,11 @@
 refactor common functions and patterns here
 """
 
+import json
+import math
 import re
 from datetime import timedelta
+from pathlib import Path
 
 
 def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:
@@ -174,6 +177,47 @@ def format_time_interval(seconds: float) -> str:
             seconds %= count
             result.append(f"{int(value)}{unit}")
     return " ".join(result) if result else "0 seconds"
+
+
+def is_finite_number(x) -> bool:
+    """Whether `x` is an int/float (not bool, an int subclass) and finite.
+
+    Useful for validating numeric fields read from JSON/config so a bool or a
+    NaN/inf cannot slip through where a real number is required.
+    """
+    return type(x) in (int, float) and math.isfinite(x)
+
+
+def read_json_sidecar(path: Path) -> dict | None:
+    """Read a JSON sidecar file, returning None if it is absent, unreadable, or invalid JSON."""
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def write_json_sidecar(path: Path, data: dict) -> None:
+    """Atomically write `data` as JSON to `path` (via a `.tmp` sibling + replace)."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, sort_keys=True))
+    tmp.replace(path)
+
+
+def file_fingerprint(paths) -> list:
+    """Sorted ``[path, size, mtime_ns]`` identity for a set of files.
+
+    Exact-match comparison of two fingerprints detects additions, removals and in-place
+    overwrites (any size or mtime change, in either direction) — unlike a max-mtime token,
+    which misses a non-newest file rewritten below the old maximum.  It compares identities,
+    not mtime ordering, so it is also immune to clock skew.
+    """
+    out = []
+    for p in paths:
+        st = Path(p).stat()
+        out.append([str(p), st.st_size, st.st_mtime_ns])
+    return sorted(out)
 
 
 patience: list[str] = [

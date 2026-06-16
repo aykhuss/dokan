@@ -15,6 +15,7 @@ Only the additive ``+`` operator is supported; ``|`` and ``&`` raise
 
 import ast
 import configparser
+import fnmatch
 import glob
 import json
 import logging
@@ -24,10 +25,12 @@ import sys
 import time
 from pathlib import Path
 
+import h5py
 import luigi
 import numpy as np
 
 from ..task import Task
+from ..util import file_fingerprint, read_json_sidecar, write_json_sidecar
 from ._core import (
     MergeObs,
     _accumulate_dat,
@@ -247,28 +250,130 @@ class CombinePart(Task):
                 inputs[obs] = sorted(str(Path(f).resolve()) for f in files)
         return inputs
 
+    def _hdf5_file(self) -> Path:
+        return self._path / ".hdf5" / f"{self.part_dir}.hdf5"
+
+    def _make_merge_obs(self, obs: str, hdf5_file: Path) -> MergeObs:
+        """Construct the `MergeObs` for one observable (shared by run() and complete())."""
+        parts_dir = self._path / "Parts"
+        wgt_out = (
+            str((parts_dir / f"{self.alias}.{obs}.weights.txt").relative_to(self._path))
+            if self.config["combine"]["weights"]
+            else None
+        )
+        return MergeObs(
+            config=self.config,
+            hdf5_in=str(hdf5_file.relative_to(self._path)),
+            hdf5_path=[self.part_dir, obs],
+            dat_out=str((parts_dir / f"{self.alias}.{obs}.dat").relative_to(self._path)),
+            wgt_out=wgt_out,
+            grids=False,
+        )
+
+    def _seed_fingerprint_file(self) -> Path:
+        return self._hdf5_file().with_suffix(".seeds.json")
+
+    def _seed_fingerprint(self, inputs: dict[str, list[str]]) -> dict:
+        return {obs: file_fingerprint(files) for obs, files in inputs.items()}
+
+    def _read_seed_fingerprints(self) -> dict | None:
+        return read_json_sidecar(self._seed_fingerprint_file())
+
+    def _write_seed_fingerprints(self, inputs: dict[str, list[str]]) -> None:
+        write_json_sidecar(self._seed_fingerprint_file(), self._seed_fingerprint(inputs))
+
+    def _stale_part_outputs(self) -> list[Path]:
+        """Existing `Parts` outputs for observables this part has no seeds for any more.
+
+        Keyed on actual raw-seed existence (not the configured observable set), so an observable
+        whose seeds have all disappeared is cleaned up — while one the user merely narrowed out of
+        `[Observables]` this run, but whose seeds still exist, is preserved.  `_CombineSum` would
+        otherwise keep consuming the orphaned `.dat`.
+        """
+        parts_dir = self._path / "Parts"
+        if not parts_dir.is_dir():
+            return []
+        combine = self.config["combine"]
+        raw_base = Path(combine["raw_dir"]) / self.part_dir
+        recursive = combine["recursive"]
+        # > one disk traversal of the seed tree; observable membership is matched in memory
+        pattern = "**/*.s[0-9]*.dat" if recursive else "*.s[0-9]*.dat"
+        seeds = [Path(s).name for s in glob.glob(str(raw_base / pattern), recursive=recursive)]
+        prefix = f"{self.alias}."
+        stale: list[Path] = []
+        for dat in parts_dir.glob(f"{self.alias}.*.dat"):
+            obs = dat.name[len(prefix) : -len(".dat")]
+            if not any(fnmatch.fnmatch(s, f"*.{obs}.s[0-9]*.dat") for s in seeds):
+                stale.append(dat)
+        return stale
+
+    def _cache_is_current(self, hdf5_file: Path, inputs: dict[str, list[str]]) -> bool:
+        """Whether the staging HDF5 cache was built from exactly the current raw seeds.
+
+        Compares a stored `(path, size, mtime_ns)` fingerprint of the seeds ingested at build
+        time against the current seeds — an exact identity match (not mtime ordering), so
+        additions, removals and in-place overwrites all invalidate the cache and it is immune to
+        clock skew.  `build_obs_group` is append-only by path, so `run()` rebuilds on mismatch.
+        """
+        if not hdf5_file.is_file():
+            return False
+        if self._read_seed_fingerprints() != self._seed_fingerprint(inputs):
+            return False
+        # > sanity: the cache actually holds each observable's data (guards manual corruption)
+        with h5py.File(hdf5_file, "r", libver="latest", swmr=True) as h5f:
+            grp_pt = h5f.get(self.part_dir)
+            if grp_pt is None:
+                return False
+            for obs in inputs:
+                obs_grp = grp_pt.get(obs)
+                if obs_grp is None or "data" not in obs_grp:
+                    return False
+        return True
+
     def complete(self) -> bool:
         inputs = self._glob_inputs()
+        if self._stale_part_outputs():
+            return False  # leftover outputs for vanished observables to clean up
         if not inputs:
             return True  # nothing to merge for this Part
-        parts_dir = self._path / "Parts"
-        for obs, files in inputs.items():
-            dat = parts_dir / f"{self.alias}.{obs}.dat"
-            if not dat.is_file():
-                return False
-            if dat.stat().st_mtime < max(Path(f).stat().st_mtime for f in files):
-                return False
-        return True
+        hdf5_file = self._hdf5_file()
+        # > the cache must faithfully reflect the current raw seeds before MergeObs.complete() —
+        # > the freshness authority, which only sees the cache, not the seeds — can be trusted
+        if not self._cache_is_current(hdf5_file, inputs):
+            return False
+        return all(self._make_merge_obs(obs, hdf5_file).complete() for obs in inputs)
 
     def run(self):  # type: ignore[override]
         inputs = self._glob_inputs()
+        # > drop outputs for observables that no longer have any seeds, so stale per-Part data is
+        # > never summed downstream (build_obs_group is append-only and cannot do this itself)
+        for stale in self._stale_part_outputs():
+            _log.info("Part %s: removing stale output %s", self.alias, stale.name)
+            stale.unlink(missing_ok=True)
+            stale.with_suffix(".weights.txt").unlink(missing_ok=True)
+            stale.with_suffix(".merged.json").unlink(missing_ok=True)
         if not inputs:
             return
         parts_dir = self._path / "Parts"
         parts_dir.mkdir(parents=True, exist_ok=True)
         hdf5_dir = self._path / ".hdf5"
         hdf5_dir.mkdir(parents=True, exist_ok=True)
-        hdf5_file = hdf5_dir / f"{self.part_dir}.hdf5"
+        hdf5_file = self._hdf5_file()
+
+        # > build_obs_group is append-only by path; if the cache no longer matches the seeds
+        # > (a seed was added, removed or overwritten in place) rebuild it from scratch
+        if hdf5_file.is_file() and not self._cache_is_current(hdf5_file, inputs):
+            _log.info("Part %s: raw seeds changed; rebuilding HDF5 cache", self.alias)
+            # > drop the per-observable merge outputs whose seeds changed: MergeObs' own freshness
+            # > token is the max seed mtime, which misses an in-place overwrite with a lower mtime,
+            # > so deleting the `.dat` forces it to re-merge from the rebuilt cache
+            stored_fp = self._read_seed_fingerprints() or {}
+            current_fp = self._seed_fingerprint(inputs)
+            for obs in inputs:
+                if stored_fp.get(obs) != current_fp.get(obs):
+                    for suffix in (".dat", ".weights.txt", ".merged.json"):
+                        (parts_dir / f"{self.alias}.{obs}{suffix}").unlink(missing_ok=True)
+            hdf5_file.unlink()
 
         n_files = sum(len(v) for v in inputs.values())
         _log.info("Part %s: staging %d seed file(s) for %d observable(s)", self.alias, n_files, len(inputs))
@@ -283,24 +388,12 @@ class CombinePart(Task):
             _warn(f"rebuilding stale HDF5 cache {hdf5_file.name}: {e}")
             hdf5_file.unlink(missing_ok=True)
             build_obs_group(hdf5_file, str(self.part_dir), inputs, histograms, self._path)
+        # > record the seeds this cache was built from, for the next `_cache_is_current()` check
+        self._write_seed_fingerprints(inputs)
 
-        weights = self.config["combine"]["weights"]
         pending: list[MergeObs] = []
         for obs in inputs:
-            dat_out = (parts_dir / f"{self.alias}.{obs}.dat").relative_to(self._path)
-            wgt_out = (
-                str((parts_dir / f"{self.alias}.{obs}.weights.txt").relative_to(self._path))
-                if weights
-                else None
-            )
-            mrg = MergeObs(
-                config=self.config,
-                hdf5_in=str(hdf5_file.relative_to(self._path)),
-                hdf5_path=[self.part_dir, obs],
-                dat_out=str(dat_out),
-                wgt_out=wgt_out,
-                grids=False,
-            )
+            mrg = self._make_merge_obs(obs, hdf5_file)
             if not mrg.complete():
                 pending.append(mrg)
         if pending:
@@ -331,11 +424,45 @@ class _CombineSum(Task):
                 files.append(str(ptfile.relative_to(self._path)))
         return files
 
+    def _operand_fingerprint(self, in_files: list[str]) -> list:
+        return file_fingerprint([str(self._path / f) for f in in_files])
+
+    def _fingerprint_file(self) -> Path:
+        return self._path / self._out_subdir / f"{self.name}.operands.json"
+
+    def _read_fingerprints(self) -> dict:
+        fp = read_json_sidecar(self._fingerprint_file())
+        return fp if isinstance(fp, dict) else {}
+
+    def _write_fingerprints(self, fp: dict) -> None:
+        write_json_sidecar(self._fingerprint_file(), fp)
+
+    def _stale_outputs(self) -> list[Path]:
+        """Existing outputs for observables that now have no operand inputs on disk.
+
+        Keyed on actual operand existence (disk), so it also catches an observable that has
+        dropped out of the (re-discovered) configuration entirely, not just configured ones.
+        """
+        out_dir = self._path / self._out_subdir
+        if not out_dir.is_dir():
+            return []
+        prefix = f"{self.name}."
+        stale: list[Path] = []
+        for out_file in out_dir.glob(f"{self.name}.*.dat"):
+            obs = out_file.name[len(prefix) : -len(".dat")]
+            if not self._in_files(obs):
+                stale.append(out_file)
+        return stale
+
     def complete(self) -> bool:
         # > wait for all operand producers before judging freshness (their outputs feed us)
         if any(not req.complete() for req in self.requires()):
             return False
+        if self._stale_outputs():
+            return False  # leftover outputs for observables that lost all operands
+        weights = self.config["combine"]["weights"]
         out_dir = self._path / self._out_subdir
+        stored_fp = self._read_fingerprints()
         for obs in self.config["run"]["histograms"]:
             in_files = self._in_files(obs)
             if not in_files:
@@ -343,15 +470,30 @@ class _CombineSum(Task):
             out_file = out_dir / f"{self.name}.{obs}.dat"
             if not out_file.is_file():
                 return False
-            newest = max((self._path / f).stat().st_mtime for f in in_files)
-            if out_file.stat().st_mtime < newest:
+            entry = stored_fp.get(obs)
+            if not isinstance(entry, dict):
+                return False  # missing/legacy sidecar -> re-sum
+            # > identity check: the output must have been summed from exactly the current operand
+            # > set/content (catches operands added, removed, or re-produced) — not mtime ordering
+            if entry.get("operands") != self._operand_fingerprint(in_files):
+                return False
+            # > a requested weights table is a required artifact and must have been co-produced with
+            # > this output (recorded in the sidecar, so a stale leftover can't satisfy a re-enable)
+            if weights and (not entry.get("weights") or not out_file.with_suffix(".weights.txt").is_file()):
                 return False
         return True
 
     def run(self):  # type: ignore[override]
         out_dir = self._path / self._out_subdir
         out_dir.mkdir(parents=True, exist_ok=True)
+        # > drop outputs for observables that no longer have any operands (else they linger as
+        # > stale results and could be consumed by a further [Final] stage)
+        for stale in self._stale_outputs():
+            _log.info("%s: removing stale output %s", self.name, stale.name)
+            stale.unlink(missing_ok=True)
+            stale.with_suffix(".weights.txt").unlink(missing_ok=True)
         weights = self.config["combine"]["weights"]
+        fp: dict = {}
         for obs in self.config["run"]["histograms"]:
             in_files = self._in_files(obs)
             if not in_files:
@@ -376,6 +518,9 @@ class _CombineSum(Task):
                 filenames = [str((self._path / u).absolute()) for u in used]
                 ones = np.ones((hist.shape[0], len(filenames)), dtype=np.float64)
                 _write_weights(wgt_file, nx, xval, filenames, ones)
+            # > record the operand identity and whether weights were produced (see `complete()`)
+            fp[obs] = {"operands": self._operand_fingerprint(in_files), "weights": weights}
+        self._write_fingerprints(fp)
 
 
 class CombineMerge(_CombineSum):

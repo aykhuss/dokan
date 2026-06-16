@@ -13,6 +13,7 @@ import shutil
 import time
 from abc import ABCMeta
 from pathlib import Path
+from typing import cast
 
 import h5py
 import luigi
@@ -84,6 +85,8 @@ class MergePart(DBMerge):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._logger_prefix: str = "MergePart"
+        # > fingerprint of the last yielded pending-MergeObs set; see the stall guard in run()
+        self._last_pending_identity: tuple | None = None
         with self.session as session:
             pt: Part = session.get_one(Part, self.part_id)
             self._logger_prefix = (
@@ -280,7 +283,6 @@ class MergePart(DBMerge):
         # Could start by storing res & err, then switch to sumf & sumf2 later.
         # Maybe an attribute to flag what of the two is stored? Helper routine to convert could also help.
         resize_max: int = max(len(files) for files in in_files.values()) if in_files else 0
-        resize_obs: dict[str, int] = {}
         hdf5_file = self._path / "raw" / f"{pt_name}.hdf5"
 
         # > If Luigi resumed this task after yielding MergeObs, avoid touching
@@ -314,7 +316,7 @@ class MergePart(DBMerge):
                     job.status = JobStatus.MERGED
                 self._safe_commit(session)
         if not resume_hdf5:
-            resize_obs = build_obs_group(
+            build_obs_group(
                 hdf5_file,
                 pt_name,
                 in_files,
@@ -324,7 +326,7 @@ class MergePart(DBMerge):
                 merge_in_progress=merge_in_progress,
             )
 
-        # > find all obs that have data in the HDF5 file (may exceed resize_obs if results were deleted)
+        # > find all obs that have data in the HDF5 file
         hdf5_obs_ready: set[str] = set()
         hdf5_file = self._path / "raw" / f"{pt_name}.hdf5"
         with h5py.File(hdf5_file, "r") as h5f:
@@ -336,56 +338,60 @@ class MergePart(DBMerge):
                         if nv > 0:
                             hdf5_obs_ready.add(obs)
 
-        stale_grid_obs: set[str] = set()
-        if self.grids:
-            for obs in hdf5_obs_ready:
-                hist_info = self.config["run"]["histograms"][obs]
-                if not _obs_has_grid(hist_info):
-                    continue
-                dat_file = mrg_path / f"{obs}.dat"
-                wgt_file = mrg_path / f"{obs}.weights.txt"
-                grid_file = mrg_path / f"{obs}.pineappl.lz4"
-                if (
-                    not dat_file.exists()
-                    or not wgt_file.exists()
-                    or not grid_file.exists()
-                    or grid_file.stat().st_mtime < wgt_file.stat().st_mtime
-                ):
-                    stale_grid_obs.add(obs)
-
-        # > dispatch HDF5 file to MergeObs for each observable separately
-        # > include obs with new data OR obs whose dat output is missing (e.g. results dir deleted)
-        # > OR reset_tag active: forces re-run of MergeObs so config changes (trim, k-scan) take effect
-        # > OR grid output is missing/stale when grid merging is enabled
+        # > dispatch one MergeObs per observable that has data: MergeObs.complete() is the single
+        # > freshness authority (new data, missing/stale `.dat`, reset epoch, merge-config change,
+        # > or missing grid artifacts), so we hand it *every* ready observable rather than
+        # > second-guessing which ones are stale here.
+        # > cast: clone() is typed to return the parent task type, so annotate the MergeObs values
+        # > explicitly to keep `expected_identity()`/`required_outputs()` resolvable below.
         mrg_obs_dict = {
-            obs: self.clone(
-                cls=MergeObs,
-                hdf5_in=str((self._path / "raw" / f"{pt_name}.hdf5").relative_to(self._path)),
-                hdf5_path=[f"{pt_name}", f"{obs}"],
-                dat_out=str((mrg_path / f"{obs}.dat").relative_to(self._path)),
-                wgt_out=(
-                    str((mrg_path / f"{obs}.weights.txt").relative_to(self._path))
-                    if self.grids and _obs_has_grid(hist_info)
-                    else None
+            obs: cast(
+                MergeObs,
+                self.clone(
+                    cls=MergeObs,
+                    hdf5_in=str((self._path / "raw" / f"{pt_name}.hdf5").relative_to(self._path)),
+                    hdf5_path=[f"{pt_name}", f"{obs}"],
+                    dat_out=str((mrg_path / f"{obs}.dat").relative_to(self._path)),
+                    wgt_out=(
+                        str((mrg_path / f"{obs}.weights.txt").relative_to(self._path))
+                        if self.grids and _obs_has_grid(hist_info)
+                        else None
+                    ),
+                    reset_tag=self.reset_tag,
+                    grids=self.grids and _obs_has_grid(hist_info),
                 ),
-                reset_tag=self.reset_tag,
-                grids=self.grids and _obs_has_grid(hist_info),
             )
             for obs, hist_info in self.config["run"]["histograms"].items()
-            if obs in resize_obs
-            or (obs in hdf5_obs_ready and not (mrg_path / f"{obs}.dat").exists())
-            or (self.reset_tag > 0.0 and obs in hdf5_obs_ready)
-            or obs in stale_grid_obs
+            if obs in hdf5_obs_ready
         }
-        # with self.session as session:
-        #     self._debug(
-        #         session,
-        #         self._logger_prefix
-        #         + f"::run:  yield {[mrg_obs.dat_out for mrg_obs in mrg_obs_dict.values()]} for merging ...",
-        #     )
-        pending_mrg_obs = [mrg_obs for mrg_obs in mrg_obs_dict.values() if not mrg_obs.complete()]
-        if pending_mrg_obs:
-            yield pending_mrg_obs
+        pending_obs = {obs: mrg_obs for obs, mrg_obs in mrg_obs_dict.items() if not mrg_obs.complete()}
+        if pending_obs:
+            # > Stall guard: Luigi restarts run() from the top each time the yielded MergeObs
+            # > complete, so an observable that never reports complete() would have us re-yield it
+            # > forever, never reaching the phase below that clears the in-progress timestamp.
+            # > Fingerprint the pending set by each observable's `expected_identity()`; any genuine
+            # > change (new data, reset epoch, config, grids) alters it, so a verbatim repeat means
+            # > the previous merge ran and still did not converge.
+            pending_identity = tuple(
+                sorted((obs, mrg_obs.expected_identity()) for obs, mrg_obs in pending_obs.items())
+            )
+            if pending_identity == self._last_pending_identity:
+                # > Invariant: re-merging an unchanged pending set must converge.  Identity is
+                # > deterministic (sidecar vs. live HDF5/config, no mtime), so reaching here means
+                # > `MergeObs.run()` produced outputs its own `complete()` still rejects — a bug in
+                # > the merge or its freshness model, or a corrupt/failed sidecar write.  Fail loudly
+                # > with per-observable diagnostics rather than loop forever or finalize a bad part.
+                diagnostics = "; ".join(
+                    f"{obs}: {mrg_obs.describe_incomplete()}" for obs, mrg_obs in sorted(pending_obs.items())
+                )
+                raise RuntimeError(
+                    self._logger_prefix
+                    + "::run:  internal invariant violated: re-merge of unchanged pending set "
+                    + f"{sorted(pending_obs)} for part {pt_name} did not converge (bug in MergeObs "
+                    + f"freshness or merge); refusing to finalize.  Diagnostics: {diagnostics}"
+                )
+            self._last_pending_identity = pending_identity
+            yield list(pending_obs.values())
 
         #############################
         # > Phase 3: post-yield cross-section computation: no DB session held

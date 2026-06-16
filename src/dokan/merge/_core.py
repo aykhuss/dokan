@@ -21,6 +21,7 @@ import numpy as np
 
 from .._types import GenericPath
 from ..task import Task
+from ..util import is_finite_number, read_json_sidecar, write_json_sidecar
 
 
 @unique
@@ -565,7 +566,7 @@ class MergeObs(Task):
     hdf5_in: GenericPath = luigi.Parameter()  # type: ignore[assignment]
     hdf5_path: list[str] = luigi.ListParameter()  # type: ignore[assignment]  # path to the observable group
     dat_out: GenericPath = luigi.Parameter()  # type: ignore[assignment]
-    wgt_out: GenericPath | None = luigi.OptionalParameter(default=None)  # type: ignore[assignment]  # only used if `grids` is True
+    wgt_out: GenericPath | None = luigi.OptionalParameter(default=None)  # type: ignore[assignment]  # weights table output (required by `grids`, also usable standalone)
     # > propagated from MergePart: invalidates dat files older than the tag so config-driven
     # > recomputation (e.g. new trim_threshold) actually re-runs the merge core, not just the DB stamp
     reset_tag: float = luigi.FloatParameter(default=0.0)  # type: ignore[assignment]
@@ -578,6 +579,12 @@ class MergeObs(Task):
         self.file_hdf5: Path = self._path / self.hdf5_in
         self.file_dat: Path = self._path / self.dat_out
         self.file_wgt: Path | None = self._path / self.wgt_out if self.wgt_out is not None else None
+        # > sidecar recording which HDF5 contents the current `.dat` was merged from; see `complete()`
+        self.file_record: Path = self.file_dat.with_suffix(".merged.json")
+        # > grid merging produces (and thus requires) a weights output; reject the contradictory
+        # > combination up front so `required_outputs()`/`complete()` cannot mark such a task done.
+        if self.grids and self.file_wgt is None:
+            raise ValueError("MergeObs:  grid merging (grids=True) requires a weights output (wgt_out)")
         if not self.file_hdf5.is_file():
             raise FileNotFoundError(f"MergeObs:  HDF5 input file {self.file_hdf5} does not exist!")
 
@@ -587,15 +594,13 @@ class MergeObs(Task):
         # return super().resources | {"local_ncores": 1, "MergeObs": 1}
         return super().resources | {"local_ncores": 1}
 
-    def complete(self):
-        if not self.file_dat.is_file():
-            return False
-        dat_mtime = self.file_dat.stat().st_mtime
-        if dat_mtime < self.reset_tag:
-            return False
-        # > read source timestamp fresh on every call — Luigi may reuse the same task instance
-        # > across multiple complete() checks, so caching in __init__ would give stale results
-        # > after MergePart appends new data to the HDF5 group.
+    def _hdf5_identity(self) -> tuple[int, float]:
+        """Return the observable group's identity `(ndat_valid, version token)`.
+
+        Read fresh on every call — Luigi may reuse the same task instance across
+        multiple `complete()`/`run()` checks, so caching would give stale results
+        after `MergePart` appends new data to the HDF5 group.
+        """
         with h5py.File(self.file_hdf5, "r", libver="latest", swmr=True) as h5f:
             h5grp_obs = h5f["/".join(self.hdf5_path)]
             src_ts = (
@@ -603,19 +608,144 @@ class MergeObs(Task):
                 if "timestamp" in h5grp_obs.attrs
                 else self.file_hdf5.stat().st_mtime
             )
-        if dat_mtime < src_ts:
-            return False
+            if "data" in h5grp_obs:
+                ndat = int(h5grp_obs.attrs.get("ndat_valid", h5grp_obs["data"].shape[2]))
+            else:
+                ndat = 0
+        return ndat, src_ts
 
+    def _merge_settings(self) -> dict:
+        """The merge-algorithm settings that influence `run()`'s output.
+
+        Recorded in the sidecar so that, *whenever this MergeObs is (re)evaluated*, a
+        config change (e.g. a new `trim_threshold`) re-runs the merge even if the HDF5
+        inputs are unchanged.  Note this only bites once `MergePart` actually dispatches
+        the MergeObs; in the workflow, config changes are propagated via `reset_tag`
+        (fresh submit / finalize), and `MergePart.complete()` may short-circuit a fully
+        merged part before then — so this digest is a safety net, not the primary trigger.
+        """
+        merge = self.config["merge"]
+        return {
+            "trim_threshold": merge["trim_threshold"],
+            "trim_max_fraction": merge["trim_max_fraction"],
+            "k_scan_nsteps": merge["k_scan_nsteps"],
+            "k_scan_maxdev_steps": merge["k_scan_maxdev_steps"],
+        }
+
+    def required_outputs(self) -> list[Path]:
+        """The output files that must exist for this merge to be complete.
+
+        The merged `.dat` always; the weights table whenever a `wgt_out` was requested
+        (`run()` always writes it then — used standalone for `[Options] weights=True`,
+        not only for grids); and the PineAPPL grid when grid merging is enabled.
+        `complete()` and the `MergePart` stall guard share this so they agree on what
+        "the artifacts are present" means.
+        """
+        outputs = [self.file_dat]
+        if self.file_wgt is not None:
+            outputs.append(self.file_wgt)
         if self.grids:
-            if self.file_wgt is None or not self.file_wgt.is_file():
-                return False
-            grid_file = self.file_dat.with_suffix(".pineappl.lz4")
-            if not grid_file.is_file():
-                return False
-            if grid_file.stat().st_mtime < self.file_wgt.stat().st_mtime:
-                return False
+            outputs.append(self.file_dat.with_suffix(".pineappl.lz4"))
+        return outputs
 
-        return True
+    def expected_identity(self) -> tuple:
+        """The freshness identity the current inputs/config *expect* the outputs to have.
+
+        Everything that, if changed, would make a re-merge produce different artifacts;
+        deliberately excludes on-disk state. The `MergePart` stall guard fingerprints this
+        across run() restarts to detect a non-converging (stuck-predicate) merge.
+        """
+        ndat, src_ts = self._hdf5_identity()
+        return (
+            ndat,
+            src_ts,
+            float(self.reset_tag),
+            tuple(sorted(self._merge_settings().items())),
+            bool(self.grids),
+            self.file_wgt is not None,
+        )
+
+    def _read_merge_record(self) -> dict | None:
+        """Return the validated sidecar dict, or None if absent/unreadable/malformed.
+
+        A sidecar that is not an object, or whose known fields have the wrong type
+        (reject bool as a numeric field, and NaN/inf for `src_ts`/`reset_tag`), reads
+        as "no usable metadata" so `complete()` simply forces a clean re-merge.
+        """
+        meta = read_json_sidecar(self.file_record)
+        if not isinstance(meta, dict):
+            return None
+        if (
+            type(meta.get("ndat", 0)) is not int
+            or not is_finite_number(meta.get("src_ts", 0.0))
+            or not is_finite_number(meta.get("reset_tag", 0.0))
+            or not isinstance(meta.get("cfg", {}), dict)
+            or type(meta.get("grids", False)) is not bool
+            or type(meta.get("weights", False)) is not bool
+        ):
+            return None
+        return meta
+
+    def _write_merge_record(self, ndat: int, src_ts: float) -> None:
+        """Record the full artifact identity `complete()` keys off (no mtime is consulted)."""
+        write_json_sidecar(
+            self.file_record,
+            {
+                "ndat": int(ndat),
+                "src_ts": float(src_ts),
+                "reset_tag": float(self.reset_tag),
+                "cfg": self._merge_settings(),
+                "grids": bool(self.grids),
+                "weights": self.file_wgt is not None,
+            },
+        )
+
+    def _freshness_reasons(self) -> list[str]:
+        """Reasons the merged outputs are not up to date; an empty list means complete.
+
+        Single source of truth for freshness, shared by `complete()` and
+        `describe_incomplete()` so the predicate and its diagnostic can never drift.
+        Decided entirely from the sidecar identity, never from output mtimes (mtime
+        comparisons across the HDF5/`.dat` boundary are unreliable on networked
+        filesystems and previously wedged `MergePart` in an endless re-merge loop).
+        """
+        reasons: list[str] = []
+        # > all required artifacts (`.dat`, plus weights + grid when requested) must exist
+        if missing := [str(p) for p in self.required_outputs() if not p.is_file()]:
+            reasons.append(f"missing outputs={missing}")
+        meta = self._read_merge_record()
+        if meta is None:
+            reasons.append("sidecar missing or unreadable")
+            return reasons  # nothing to compare against
+        # > forced re-merge: a newer reset epoch (config change / fresh submission / finalize)
+        # > or a change in the merge-algorithm settings invalidates an older `.dat`.
+        if float(meta.get("reset_tag", float("-inf"))) < self.reset_tag:
+            reasons.append(f"reset_tag stale (sidecar={meta.get('reset_tag')} < task={self.reset_tag})")
+        if meta.get("cfg") != self._merge_settings():
+            reasons.append(f"merge-config drift (sidecar={meta.get('cfg')} != {self._merge_settings()})")
+        # > weights/grids must have been produced for this identity (existence is covered above):
+        # > guards a stale leftover weights file satisfying existence after a no-weights re-merge.
+        if self.file_wgt is not None and not meta.get("weights", False):
+            reasons.append("weights requested but sidecar weights=false")
+        if self.grids and not meta.get("grids", False):
+            reasons.append("grids requested but sidecar grids=false")
+        # > new data: the `.dat` must reflect the current HDF5 group contents (entry count +
+        # > version token), an equality of opaque tokens read from the *same* source.
+        cur_ndat, cur_src_ts = self._hdf5_identity()
+        if meta.get("ndat") != cur_ndat or meta.get("src_ts") != cur_src_ts:
+            reasons.append(
+                f"HDF5 state changed (sidecar ndat/src_ts={meta.get('ndat')}/{meta.get('src_ts')}"
+                f" != current {cur_ndat}/{cur_src_ts})"
+            )
+        return reasons
+
+    def complete(self) -> bool:
+        return not self._freshness_reasons()
+
+    def describe_incomplete(self) -> str:
+        """Human-readable reason(s) `complete()` is False, for the stall-guard diagnostic."""
+        reasons = self._freshness_reasons()
+        return "; ".join(reasons) if reasons else "complete() is True (no mismatch)"
 
     def run(self):  # type: ignore[override]
         trim_threshold: float = self.config["merge"]["trim_threshold"]
@@ -883,9 +1013,9 @@ class MergeObs(Task):
                         )  # check that we have weights for all entries
 
         _write_dat(self.file_dat, labels, neval_total, nx, xval, merged_hist)
-        # > Make completion monotonic against both freshness gates.  Use +1.0 s so
-        # > that filesystems with 1-second mtime resolution (NFS, Lustre) always
-        # > floor to a value strictly >= src_ts, which can carry sub-second precision.
+        # > Forward-stamp the `.dat` mtime past now/src_ts/reset_tag for the benefit of any
+        # > downstream consumer that orders outputs by mtime (e.g. the standalone combine stages).
+        # > `complete()` no longer reads this mtime — freshness is tracked entirely by the sidecar.
         complete_mtime = max(time.time(), src_ts, self.reset_tag) + 1.0
         os.utime(self.file_dat, (complete_mtime, complete_mtime))
 
@@ -900,3 +1030,8 @@ class MergeObs(Task):
                 _run_pineappl_merge(pine_merge, self.file_wgt, grid_file, check=True)
         elif self.grids:
             raise RuntimeError("Grid merging requires a weights output file")
+
+        # > record the full artifact identity (HDF5 inputs, reset epoch, merge config, grids) as
+        # > the final step, once every output is on disk.  `complete()` compares this against the
+        # > live state, so a crash before here simply leaves the task incomplete and it re-merges.
+        self._write_merge_record(ndat, src_ts)
