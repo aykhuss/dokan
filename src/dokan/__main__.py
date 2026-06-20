@@ -963,9 +963,18 @@ def main() -> None:
             local_ncores = max(2, args.local_cores)
 
         nworkers: int = max(cpu_count, nactive_part) + 1
-        config["run"]["jobs_batch_size"] = max(
-            2 * (jobs_max // nactive_part) + 1,
-            config["run"]["jobs_batch_unit_size"],
+        # > a single batch is dispatched to one executor that reserves
+        # > `jobs_concurrent == njobs` from a pool of size `jobs_max`; clamp the
+        # > batch size to `jobs_max` so a batch can never out-size the pool and
+        # > deadlock (an oversized batch is never schedulable -> jobs stay stuck
+        # > DISPATCHED and the dispatcher throttles forever). Triggers when
+        # > `nactive_part` is small: 1 part -> 2*jobs_max+1, 2 parts -> jobs_max+1.
+        config["run"]["jobs_batch_size"] = min(
+            max(
+                2 * (jobs_max // nactive_part) + 1,
+                config["run"]["jobs_batch_unit_size"],
+            ),
+            jobs_max,
         )
         if config["exe"]["policy"] == ExecutionPolicy.SLURM:
             config["run"]["jobs_batch_size"] = min(config["run"]["jobs_batch_size"], 1000)
