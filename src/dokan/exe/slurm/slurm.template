@@ -6,8 +6,8 @@
 #SBATCH --array=0-${njobs_minus_1}
 #SBATCH --cpus-per-task=${ncores}
 #SBATCH --time=${max_runtime}
-#SBATCH --output=slurm-%A_%a.out
-#SBATCH --error=slurm-%A_%a.err
+#SBATCH --output=/dev/null
+#SBATCH --error=/dev/null
 
 SEEDS=(${all_seeds})
 SEED=$${SEEDS[$$SLURM_ARRAY_TASK_ID]}
