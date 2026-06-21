@@ -699,6 +699,7 @@ def main() -> None:
                 exe_template = Path(exe_templates[it])
             config["exe"]["policy_settings"][f"{cluster}_template"] = exe_template.name
             dst: Path = config.path / config["exe"]["policy_settings"][f"{cluster}_template"]
+            copy_template: bool = True
             if dst.exists():
                 if Confirm.ask(
                     f"{cluster} template already exists in run folder, do you want to overwrite it?",
@@ -707,13 +708,16 @@ def main() -> None:
                     dst.unlink()
                 else:
                     console.print(f"keeping existing {cluster} template, skipping copy")
-                    return
-            shutil.copyfile(exe_template, dst)
-            console.print(f"{cluster} template: [italic]{exe_template.name}[/italic] copied to run folder:")
-            with open(dst) as run_exe_template:
-                syntx = Syntax(run_exe_template.read(), "shell", word_wrap=True)
-                console.print(syntx)
-            console.print("please edit this file to your needs")
+                    copy_template = False
+            if copy_template:
+                shutil.copyfile(exe_template, dst)
+                console.print(
+                    f"{cluster} template: [italic]{exe_template.name}[/italic] copied to run folder:"
+                )
+                with open(dst) as run_exe_template:
+                    syntx = Syntax(run_exe_template.read(), "shell", word_wrap=True)
+                    console.print(syntx)
+                console.print("please edit this file to your needs")
 
         config.write()
 
