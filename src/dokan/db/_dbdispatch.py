@@ -564,11 +564,24 @@ class DBDispatch(DBTask):
 
                 # > repopulate returned without selecting a part
                 if self.part_id <= 0:
-                    # > check whether a terminal signal was written this call
-                    done = (
+                    # > terminal only when the dispatch-done signal was written *and*
+                    # > no active jobs remain.  Matching `complete()` here is crucial:
+                    # > if we stopped the chain while jobs are still in flight (e.g.
+                    # > budget exhausted mid-run), `complete()` would stay False and
+                    # > Entry would re-yield a non-progressing dispatcher in a tight
+                    # > busy-loop.  Keep the chain alive to poll the in-flight jobs to
+                    # > completion instead.
+                    signal_present = (
                         session.scalars(select(Log).where(Log.level == LogLevel.SIG_DISPATCH_DONE)).first()
                         is not None
                     )
+                    active_remaining = (
+                        session.scalars(
+                            self.select_job.where(Job.status.in_(JobStatus.active_list()))
+                        ).first()
+                        is not None
+                    )
+                    done = signal_present and not active_remaining
                     break
 
                 # > get the queue
@@ -652,6 +665,11 @@ class DBDispatch(DBTask):
             if signal_tasks:
                 next_tasks.extend(self._with_dispatch_continuation(signal_tasks))
             elif not done:
+                # > nothing new to dispatch but the workflow is not finished yet
+                # > (active jobs still draining after the dispatch-done signal): pace
+                # > the continuation so the chain polls instead of busy-spinning.
+                if not runners:
+                    time.sleep(self._signal_interval())
                 next_tasks.append(self.clone(DBDispatch, id=0, _n=self._n + 1))
         if next_tasks:
             yield next_tasks
