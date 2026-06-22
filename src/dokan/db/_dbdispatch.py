@@ -85,29 +85,43 @@ class DBDispatch(DBTask):
         else:
             return slct
 
+    def _dispatch_settled(self, session: Session) -> bool:
+        """Return ``True`` when dynamic dispatch (`id == 0`) has reached its terminal state.
+
+        Terminal means the `SIG_DISPATCH_DONE` signal has been written *and* no
+        active jobs remain.  The signal alone only marks that no *new* jobs will be
+        created (budget exhausted or target accuracy reached); jobs queued or in
+        flight at that point must still drain to a terminal state first.
+
+        `complete()` and `run()` both consult this single predicate so their notion
+        of "done" cannot drift apart — a divergence that previously let `Entry`
+        busy-loop re-yielding a non-progressing dispatcher.
+        """
+        signal_present = (
+            session.scalars(select(Log).where(Log.level == LogLevel.SIG_DISPATCH_DONE)).first()
+            is not None
+        )
+        if not signal_present:
+            return False
+        active_remaining = (
+            session.scalars(self.select_job.where(Job.status.in_(JobStatus.active_list()))).first()
+            is not None
+        )
+        return not active_remaining
+
     def complete(self) -> bool:
         """Return True when dispatch is fully settled.
 
-        For dynamic dispatch (`id == 0`): waits for an explicit `SIG_DISPATCH_DONE`
-        signal (written by `_repopulate` when budget or accuracy conditions are met)
-        *and* confirms no active jobs remain.
+        For dynamic dispatch (`id == 0`): delegates to `_dispatch_settled` (the
+        `SIG_DISPATCH_DONE` signal *and* no active jobs remain).
 
         For bounded dispatch (`id != 0`): the simpler "no QUEUED jobs" check suffices
         because the job set is fixed at creation time.
         """
         with self.session as session:
             if self.id == 0:
-                sig = session.scalars(
-                    select(Log).where(Log.level == LogLevel.SIG_DISPATCH_DONE).order_by(Log.id.desc())
-                ).first()
-                if sig is None:
-                    self._debug(session, self._logger_prefix + "::complete:  False (no signal)")
-                    return False
-                active = session.scalars(
-                    self.select_job.where(Job.status.in_(JobStatus.active_list()))
-                ).first()
-                done = active is None
-                self._debug(session, self._logger_prefix + f"::complete:  {done} (signal present)")
+                done = self._dispatch_settled(session)
+                self._debug(session, self._logger_prefix + f"::complete:  {done}")
                 return done
             # id != 0: finite dispatch — no QUEUED is sufficient
             if session.scalars(self.select_job.where(Job.status == JobStatus.QUEUED)).first() is not None:
@@ -298,6 +312,9 @@ class DBDispatch(DBTask):
             tot_nact: int = 0
             tot_nrun: int = 0
             tot_nsuc: int = 0
+            # > oldest part (FIFO by min queued job id) that still has queued jobs;
+            # > used as a fallback to drain a sub-batch remainder once budget is exhausted
+            drain_part_id: int = 0
             for pt, nque, nact, nrun, nsuc, jobid in sorted_parts:
                 qterm_pt: bool = False
                 nque = nque if nque else 0
@@ -305,6 +322,8 @@ class DBDispatch(DBTask):
                 nrun = nrun if nrun else 0
                 nsuc = nsuc if nsuc else 0
                 self._debug(session, f"  >> {pt!r} | {nque} | {nact} | {nrun} | {nsuc} | {jobid}")
+                if nque > 0 and drain_part_id <= 0:
+                    drain_part_id = pt.id
                 tot_nque += nque
                 tot_nact += nact
                 tot_nrun += nrun
@@ -345,6 +364,14 @@ class DBDispatch(DBTask):
                 return True  # pause repopulation
             # > break when the queue is full enough to dispatch, or budget is exhausted
             if qterm or no_new_jobs:
+                # > Once no new jobs will be created, the batch thresholds no longer
+                # > apply: dispatch whatever is still QUEUED, even a sub-unit remainder
+                # > that `qterm` never selects.  This upholds the invariant that
+                # > SIG_DISPATCH_DONE is written *only* when nothing is left to
+                # > dispatch — otherwise leftover QUEUED jobs stay "active" forever,
+                # > `_dispatch_settled` never holds, and the chain busy-loops.
+                if self.part_id <= 0 and no_new_jobs and drain_part_id > 0:
+                    self.part_id = drain_part_id
                 if self.part_id > 0:
                     pt: Part = session.get_one(Part, self.part_id)
                     self._logger(
@@ -352,7 +379,7 @@ class DBDispatch(DBTask):
                         self._logger_prefix + "::repopulate:  " + f"next:  {pt.name}",
                     )
                 elif no_new_jobs:
-                    # > budget exhausted and no queued jobs left to dispatch: terminal
+                    # > budget exhausted and queue fully drained: dispatch is terminal
                     self._logger(
                         session,
                         self._logger_prefix + "::repopulate:  budget exhausted",
@@ -562,26 +589,14 @@ class DBDispatch(DBTask):
             while True:
                 _ = self._repopulate(session)
 
-                # > repopulate returned without selecting a part
+                # > repopulate returned without selecting a part: nothing left to
+                # > dispatch this wave.  Terminal only when `_dispatch_settled` holds
+                # > (signal written *and* no active jobs).  If jobs are still in flight
+                # > we keep the chain alive to poll them to completion — stopping early
+                # > would leave `complete()` False and make Entry busy-loop re-yielding
+                # > a non-progressing dispatcher.
                 if self.part_id <= 0:
-                    # > terminal only when the dispatch-done signal was written *and*
-                    # > no active jobs remain.  Matching `complete()` here is crucial:
-                    # > if we stopped the chain while jobs are still in flight (e.g.
-                    # > budget exhausted mid-run), `complete()` would stay False and
-                    # > Entry would re-yield a non-progressing dispatcher in a tight
-                    # > busy-loop.  Keep the chain alive to poll the in-flight jobs to
-                    # > completion instead.
-                    signal_present = (
-                        session.scalars(select(Log).where(Log.level == LogLevel.SIG_DISPATCH_DONE)).first()
-                        is not None
-                    )
-                    active_remaining = (
-                        session.scalars(
-                            self.select_job.where(Job.status.in_(JobStatus.active_list()))
-                        ).first()
-                        is not None
-                    )
-                    done = signal_present and not active_remaining
+                    done = self._dispatch_settled(session)
                     break
 
                 # > get the queue
