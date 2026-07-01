@@ -4,6 +4,7 @@ import string
 import subprocess
 import time
 from pathlib import Path
+from typing import ClassVar
 
 from ..._types import GenericPath
 from ...db._loglevel import LogLevel
@@ -12,6 +13,22 @@ from .._executor import Executor
 
 class SlurmExec(Executor):
     _file_sub: str = "job.sub"
+    # > Slurm states (`squeue --format=%T`) that will not produce further work;
+    # > anything else is treated as still active.
+    _state_terminal: ClassVar[set[str]] = {
+        "BOOT_FAIL",
+        "CANCELLED",
+        "COMPLETED",
+        "DEADLINE",
+        "FAILED",
+        "LAUNCH_FAILED",
+        "NODE_FAIL",
+        "OUT_OF_MEMORY",
+        "PREEMPTED",
+        "RECONFIG_FAIL",
+        "REVOKED",
+        "TIMEOUT",
+    }
 
     @property
     def resources(self):  # type: ignore
@@ -38,6 +55,47 @@ class SlurmExec(Executor):
         h, m = divmod(m, 60)
         d, h = divmod(h, 24)
         return f"{d}-{h:02d}:{m:02d}:{s:02d}"
+
+    @staticmethod
+    def _normalize_state(state: str) -> str:
+        """Normalize a Slurm state name from `squeue` output"""
+        fields = state.split()
+        return fields[0].rstrip("+").upper() if fields else ""
+
+    @classmethod
+    def _is_terminal_state(cls, state: str) -> bool:
+        """Return True when a normalized Slurm state is terminal for tracking."""
+        return state in cls._state_terminal
+
+    @classmethod
+    def _squeue_active_count(cls, stdout: str) -> int | None:
+        """Count non-terminal array tasks in `squeue --format=%i|%T` output.
+
+        Returns 0 for empty output and None for non-empty output
+        without a single parseable state row.
+        """
+        if not stdout.strip():
+            return 0
+        n_active = 0
+        parsed = False
+        for line in stdout.splitlines():
+            fields = line.split("|")
+            if len(fields) < 2:
+                continue
+            state = cls._normalize_state(fields[1])
+            if not state:
+                continue
+            parsed = True
+            if not cls._is_terminal_state(state):
+                n_active += 1
+        return n_active if parsed else None
+
+    def _decrease_active_resources(self, n_active: int) -> None:
+        """Release Luigi resources for tasks that Slurm no longer reports as active."""
+        n_completed = self.nactive - n_active
+        if n_completed > 0:
+            self.decrease_running_resources({"jobs_concurrent": n_completed})  # type: ignore[attr-defined]
+            self.nactive = n_active
 
     def exe(self):
         # > recovery mode
@@ -103,39 +161,59 @@ class SlurmExec(Executor):
     def _track_job(self):
         job_id: int = self.exe_data["policy_settings"]["slurm_id"]
         poll_time: float = self.exe_data["policy_settings"]["slurm_poll_time"]
-        nretry: int = self.exe_data["policy_settings"]["slurm_nretry"]
+        nretry: int = max(1, int(self.exe_data["policy_settings"]["slurm_nretry"]))
         retry_delay: float = self.exe_data["policy_settings"]["slurm_retry_delay"]
 
         while True:
             time.sleep(poll_time)
 
             for iretry in range(nretry):
-                # > -r/--array: one line per array task (avoids grouped regex notation for pending tasks)
-                # > --format="%t": compact state (PD=pending, R=running, CG=completing, ...)
+                # > --array: one row per array task; --states=all also lists tasks that
+                # > already reached a terminal state but still linger in the scheduler.
                 squeue = subprocess.run(
-                    ["squeue", "-h", "-r", "--job", str(job_id), "--format=%t"],
+                    [
+                        "squeue",
+                        "--noheader",
+                        "--array",
+                        f"--jobs={job_id}",
+                        "--states=all",
+                        "--format=%i|%T",
+                    ],
                     capture_output=True,
                     text=True,
                 )
+
                 if squeue.returncode == 0:
-                    _active_states = {"PD", "R", "CG", "CF", "ST"}
-                    n_active = sum(1 for s in squeue.stdout.splitlines() if s.strip() in _active_states)
-                    n_completed = self.nactive - n_active
-                    if n_completed > 0:
-                        self.decrease_running_resources({"jobs_concurrent": n_completed})  # type: ignore[attr-defined]
-                        self.nactive = n_active
-                    if n_active == 0:
-                        return  # all tasks finished
-                    break
-                else:
-                    if re.search("Invalid job id specified", squeue.stderr):
-                        self.decrease_running_resources({"jobs_concurrent": self.nactive})  # type: ignore[attr-defined]
-                        self.nactive = 0
-                        return  # job terminated and record no longer in scheduler
+                    # > empty output (no rows) yields n_active == 0: the job is finished
+                    # > or has been purged from the scheduler's records. Non-empty but
+                    # > unparseable output yields None and is handled as a failed query.
+                    n_active = self._squeue_active_count(squeue.stdout)
+                    if n_active is not None:
+                        self._decrease_active_resources(n_active)
+                        if n_active == 0:
+                            return  # all tasks finished or no longer visible in Slurm
+                        break
+
+                # > job no longer known to the scheduler: treat as finished and let
+                # > output scanning determine the per-job outcome downstream.
+                if re.search("Invalid job id specified", squeue.stderr):
+                    self._decrease_active_resources(0)
+                    return
+
+                detail = f"squeue stdout:\n{squeue.stdout}\nsqueue stderr:\n{squeue.stderr}"
+                if iretry + 1 >= nretry:
+                    # > give up tracking after exhausting retries: release resources and
+                    # > let output scanning determine the per-job outcome downstream.
                     self._logger(
-                        f"SlurmExec failed to query job [dim](job_id={job_id})[/dim]:\n"
-                        + f"{squeue.stdout}\n"
-                        + f"{squeue.stderr}",
-                        LogLevel.INFO,
+                        "SlurmExec failed to determine job status, giving up tracking"
+                        + f" [dim](job_id={job_id}, attempts={nretry})[/dim]:\n"
+                        + detail,
+                        LogLevel.WARN,
                     )
-                    time.sleep(retry_delay * 1.5**iretry)  # exponential backoff
+                    self._decrease_active_resources(0)
+                    return
+                self._logger(
+                    f"SlurmExec failed to query job [dim](job_id={job_id})[/dim]:\n" + detail,
+                    LogLevel.INFO,
+                )
+                time.sleep(retry_delay * 1.5**iretry)  # exponential backoff
