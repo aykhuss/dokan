@@ -34,7 +34,7 @@ from ..merge._core import (
     build_obs_group,
 )
 from ..order import Order
-from ..util import format_time_interval
+from ..util import format_time_interval, read_json_sidecar, write_json_sidecar
 from ._dbtask import DBTask
 from ._jobstatus import JobStatus
 from ._loglevel import LogLevel
@@ -85,8 +85,6 @@ class MergePart(DBMerge):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._logger_prefix: str = "MergePart"
-        # > fingerprint of the last yielded pending-MergeObs set; see the stall guard in run()
-        self._last_pending_identity: tuple | None = None
         with self.session as session:
             pt: Part = session.get_one(Part, self.part_id)
             self._logger_prefix = (
@@ -365,6 +363,10 @@ class MergePart(DBMerge):
             if obs in hdf5_obs_ready
         }
         pending_obs = {obs: mrg_obs for obs, mrg_obs in mrg_obs_dict.items() if not mrg_obs.complete()}
+        # > Stall-guard state must live on disk: with `workers > 1` Luigi forks a fresh
+        # > process for every run() attempt, so instance attributes do not survive the
+        # > restart after the yielded MergeObs complete.
+        guard_file: Path = self._path / "raw" / f"{pt_name}.merge-guard.json"
         if pending_obs:
             # > Stall guard: Luigi restarts run() from the top each time the yielded MergeObs
             # > complete, so an observable that never reports complete() would have us re-yield it
@@ -372,15 +374,21 @@ class MergePart(DBMerge):
             # > Fingerprint the pending set by each observable's `expected_identity()`; any genuine
             # > change (new data, reset epoch, config, grids) alters it, so a verbatim repeat means
             # > the previous merge ran and still did not converge.
-            pending_identity = tuple(
-                sorted((obs, mrg_obs.expected_identity()) for obs, mrg_obs in pending_obs.items())
+            # > (JSON round-trip normalizes tuples to lists so both sides compare equal.)
+            pending_identity = json.loads(
+                json.dumps(
+                    sorted((obs, mrg_obs.expected_identity()) for obs, mrg_obs in pending_obs.items())
+                )
             )
-            if pending_identity == self._last_pending_identity:
+            prior_guard = read_json_sidecar(guard_file)
+            if prior_guard is not None and prior_guard.get("pending_identity") == pending_identity:
                 # > Invariant: re-merging an unchanged pending set must converge.  Identity is
                 # > deterministic (sidecar vs. live HDF5/config, no mtime), so reaching here means
                 # > `MergeObs.run()` produced outputs its own `complete()` still rejects — a bug in
                 # > the merge or its freshness model, or a corrupt/failed sidecar write.  Fail loudly
                 # > with per-observable diagnostics rather than loop forever or finalize a bad part.
+                # > (Rare false positive: a crash after the guard write but before MergeObs ran;
+                # > deleting the guard file forces a retry.)
                 diagnostics = "; ".join(
                     f"{obs}: {mrg_obs.describe_incomplete()}" for obs, mrg_obs in sorted(pending_obs.items())
                 )
@@ -388,10 +396,13 @@ class MergePart(DBMerge):
                     self._logger_prefix
                     + "::run:  internal invariant violated: re-merge of unchanged pending set "
                     + f"{sorted(pending_obs)} for part {pt_name} did not converge (bug in MergeObs "
-                    + f"freshness or merge); refusing to finalize.  Diagnostics: {diagnostics}"
+                    + f"freshness or merge); refusing to finalize.  Diagnostics: {diagnostics}  "
+                    + f"(delete {guard_file} to force a retry after investigating)"
                 )
-            self._last_pending_identity = pending_identity
+            write_json_sidecar(guard_file, {"pending_identity": pending_identity})
             yield list(pending_obs.values())
+        # > merge converged for the current inputs: retire the guard fingerprint
+        guard_file.unlink(missing_ok=True)
 
         #############################
         # > Phase 3: post-yield cross-section computation: no DB session held
@@ -809,8 +820,8 @@ class MergeAll(DBMerge):
                                 self._logger(
                                     session,
                                     f"[red]{self._logger_prefix}::run:"
-                                    + "  missing nnlojet-merge-pineappl executable",
-                                    +f"  at {pine_merge}[/red]",
+                                    + "  missing nnlojet-merge-pineappl executable"
+                                    + f"  at {pine_merge}[/red]",
                                     level=LogLevel.ERROR,
                                 )
             # > re-write marker atomically with finalized flag added
@@ -856,16 +867,24 @@ class MergeFinal(DBMerge):
         return False
 
     def run(self):  # type: ignore[override]
+        def safe_rel(error: float, result: float) -> float:
+            """Relative accuracy that tolerates a vanishing result (maps to inf)."""
+            return abs(error / result) if result != 0.0 else float("inf")
+
         with self.session as session:
             self._logger(session, self._logger_prefix + "::run")
-
-            # > shut down the monitor
-            self._logger(session, "complete", level=LogLevel.SIG_COMP)
-            time.sleep(self.config["ui"]["refresh_delay"])
 
             # > parse merged cross section result
             mrg_all: MergeAll = self.requires()[0]
             dat_cross: Path = mrg_all.mrg_path / "cross.dat"
+            if not dat_cross.is_file():
+                # > fail *before* SIG_COMP is written so the workflow is not marked complete
+                self._logger(
+                    session,
+                    self._logger_prefix + f"::run:  missing merged cross section {dat_cross}",
+                    level=LogLevel.ERROR,
+                )
+                raise FileNotFoundError(f"{self._logger_prefix}::run: missing {dat_cross}")
             with open(dat_cross) as cross:
                 for line in cross:
                     if line.startswith("#"):
@@ -873,7 +892,7 @@ class MergeFinal(DBMerge):
                     self.result = float(line.split()[0])
                     self.error = float(line.split()[1])
                     break
-            rel_acc: float = abs(self.error / self.result)
+            rel_acc: float = safe_rel(self.error, self.result)
             # > compute total runtime invested
             T_tot: float = sum(pt.Ttot for pt in session.scalars(select(Part).where(Part.active.is_(True))))
             self._logger(
@@ -892,7 +911,7 @@ class MergeFinal(DBMerge):
                 session,
                 f'option "[bold]{opt_target}[/bold]" chosen to target optimization of rel. acc.',
             )
-            rel_acc: float = abs(opt_dist["tot_error"] / opt_dist["tot_result"])
+            rel_acc: float = safe_rel(opt_dist["tot_error"], opt_dist["tot_result"])
             if rel_acc <= self.config["run"]["target_rel_acc"] * (1.05):
                 self._logger(
                     session,
@@ -919,3 +938,9 @@ class MergeFinal(DBMerge):
                     + " of runtime to reach desired target accuracy"
                     + f" [dim](approx. {njobs_target} jobs)[/dim]",
                 )
+
+            # > mark the workflow complete (also shuts down the monitor).  Written *last*
+            # > so that a failure anywhere above leaves the run incomplete instead of
+            # > masking the error as success (`complete()` keys off this signal).
+            self._logger(session, "complete", level=LogLevel.SIG_COMP)
+            time.sleep(self.config["ui"]["refresh_delay"])
