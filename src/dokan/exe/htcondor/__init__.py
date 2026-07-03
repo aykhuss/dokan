@@ -112,20 +112,30 @@ class HTCondorExec(Executor):
     def _track_job(self):
         job_id: int = self.exe_data["policy_settings"]["htcondor_id"]
         poll_time: float = self.exe_data["policy_settings"]["htcondor_poll_time"]
-        nretry: int = self.exe_data["policy_settings"]["htcondor_nretry"]
+        nretry: int = max(1, int(self.exe_data["policy_settings"]["htcondor_nretry"]))
         retry_delay: float = self.exe_data["policy_settings"]["htcondor_retry_delay"]
 
         while True:
             time.sleep(poll_time)
 
-            condor_q_json: dict = {}
+            # > `condor_q -json` emits a JSON *array* of classads (empty stdout when
+            # > the job left the queue); an empty list after the retry loop means
+            # > "query failed" and is handled as give-up below.
+            condor_q_json: list = []
             for iretry in range(nretry):
                 condor_q = subprocess.run(["condor_q", "-json", str(job_id)], capture_output=True, text=True)
                 if condor_q.returncode == 0:
                     if condor_q.stdout == "":
                         return  # job terminated: no longer in queue
-                    condor_q_json = json.loads(condor_q.stdout)
-                    break
+                    try:
+                        condor_q_json = json.loads(condor_q.stdout)
+                        break
+                    except json.JSONDecodeError as exc:
+                        self._logger(
+                            f"HTCondorExec got unparseable condor_q output [dim](job_id={job_id})[/dim]:"
+                            + f" {exc}\n{condor_q.stdout}",
+                            LogLevel.INFO,
+                        )
                 else:
                     self._logger(
                         f"HTCondorExec failed to query job [dim](job_id={job_id})[/dim]:\n"
@@ -133,7 +143,7 @@ class HTCondorExec(Executor):
                         + f"{condor_q.stderr}",
                         LogLevel.INFO,
                     )
-                    time.sleep(retry_delay * 1.5**iretry)  # exponential backoff
+                time.sleep(retry_delay * 1.5**iretry)  # exponential backoff
 
             # > "JobStatus" codes
             # >  0 Unexpanded  U
@@ -171,7 +181,10 @@ class HTCondorExec(Executor):
                         + f" [dim](job_id={job_id}, held={count_status[5]})[/dim]",
                         LogLevel.INFO,
                     )
-                    break
+                    # > released jobs go back to idle/running: keep polling until they
+                    # > actually terminate (stopping here would finalize ExeData while
+                    # > jobs are still producing output on the cluster)
+                    continue
                 self._logger(
                     "HTCondorExec failed to release held jobs"
                     + f" [dim](job_id={job_id}, held={count_status[5]})[/dim]:\n"
@@ -181,5 +194,7 @@ class HTCondorExec(Executor):
                 )
 
             if njobs == 0:
+                # > reached only when the query loop exhausted its retries (empty payload):
+                # > give up tracking; output scanning determines the per-job outcome downstream
                 self._logger(f"HTCondorExec failed to query job {job_id} with njobs = {njobs}", LogLevel.WARN)
                 return
