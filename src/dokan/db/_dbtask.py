@@ -66,24 +66,32 @@ class DBTask(Task, metaclass=ABCMeta):
         )
 
     def _safe_commit(self, session: Session) -> None:
-        dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        for i in range(10):  # maximum number of tries
-            try:
-                session.commit()
-                return
-            except OperationalError as e:
-                if "database is locked" in str(e):
-                    _console.print(
-                        f"(c)[dim][{dt_str}][/dim](WARN): DBTask::_safe_commit locked, retrying..."
-                    )
-                    time.sleep(1.75**i)  # exponential backoff
-                    continue
-                raise e
-            except Exception as e:
-                # > do NOT use self._logger here to avoid recursion loop
-                _console.print(f"(c)[dim][{dt_str}][/dim](ERROR): DBTask::_safe_commit: {e!r}")
-                time.sleep(1.0)  # time delay between retries
-        raise RuntimeError("DBTask::_safe_commit: ran out of retries")
+        """Commit `session`; on failure roll back and re-raise loudly.
+
+        Lock contention is handled by the SQLite driver itself: connections are
+        created with a 420 s busy timeout, so an `OperationalError("database is
+        locked")` surfacing here means the lock persisted for that long.
+        Retrying `Session.commit()` at this level cannot work — after a failed
+        flush/commit SQLAlchemy raises `PendingRollbackError` until
+        `rollback()` is called, and rolling back *discards* the pending changes,
+        so a "successful" retry would silently commit nothing.  We therefore
+        roll back (to release the connection cleanly) and re-raise; recovery is
+        left to Luigi task retries, which re-derive state in idempotent `run()`
+        implementations.
+        """
+        try:
+            session.commit()
+        except OperationalError as e:
+            session.rollback()
+            dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # > do NOT use self._logger here: it commits to the log DB itself
+            _console.print(
+                f"(c)[dim][{dt_str}][/dim](ERROR): DBTask::_safe_commit failed"
+                f" [dim](changes rolled back, NOT committed)[/dim]: {e!r}"
+            )
+            raise RuntimeError(
+                "DBTask::_safe_commit: commit failed; pending changes were rolled back"
+            ) from e
 
     def output(self):
         # > DBTask has no output files but uses the DB itself to track the status
@@ -393,6 +401,18 @@ class DBTask(Task, metaclass=ABCMeta):
             # @todo maybe we would want to include the failed jobs above
             #  to see if they hit the runtime limit?
 
+        # > parts with only active (no successful) production jobs provide no runtime
+        # > estimate (norm == 0 would divide by zero below): skip them this round;
+        # > their in-flight jobs will supply the estimate once they complete
+        for part_id in [pid for pid, ic in cache.items() if ic["norm"] == 0]:
+            self._logger(
+                session,
+                f"DBTask::_distribute_time: part {part_id} has no successful production job"
+                " for the current policy: skipping this round",
+                LogLevel.WARN,
+            )
+            del cache[part_id]
+
         # > check every active part has an entry; compute the min/max/avg error; accumulate tot result & error
         pt_min_error: float = math.inf
         pt_max_error: float = -math.inf
@@ -419,9 +439,9 @@ class DBTask(Task, metaclass=ABCMeta):
         pt_avg_error = self.config["run"]["target_rel_acc"] * pt_avg_error / math.sqrt(len(cache) + 1.0)
         tot_error = math.sqrt(tot_error)
 
-        # median of errors
+        # median of errors (inf when no part has a positive error: disables the log damping)
         cached_errors: list[float] = [ic["error"] for ic in cache.values() if ic["error"] > 0.0]
-        pt_med_error: float = sorted(cached_errors)[len(cached_errors) // 2]
+        pt_med_error: float = sorted(cached_errors)[len(cached_errors) // 2] if cached_errors else math.inf
 
         # > adjusted errors
         # _console.print(cache)
@@ -541,7 +561,9 @@ class DBTask(Task, metaclass=ABCMeta):
         # > use E-L formula to compute a time estimate (beyond T)
         # > needed to achieve the desired accuracy
         target_abs_acc: float = abs(self.config["run"]["target_rel_acc"] * result["tot_result"])
-        result["T_target"] = (accum_err_sqrtt / target_abs_acc) ** 2 - accum_t
+        result["T_target"] = (
+            (accum_err_sqrtt / target_abs_acc) ** 2 - accum_t if target_abs_acc > 0.0 else 0.0
+        )
         self._debug(
             session,
             f"DBTask::_distribute_time: tot_result = {result['tot_result']}, "
