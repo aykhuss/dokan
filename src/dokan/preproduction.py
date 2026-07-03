@@ -162,20 +162,24 @@ class PreProduction(DBTask):
         # ):
         #     raise RuntimeError(f"missing data in {LW!r}")
         LW_ntot: int = LW.ncall * LW.niter
-        if (LW.result == 0.0 and LW.error == 0.0) or abs(LW.error / LW.result) <= self.config["run"][
-            "target_rel_acc"
-        ]:
+        # > a vanishing result with a non-zero error (large cancellations) must not divide
+        if (LW.result == 0.0 and LW.error == 0.0) or (
+            LW.result != 0.0
+            and abs(LW.error / LW.result) <= self.config["run"]["target_rel_acc"]
+        ):
             wflag |= WarmupFlag.RELACC
         if LW.chi2dof < self.config["warmup"]["max_chi2dof"]:
             wflag |= WarmupFlag.CHI2DOF
-        # > QC measures that require the ExeData information
+        # > QC measures that require the ExeData information; a job without parsed
+        # > iterations gives no basis to assess error stability: leave CONST_ERR unset
         exe_data: ExeData = ExeData(self._local(LW.rel_path))
-        job_data: dict = exe_data["jobs"][LW.id]
-        err_list: list[float] = [it["error"] for it in job_data["iterations"]]
-        err_mean: float = sum(err_list) / len(err_list)
-        err_stdv: float = math.sqrt(sum((err - err_mean) ** 2 for err in err_list) / len(err_list))
-        if err_mean == 0.0 or err_stdv / err_mean < self.config["warmup"]["max_err_rel_var"]:
-            wflag |= WarmupFlag.CONST_ERR
+        job_data: dict | None = exe_data["jobs"].get(LW.id)
+        err_list: list[float] = [it["error"] for it in job_data.get("iterations", [])] if job_data else []
+        if err_list:
+            err_mean: float = sum(err_list) / len(err_list)
+            err_stdv: float = math.sqrt(sum((err - err_mean) ** 2 for err in err_list) / len(err_list))
+            if err_mean == 0.0 or err_stdv / err_mean < self.config["warmup"]["max_err_rel_var"]:
+                wflag |= WarmupFlag.CONST_ERR
         # @todo check iterations.txt <-> WarmupFlag.GRID
         if True:
             wflag |= WarmupFlag.GRID
@@ -306,6 +310,18 @@ class PreProduction(DBTask):
         if not LW:
             raise RuntimeError(f"pre-production: no warmup found for {self.part_id}")
         LW_ntot: int = LW.ncall * LW.niter
+
+        if LW.elapsed_time <= 0.0:
+            # > broken/missing runtime metadata (e.g. a log without an "Elapsed time" line):
+            # > no basis for a statistics estimate; fall back to the minimal pre-production
+            self._logger(
+                session,
+                f"pre-production: warmup {LW.id} has no usable runtime; falling back to ncall_start",
+                level=LogLevel.WARN,
+            )
+            return queue_production(
+                self.config["production"]["ncall_start"], self.config["production"]["niter"]
+            )
 
         PP_ntot: int = LW_ntot * int(penalty * self.config["run"]["job_max_runtime"] / LW.elapsed_time)
         if LW.result != 0.0 and LW.error != 0.0:
