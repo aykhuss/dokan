@@ -68,9 +68,14 @@ def _write_dat(
     format is the single source of truth shared with the per-`Part` merge. A
     trailing `#nx:` line records the x-column count, matching the NNLOJET input
     files (see `_read_dat`).
+
+    The file is written atomically (tmp sibling + rename): merge tasks can run
+    concurrently with readers (e.g. `MergeAll` accumulating part `.dat` files),
+    and an in-place rewrite would expose torn/partial files to them.
     """
     nrows, ncols = hist.shape
-    with open(path, "w") as df:
+    tmp_path = path.with_name(path.name + ".tmp")
+    with open(tmp_path, "w") as df:
         if labels is not None:
             df.write(labels + "\n")
         df.write(f"#neval: {neval}\n")
@@ -89,6 +94,7 @@ def _write_dat(
                 df.write(f"{np.format_float_scientific(hist['error2'][irow, icol]): <25} ")
             df.write("\n")
         df.write(f"#nx: {nx}\n")
+    os.replace(tmp_path, path)
 
 
 def _write_weights(
@@ -102,10 +108,13 @@ def _write_weights(
 
     `weights` is an `(nrows, ndat)` array; row `i`, column `j` is the weight of
     input `filenames[j]` in bin `i`. Overflow rows (all-NaN `xval`) are skipped.
+
+    Written atomically (tmp sibling + rename) for the same reason as `_write_dat`.
     """
     nrows = weights.shape[0]
     ndat = len(filenames)
-    with open(path, "w") as wf:
+    tmp_path = path.with_name(path.name + ".tmp")
+    with open(tmp_path, "w") as wf:
         wf.write(f"#nx={nx} ")
         if xval is not None and nx == 3:
             for irow in range(nrows):
@@ -123,6 +132,7 @@ def _write_weights(
                     continue
                 wf.write(np.format_float_scientific(weights[irow, idat]) + " ")
             wf.write("\n")
+    os.replace(tmp_path, path)
 
 
 def _parse_nx_marker(line: str) -> int | None:
