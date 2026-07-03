@@ -5,7 +5,7 @@ module defining the job database
 
 import math
 
-from sqlalchemy import BigInteger, ForeignKey
+from sqlalchemy import BigInteger, ForeignKey, Index
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from dokan.db._jobstatus import JobStatus
@@ -55,6 +55,12 @@ class Part(DokanDB):
 
 class Job(DokanDB):
     __tablename__ = "job"
+
+    # > duplicate seeds within one (part, mode) silently corrupt the merged statistics
+    # > (identically-named output files treated as independent samples): make any
+    # > collision a loud IntegrityError at commit time.  NULL seeds (queued jobs) are
+    # > exempt (SQLite treats NULLs as distinct in unique indexes).
+    __table_args__ = (Index("ix_job_part_mode_seed", "part_id", "mode", "seed", unique=True),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
 

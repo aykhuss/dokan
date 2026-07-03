@@ -8,10 +8,12 @@ re-running this task with the same inputs should produce no effective change.
 import time
 
 import luigi
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from ..order import Order
 from ._dbtask import DBTask
+from ._loglevel import LogLevel
 from ._sqla import DokanDB, DokanLog, Part
 
 
@@ -52,6 +54,27 @@ class DBInit(DBTask):
         # complete() to function.
         DokanDB.metadata.create_all(self._create_engine(self.dbname))
         DokanLog.metadata.create_all(self._create_engine(self.logname))
+        # > `create_all` skips existing tables entirely, so databases from older runs
+        # > never receive the unique seed index defined on the model: create it
+        # > explicitly (idempotent).  A legacy database that already contains
+        # > duplicate seeds cannot take the index -> warn and continue without it.
+        try:
+            with self._create_engine(self.dbname).connect() as conn:
+                conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS ix_job_part_mode_seed"
+                        " ON job (part_id, mode, seed)"
+                    )
+                )
+                conn.commit()
+        except (IntegrityError, OperationalError) as exc:
+            with self.session as session:
+                self._logger(
+                    session,
+                    f"{self.__class__.__name__}: could not create the unique seed index"
+                    f" (duplicate seeds in an existing database?): {exc}",
+                    level=LogLevel.WARN,
+                )
         # > determine the channels that should be activated
         self.activate_channels: list[str] = self._resolve_activate_channels()
 

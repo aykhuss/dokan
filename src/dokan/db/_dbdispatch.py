@@ -54,6 +54,10 @@ class DBDispatch(DBTask):
     _REPOPULATE_INTERVAL_FAC: float = 0.10
     _SIGNAL_INTERVAL_FAC: float = 0.01
     _DISPATCH_INTERVAL_MIN: float = 10.0
+    # > cap the poll intervals: they scale with `job_max_runtime`, and long jobs
+    # > (e.g. 24h -> 2.4h re-checks) would otherwise leave the queue idle for hours
+    # > while the sleeping dispatcher holds a DBTask resource unit
+    _DISPATCH_INTERVAL_MAX: float = 300.0
     _DISPATCH_SIGNAL_ORDER: tuple[LogLevel, ...] = (LogLevel.SIG_MERGE,)
 
     def __init__(self, *args, **kwargs):
@@ -193,7 +197,17 @@ class DBDispatch(DBTask):
         queue_full: bool = False
 
         if self.id > 0:
-            job: Job = session.get_one(Job, self.id)
+            job: Job | None = session.get(Job, self.id)
+            if job is None:
+                # > the job row was removed (e.g. queued-job purge on resubmission):
+                # > nothing to dispatch; leave part_id unset so run() terminates cleanly
+                self._logger(
+                    session,
+                    self._logger_prefix + "::repopulate:  job no longer in DB, nothing to dispatch",
+                    level=LogLevel.WARN,
+                )
+                self.part_id = 0
+                return queue_full
             self.part_id = job.part_id
 
         if self.id < 0:
@@ -499,16 +513,22 @@ class DBDispatch(DBTask):
 
     def _dispatch_interval(self) -> float:
         """Return the throttled queue re-population interval in seconds."""
-        return max(
-            self._DISPATCH_INTERVAL_MIN,
-            self._REPOPULATE_INTERVAL_FAC * self.config["run"]["job_max_runtime"],
+        return min(
+            self._DISPATCH_INTERVAL_MAX,
+            max(
+                self._DISPATCH_INTERVAL_MIN,
+                self._REPOPULATE_INTERVAL_FAC * self.config["run"]["job_max_runtime"],
+            ),
         )
 
     def _signal_interval(self) -> float:
         """Return the workflow signal polling interval in seconds."""
-        return max(
-            self._DISPATCH_INTERVAL_MIN,
-            self._SIGNAL_INTERVAL_FAC * self.config["run"]["job_max_runtime"],
+        return min(
+            self._DISPATCH_INTERVAL_MAX,
+            max(
+                self._DISPATCH_INTERVAL_MIN,
+                self._SIGNAL_INTERVAL_FAC * self.config["run"]["job_max_runtime"],
+            ),
         )
 
     def _consume_merge_signal(self, session: Session) -> bool:
@@ -623,27 +643,25 @@ class DBDispatch(DBTask):
 
                 # > set seeds for the jobs to prepare for a dispatch
                 if jobs:
-                    # > get last job that has a seed assigned to it
+                    # > shield against *any* seed already assigned for this (part, mode) —
+                    # > including resurrected batches ahead of the current range and jobs from
+                    # > submissions with a different seed_offset — by starting past the global
+                    # > maximum.  The unique index on (part_id, mode, seed) backstops the rare
+                    # > cross-process race with a loud IntegrityError instead of silent reuse.
                     last_job = session.scalars(
                         select(Job)
                         .where(Job.part_id == self.part_id)
                         .where(Job.mode == jobs[0].mode)
                         .where(Job.seed.is_not(None))
-                        .where(Job.seed > self.config["run"]["seed_offset"])
-                        # @todo not good enough, need a max to shield from another batch-job
-                        #       starting at larger value of seed?
-                        # determine upper bound by the max number of jobs? -> seems like a good idea
                         .order_by(Job.seed.desc())
                     ).first()
-                    seed_start: int = -1
-                    if last_job and last_job.seed:
+                    seed_start: int = self.config["run"]["seed_offset"] + 1
+                    if last_job and last_job.seed and last_job.seed >= seed_start:
                         self._debug(
                             session,
                             self._logger_prefix + "::run:  " + f"{self.id} last job:  {last_job!r}",
                         )
                         seed_start = last_job.seed + 1
-                    else:
-                        seed_start = self.config["run"]["seed_offset"] + 1
 
                     for iseed, job in enumerate(jobs, seed_start):
                         job.seed = iseed

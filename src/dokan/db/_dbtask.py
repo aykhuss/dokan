@@ -1,5 +1,6 @@
 import datetime
 import math
+import os
 import time
 from abc import ABCMeta, abstractmethod
 
@@ -16,6 +17,44 @@ from ._loglevel import LogLevel
 from ._sqla import DokanDB, DokanLog, Job, Log, Part
 
 _console = Console()
+
+# > engine cache keyed by url: DBTasks open sessions extremely often (every
+# > `complete()` check the scheduler makes), and building a fresh Engine each time
+# > re-opens the SQLite files — the dominant cost on shared/network filesystems.
+# >
+# > Fork safety: Luigi runs every task attempt in its own `TaskProcess`
+# > (multiprocessing).  Under the "spawn" start method (macOS default) the child
+# > re-imports this module and starts with an empty cache.  Under "fork" (Linux
+# > default) the child inherits the cache *including open pooled connections*,
+# > which must never be used across the fork boundary: the `register_at_fork`
+# > hook below implements the SQLAlchemy multiprocessing recipe — drop the pool
+# > references in the child without closing the inherited descriptors
+# > (`dispose(close=False)`, so the parent is unaffected) and let the child
+# > build fresh engines/connections on first use.
+_ENGINE_CACHE: dict[str, Engine] = {}
+
+
+def _dispose_engines_after_fork() -> None:
+    """Reset the engine cache in a freshly forked child process."""
+    for engine in _ENGINE_CACHE.values():
+        engine.dispose(close=False)
+    _ENGINE_CACHE.clear()
+
+
+if hasattr(os, "register_at_fork"):  # POSIX only; Luigi workers fork on Linux
+    os.register_at_fork(after_in_child=_dispose_engines_after_fork)
+
+
+def _cached_engine(name: str) -> Engine:
+    """Return a per-process cached SQLAlchemy engine for the given URL."""
+    engine = _ENGINE_CACHE.get(name)
+    if engine is None:
+        # > check_same_thread=False: pooled connections may be checked out by a
+        # > different thread than the one that created them; the pool serializes
+        # > access so the sqlite3 objects are never used concurrently.
+        engine = create_engine(name, connect_args={"timeout": 420, "check_same_thread": False})
+        _ENGINE_CACHE[name] = engine
+    return engine
 
 
 class DBTask(Task, metaclass=ABCMeta):
@@ -39,8 +78,8 @@ class DBTask(Task, metaclass=ABCMeta):
         return super().resources | {"DBTask": 1}
 
     def _create_engine(self, name: str) -> Engine:
-        """Create a SQLite engine with WAL mode and concurrency settings."""
-        engine = create_engine(name, connect_args={"timeout": 420})
+        """Return the (cached) SQLite engine for `name`, applying setup PRAGMAs if requested."""
+        engine = _cached_engine(name)
 
         # > Apply concurrency-friendly SQLite PRAGMAs
         if self.db_setup:
