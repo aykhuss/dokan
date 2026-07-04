@@ -416,21 +416,32 @@ class DBTask(Task, metaclass=ABCMeta):
                 )
                 continue
             ntot: int = job.niter * job.ncall
-            # > runtime estimate based on *all* successful jobs
+            # > runtime estimate based on successful jobs *with usable metadata*:
+            # > `elapsed_time == 0` (log without an "Elapsed time" line) or `ntot == 0`
+            # > (premature termination rescaled `niter` to 0) would poison the sample
+            # > with `tau == 0` and divide by zero downstream — exclude such jobs
             if job.status in JobStatus.success_list():
-                # >--------
-                # A > previously we weighted the longer jobs with a higher weight
-                # A > but this could lead to a bias towards the runtime-limit
-                # cache[job.part_id]["sum"] += job.elapsed_time
-                # cache[job.part_id]["sum2"] += (job.elapsed_time) ** 2 / float(ntot)
-                # cache[job.part_id]["norm"] += ntot
-                # B > now we just do a standard sample average
-                itau: float = job.elapsed_time / float(ntot)
-                cache[job.part_id]["sum"] += itau
-                cache[job.part_id]["sum2"] += itau**2
-                cache[job.part_id]["norm"] += 1
-                # >--------
-                cache[job.part_id]["count"] += 1
+                if job.elapsed_time > 0.0 and ntot > 0:
+                    # >--------
+                    # A > previously we weighted the longer jobs with a higher weight
+                    # A > but this could lead to a bias towards the runtime-limit
+                    # cache[job.part_id]["sum"] += job.elapsed_time
+                    # cache[job.part_id]["sum2"] += (job.elapsed_time) ** 2 / float(ntot)
+                    # cache[job.part_id]["norm"] += ntot
+                    # B > now we just do a standard sample average
+                    itau: float = job.elapsed_time / float(ntot)
+                    cache[job.part_id]["sum"] += itau
+                    cache[job.part_id]["sum2"] += itau**2
+                    cache[job.part_id]["norm"] += 1
+                    # >--------
+                    cache[job.part_id]["count"] += 1
+                else:
+                    self._logger(
+                        session,
+                        "DBTask::_distribute_time:  skipping job without usable runtime metadata"
+                        + f" (elapsed_time={job.elapsed_time}, ntot={ntot}) in {job!r}",
+                        LogLevel.WARN,
+                    )
             # > extra time allocation from active parts & DONE jobs
             if job.status in [*JobStatus.active_list(), JobStatus.DONE]:
                 # > everything that was not yet merged needs to be accounted for
@@ -592,7 +603,12 @@ class DBTask(Task, metaclass=ABCMeta):
                 result["tot_adj_error"] += cache[part_id]["error"] ** 2
             else:
                 result["tot_adj_error"] += cache[part_id]["adj_error"] ** 2
-            result["tot_error_estimate_opt"] += cache[part_id]["error"] ** 2 * i_t / (i_t + ires["T_opt"])
+            # > `i_t / (i_t + T)` is the variance fraction left after adding time T;
+            # > a degenerate part with no invested and no assigned time keeps its error (-> 1.0)
+            denom_opt: float = i_t + ires["T_opt"]
+            result["tot_error_estimate_opt"] += cache[part_id]["error"] ** 2 * (
+                i_t / denom_opt if denom_opt > 0.0 else 1.0
+            )
         result["tot_error"] = math.sqrt(result["tot_error"])
         result["tot_adj_error"] = math.sqrt(result["tot_adj_error"])
         result["tot_error_estimate_opt"] = math.sqrt(result["tot_error_estimate_opt"])
@@ -654,7 +670,10 @@ class DBTask(Task, metaclass=ABCMeta):
             ires["njobs"] = njobs
             ires["ntot_job"] = ntot_job
             i_t: float = ires.pop("i_T")  # pop it here
-            result["tot_error_estimate_jobs"] += cache[part_id]["error"] ** 2 * i_t / (i_t + t_jobs)
+            denom_jobs: float = i_t + t_jobs
+            result["tot_error_estimate_jobs"] += cache[part_id]["error"] ** 2 * (
+                i_t / denom_jobs if denom_jobs > 0.0 else 1.0
+            )
 
         result["tot_error_estimate_jobs"] = math.sqrt(result["tot_error_estimate_jobs"])
 
