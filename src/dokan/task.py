@@ -27,7 +27,11 @@ class Task(luigi.Task):
         path *relative* (local) to CONFIG.job_path as a list of directory names
     """
 
-    config: dict = luigi.DictParameter(visibility=ParameterVisibility.HIDDEN)  # type: ignore[assignment]
+    # > insignificant: the config is identical for every task within one `luigi.build`
+    # > (identity comes from the real parameters), so excluding it keeps task ids and
+    # > scheduler bookkeeping small.  `to_str_params()` still carries it, so the
+    # > dynamic-dependency round-trip through `load_task` is unaffected (verified).
+    config: dict = luigi.DictParameter(visibility=ParameterVisibility.HIDDEN, significant=False)  # type: ignore[assignment]
     local_path: list[str] = luigi.ListParameter(default=[])  # type: ignore[assignment]
 
     def __init__(self, *args, **kwargs):
