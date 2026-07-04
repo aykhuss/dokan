@@ -3,10 +3,12 @@ import math
 import os
 import time
 from abc import ABCMeta, abstractmethod
+from enum import Enum
+from functools import partial
 
 import luigi
 from rich.console import Console
-from sqlalchemy import Engine, create_engine, select, text
+from sqlalchemy import Engine, create_engine, event, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session  # , scoped_session, sessionmaker
 
@@ -18,9 +20,67 @@ from ._sqla import DokanDB, DokanLog, Job, Log, Part
 
 _console = Console()
 
-# > engine cache keyed by url: DBTasks open sessions extremely often (every
-# > `complete()` check the scheduler makes), and building a fresh Engine each time
-# > re-opens the SQLite files — the dominant cost on shared/network filesystems.
+class _DBRole(Enum):
+    """Which database an engine serves; determines its durability policy."""
+
+    JOB = "job"  # db.sqlite  — workflow state, source of truth for scheduling
+    LOG = "log"  # log.sqlite — event stream + workflow signals
+
+
+# > empirically required on network storage: lock contention under many
+# > concurrent workers is absorbed by the driver-level busy timeout, not by
+# > session-level retries (see `DBTask._safe_commit`)
+_SQLITE_TIMEOUT: int = 420  # seconds
+
+# > all connection-scoped settings in one place, applied to *every* new
+# > connection via the pool `connect` event — `journal_mode`, `synchronous`,
+# > `temp_store`, and `foreign_keys` are per-connection PRAGMAs, so applying
+# > them anywhere else silently misses pooled/forked connections.
+# >
+# > - journal_mode=PERSIST: same crash-safety as DELETE (no WAL shared memory,
+# >   so network-FS safe) but commits zero the journal header in place instead
+# >   of creating+deleting the journal file — directory-metadata operations
+# >   that dominate commit latency on NFS/Lustre; journal_size_limit keeps the
+# >   persistent journal from staying at its high-water mark.
+# > - synchronous=NORMAL: identical to FULL under an *app* crash; only an OS
+# >   crash / power loss can lose tail transactions.  Both databases are
+# >   recoverable: `ExeData` on disk is the source of truth for job state
+# >   (DBResurrect/DBDoctor rebuild from it) and signals are re-emitted on
+# >   resubmission.  Skipping the fsync-per-commit shortens write-lock hold
+# >   times — the very contention the busy timeout absorbs.
+# > - foreign_keys=ON (job DB): SQLite ships with FK enforcement off, so the
+# >   `Job.part_id -> part.id` constraint is decorative without it.  `Part`
+# >   rows are never deleted, so this can only reject genuinely orphaned rows.
+_CONNECT_PRAGMAS: dict[_DBRole, tuple[str, ...]] = {
+    _DBRole.JOB: (
+        "PRAGMA journal_mode=PERSIST",
+        "PRAGMA journal_size_limit=4194304",
+        "PRAGMA synchronous=NORMAL",
+        "PRAGMA temp_store=MEMORY",
+        "PRAGMA foreign_keys=ON",
+    ),
+    _DBRole.LOG: (
+        "PRAGMA journal_mode=PERSIST",
+        "PRAGMA journal_size_limit=4194304",
+        "PRAGMA synchronous=NORMAL",
+        "PRAGMA temp_store=MEMORY",
+    ),
+}
+
+
+def _apply_pragmas(pragmas: tuple[str, ...], dbapi_conn, _record) -> None:
+    cursor = dbapi_conn.cursor()
+    try:
+        for pragma in pragmas:
+            cursor.execute(pragma)
+    finally:
+        cursor.close()
+
+
+# > engine cache keyed by (url, role): DBTasks open sessions extremely often
+# > (every `complete()` check the scheduler makes), and building a fresh Engine
+# > each time re-opens the SQLite files — the dominant cost on shared/network
+# > filesystems.
 # >
 # > Fork safety: Luigi runs every task attempt in its own `TaskProcess`
 # > (multiprocessing).  Under the "spawn" start method (macOS default) the child
@@ -31,7 +91,7 @@ _console = Console()
 # > references in the child without closing the inherited descriptors
 # > (`dispose(close=False)`, so the parent is unaffected) and let the child
 # > build fresh engines/connections on first use.
-_ENGINE_CACHE: dict[str, Engine] = {}
+_ENGINE_CACHE: dict[tuple[str, _DBRole], Engine] = {}
 
 
 def _dispose_engines_after_fork() -> None:
@@ -45,15 +105,19 @@ if hasattr(os, "register_at_fork"):  # POSIX only; Luigi workers fork on Linux
     os.register_at_fork(after_in_child=_dispose_engines_after_fork)
 
 
-def _cached_engine(name: str) -> Engine:
-    """Return a per-process cached SQLAlchemy engine for the given URL."""
-    engine = _ENGINE_CACHE.get(name)
+def _cached_engine(url: str, role: _DBRole) -> Engine:
+    """Return a per-process cached SQLAlchemy engine for `url` in `role`."""
+    key = (url, role)
+    engine = _ENGINE_CACHE.get(key)
     if engine is None:
         # > check_same_thread=False: pooled connections may be checked out by a
         # > different thread than the one that created them; the pool serializes
         # > access so the sqlite3 objects are never used concurrently.
-        engine = create_engine(name, connect_args={"timeout": 420, "check_same_thread": False})
-        _ENGINE_CACHE[name] = engine
+        engine = create_engine(
+            url, connect_args={"timeout": _SQLITE_TIMEOUT, "check_same_thread": False}
+        )
+        event.listen(engine, "connect", partial(_apply_pragmas, _CONNECT_PRAGMAS[role]))
+        _ENGINE_CACHE[key] = engine
     return engine
 
 
@@ -68,38 +132,48 @@ class DBTask(Task, metaclass=ABCMeta):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # @todo all DBTasks need to be started in the job root path: check?
-        self.dbname: str = "sqlite:///" + str(self._local("db.sqlite").absolute())
-        self.logname: str = "sqlite:///" + str(self._local("log.sqlite").absolute())
-        self.db_setup: bool = False
+        # > plain joins, not `_local()`: that would stat+mkdir the run directory on
+        # > every task construction, and constructions happen constantly (clone
+        # > chains, scheduler dedup); the run directory is guaranteed to exist by
+        # > `Config.set_path` / CLI validation long before any DBTask is built
+        self.dbname: str = "sqlite:///" + str((self._path / "db.sqlite").absolute())
+        self.logname: str = "sqlite:///" + str((self._path / "log.sqlite").absolute())
+        # > per-instance (instances can point at different databases), keyed by part id
+        self._part_name_cache: dict[int, str] = {}
 
     # > threadsafety using resource = 1, where read/write needed
     @property
     def resources(self):  # type: ignore
         return super().resources | {"DBTask": 1}
 
-    def _create_engine(self, name: str) -> Engine:
-        """Return the (cached) SQLite engine for `name`, applying setup PRAGMAs if requested."""
-        engine = _cached_engine(name)
+    def _part_name(self, part_id: int, session: Session | None = None) -> str:
+        """Return the name of `part_id`, memoized per task instance and part id.
 
-        # > Apply concurrency-friendly SQLite PRAGMAs
-        if self.db_setup:
-            with engine.connect() as conn:
-                # conn.execute(text("PRAGMA journal_mode=WAL;"))  # <- bad for network/shared FS
-                conn.execute(text("PRAGMA journal_mode=DELETE;"))
-                # conn.execute(text("PRAGMA synchronous=NORMAL;"))  # <- riskier on crashes
-                conn.execute(text("PRAGMA synchronous=FULL"))
-                # conn.execute(text("PRAGMA wal_autocheckpoint=1000;"))
-                # conn.execute(text("PRAGMA busy_timeout=30000;"))
-                conn.execute(text("PRAGMA temp_store=MEMORY;"))
+        Pass an active `session` wherever one is at hand — a free lookup when
+        the `Part` row is already in its identity map — so methods can prime
+        the cache and log-prefix properties never open a nested session.
+        Without one, a short session is opened as a lazy fallback: task
+        construction must not touch the database (Luigi constructs task
+        objects constantly: clone chains, scheduler dedup).
+        """
+        if part_id not in self._part_name_cache:
+            if session is not None:
+                self._part_name_cache[part_id] = session.get_one(Part, part_id).name
+            else:
+                with self.session as own_session:
+                    self._part_name_cache[part_id] = own_session.get_one(Part, part_id).name
+        return self._part_name_cache[part_id]
 
-        return engine
+    def _engine(self, role: _DBRole) -> Engine:
+        """Return the (cached) engine for this task's database in `role`."""
+        return _cached_engine(self.dbname if role is _DBRole.JOB else self.logname, role)
 
     @property
     def session(self) -> Session:
         return Session(
             binds={
-                DokanDB: self._create_engine(self.dbname),
-                DokanLog: self._create_engine(self.logname),
+                DokanDB: self._engine(_DBRole.JOB),
+                DokanLog: self._engine(_DBRole.LOG),
             },
             autoflush=False,
         )
