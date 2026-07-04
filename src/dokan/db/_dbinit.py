@@ -12,7 +12,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from ..order import Order
-from ._dbtask import DBTask
+from ._dbtask import DBTask, _DBRole
 from ._loglevel import LogLevel
 from ._sqla import DokanDB, DokanLog, Part
 
@@ -47,19 +47,17 @@ class DBInit(DBTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._logger_prefix: str = self.__class__.__name__
-        # > init shall always run the setup block of the DB
-        self.db_setup = True
         # > create the tables if they do not exist yet
         # This is safe to do in __init__ as it is idempotent and required for
         # complete() to function.
-        DokanDB.metadata.create_all(self._create_engine(self.dbname))
-        DokanLog.metadata.create_all(self._create_engine(self.logname))
+        DokanDB.metadata.create_all(self._engine(_DBRole.JOB))
+        DokanLog.metadata.create_all(self._engine(_DBRole.LOG))
         # > `create_all` skips existing tables entirely, so databases from older runs
         # > never receive the unique seed index defined on the model: create it
         # > explicitly (idempotent).  A legacy database that already contains
         # > duplicate seeds cannot take the index -> warn and continue without it.
         try:
-            with self._create_engine(self.dbname).connect() as conn:
+            with self._engine(_DBRole.JOB).connect() as conn:
                 conn.execute(
                     text(
                         "CREATE UNIQUE INDEX IF NOT EXISTS ix_job_part_mode_seed"
