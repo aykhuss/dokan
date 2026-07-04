@@ -4,10 +4,9 @@
 1. Re-populate the queue with new production jobs when needed.
 2. Select queued jobs, assign seeds, and hand them over to `DBRunner`.
 
-The task can operate in three modes via `id`:
+The task can operate in two modes via `id`:
 - `id == 0`: dynamic dispatch (global scheduling logic).
 - `id > 0`: dispatch a specific job id.
-- `id < 0`: dispatch jobs restricted to one part (`abs(id)`).
 """
 
 import math
@@ -43,7 +42,6 @@ class DBDispatch(DBTask):
     # > id semantics:
     # >   0  — dynamic global scheduling
     # >  >0  — dispatch a specific Job by its primary key
-    # >  <0  — restrict dispatch to all jobs of Part abs(id)
     id: int = luigi.IntParameter(default=0)  # type: ignore[assignment]
 
     # > _n distinguishes successive id==0 dispatchers in the chain
@@ -62,6 +60,9 @@ class DBDispatch(DBTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if self.id < 0:
+            # > the "restrict to one part" mode (id < 0) was removed: it never had a caller
+            raise ValueError(f"DBDispatch: invalid id = {self.id} (must be 0 or a job id > 0)")
         self._logger_prefix: str = (
             self.__class__.__name__ + f"[{self.id}" + (f",{self._n}" if self.id == 0 else "") + "]"
         )
@@ -84,10 +85,7 @@ class DBDispatch(DBTask):
         slct = select(Job).where(Job.run_tag == self.run_tag)
         if self.id > 0:
             return slct.where(Job.id == self.id)
-        elif self.id < 0:
-            return slct.where(Job.part_id == abs(self.id))
-        else:
-            return slct
+        return slct
 
     def _dispatch_settled(self, session: Session) -> bool:
         """Return ``True`` when dynamic dispatch (`id == 0`) has reached its terminal state.
@@ -209,11 +207,6 @@ class DBDispatch(DBTask):
                 self.part_id = 0
                 return queue_full
             self.part_id = job.part_id
-
-        if self.id < 0:
-            self.part_id = abs(self.id)
-
-        if self.id != 0:
             return queue_full
 
         def safe_rel_error(numerator: float, denominator: float) -> float:
@@ -556,7 +549,10 @@ class DBDispatch(DBTask):
         for signal in self._DISPATCH_SIGNAL_ORDER:
             if signal == LogLevel.SIG_MERGE and self._consume_merge_signal(session):
                 self._logger(session, self._logger_prefix + "::run:  SIG_MERGE \u2192 yielding MergeAll")
-                signal_tasks.append(self.clone(MergeAll, force=True, reset_tag=time.time(), finalize=True))
+                # > force merges newly DONE jobs; no reset_tag \u2014 a user merge signal asks for
+                # > an up-to-date result, not a from-scratch re-merge of every observable
+                # > (that remains the explicit `finalize` CLI path)
+                signal_tasks.append(self.clone(MergeAll, force=True, finalize=True))
         return signal_tasks
 
     def _with_dispatch_continuation(self, tasks: list[luigi.Task]) -> list[luigi.Task]:
@@ -592,15 +588,14 @@ class DBDispatch(DBTask):
             with self.session as session:
                 queue_full = self._repopulate(session)
             if queue_full:
-                if self.id == 0:
-                    signal_tasks = self._poll_dispatch_signals_until(
-                        time.monotonic() + self._dispatch_interval()
-                    )
-                    if signal_tasks:
-                        yield self._with_dispatch_continuation(signal_tasks)
-                        return
-                else:
-                    time.sleep(self._dispatch_interval())
+                # > only dynamic dispatch (id == 0) can be throttled: bounded dispatch
+                # > (`id > 0`) returns from `_repopulate` immediately with False
+                signal_tasks = self._poll_dispatch_signals_until(
+                    time.monotonic() + self._dispatch_interval()
+                )
+                if signal_tasks:
+                    yield self._with_dispatch_continuation(signal_tasks)
+                    return
 
         runners: list[DBRunner] = []
         done: bool = False
