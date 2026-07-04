@@ -572,6 +572,22 @@ def build_obs_group(
     return resize_obs
 
 
+def merge_settings(config: dict) -> dict:
+    """The merge-algorithm settings that influence `MergeObs.run()`'s output.
+
+    Single definition shared by the `MergeObs` sidecar identity and the submit-time
+    merge-config digest (`entry.merge_config_reset_tag`) so the per-observable
+    freshness check and the part-level invalidation trigger cannot drift apart.
+    """
+    merge = config["merge"]
+    return {
+        "trim_threshold": merge["trim_threshold"],
+        "trim_max_fraction": merge["trim_max_fraction"],
+        "k_scan_nsteps": merge["k_scan_nsteps"],
+        "k_scan_maxdev_steps": merge["k_scan_maxdev_steps"],
+    }
+
+
 class MergeObs(Task):
     hdf5_in: GenericPath = luigi.Parameter()  # type: ignore[assignment]
     hdf5_path: list[str] = luigi.ListParameter()  # type: ignore[assignment]  # path to the observable group
@@ -630,17 +646,12 @@ class MergeObs(Task):
         Recorded in the sidecar so that, *whenever this MergeObs is (re)evaluated*, a
         config change (e.g. a new `trim_threshold`) re-runs the merge even if the HDF5
         inputs are unchanged.  Note this only bites once `MergePart` actually dispatches
-        the MergeObs; in the workflow, config changes are propagated via `reset_tag`
-        (fresh submit / finalize), and `MergePart.complete()` may short-circuit a fully
-        merged part before then — so this digest is a safety net, not the primary trigger.
+        the MergeObs; at the part level, the same settings feed the submit-time digest
+        that derives `reset_tag` (see `entry.merge_config_reset_tag`), which is what
+        forces a fully-merged part past `MergePart.complete()` after a config change —
+        so this digest is a safety net, not the primary trigger.
         """
-        merge = self.config["merge"]
-        return {
-            "trim_threshold": merge["trim_threshold"],
-            "trim_max_fraction": merge["trim_max_fraction"],
-            "k_scan_nsteps": merge["k_scan_nsteps"],
-            "k_scan_maxdev_steps": merge["k_scan_maxdev_steps"],
-        }
+        return merge_settings(self.config)
 
     def required_outputs(self) -> list[Path]:
         """The output files that must exist for this merge to be complete.
@@ -658,14 +669,16 @@ class MergeObs(Task):
             outputs.append(self.file_dat.with_suffix(".pineappl.lz4"))
         return outputs
 
-    def expected_identity(self) -> tuple:
+    def expected_identity(self, hdf5_identity: tuple[int, float] | None = None) -> tuple:
         """The freshness identity the current inputs/config *expect* the outputs to have.
 
         Everything that, if changed, would make a re-merge produce different artifacts;
         deliberately excludes on-disk state. The `MergePart` stall guard fingerprints this
         across run() restarts to detect a non-converging (stuck-predicate) merge.
+        A caller that already read the group's `(ndat_valid, version token)` — MergePart's
+        batch scan — passes it as `hdf5_identity` to skip the per-call HDF5 open.
         """
-        ndat, src_ts = self._hdf5_identity()
+        ndat, src_ts = hdf5_identity if hdf5_identity is not None else self._hdf5_identity()
         return (
             ndat,
             src_ts,
@@ -710,7 +723,7 @@ class MergeObs(Task):
             },
         )
 
-    def _freshness_reasons(self) -> list[str]:
+    def _freshness_reasons(self, hdf5_identity: tuple[int, float] | None = None) -> list[str]:
         """Reasons the merged outputs are not up to date; an empty list means complete.
 
         Single source of truth for freshness, shared by `complete()` and
@@ -718,6 +731,8 @@ class MergeObs(Task):
         Decided entirely from the sidecar identity, never from output mtimes (mtime
         comparisons across the HDF5/`.dat` boundary are unreliable on networked
         filesystems and previously wedged `MergePart` in an endless re-merge loop).
+        `hdf5_identity` optionally supplies a precomputed `(ndat_valid, version token)`
+        so batch callers (MergePart) avoid one HDF5 open per observable.
         """
         reasons: list[str] = []
         # > all required artifacts (`.dat`, plus weights + grid when requested) must exist
@@ -731,8 +746,9 @@ class MergeObs(Task):
         # > or a change in the merge-algorithm settings invalidates an older `.dat`.
         if float(meta.get("reset_tag", float("-inf"))) < self.reset_tag:
             reasons.append(f"reset_tag stale (sidecar={meta.get('reset_tag')} < task={self.reset_tag})")
-        if meta.get("cfg") != self._merge_settings():
-            reasons.append(f"merge-config drift (sidecar={meta.get('cfg')} != {self._merge_settings()})")
+        cfg = self._merge_settings()
+        if meta.get("cfg") != cfg:
+            reasons.append(f"merge-config drift (sidecar={meta.get('cfg')} != {cfg})")
         # > weights/grids must have been produced for this identity (existence is covered above):
         # > guards a stale leftover weights file satisfying existence after a no-weights re-merge.
         if self.file_wgt is not None and not meta.get("weights", False):
@@ -741,7 +757,7 @@ class MergeObs(Task):
             reasons.append("grids requested but sidecar grids=false")
         # > new data: the `.dat` must reflect the current HDF5 group contents (entry count +
         # > version token), an equality of opaque tokens read from the *same* source.
-        cur_ndat, cur_src_ts = self._hdf5_identity()
+        cur_ndat, cur_src_ts = hdf5_identity if hdf5_identity is not None else self._hdf5_identity()
         if meta.get("ndat") != cur_ndat or meta.get("src_ts") != cur_src_ts:
             reasons.append(
                 f"HDF5 state changed (sidecar ndat/src_ts={meta.get('ndat')}/{meta.get('src_ts')}"
@@ -749,12 +765,12 @@ class MergeObs(Task):
             )
         return reasons
 
-    def complete(self) -> bool:
-        return not self._freshness_reasons()
+    def complete(self, hdf5_identity: tuple[int, float] | None = None) -> bool:
+        return not self._freshness_reasons(hdf5_identity)
 
-    def describe_incomplete(self) -> str:
+    def describe_incomplete(self, hdf5_identity: tuple[int, float] | None = None) -> str:
         """Human-readable reason(s) `complete()` is False, for the stall-guard diagnostic."""
-        reasons = self._freshness_reasons()
+        reasons = self._freshness_reasons(hdf5_identity)
         return "; ".join(reasons) if reasons else "complete() is True (no mismatch)"
 
     def run(self):  # type: ignore[override]
