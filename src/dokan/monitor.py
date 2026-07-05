@@ -6,22 +6,37 @@ records from the DB in near real-time.
 
 import datetime
 import time
-from operator import itemgetter
+from typing import NamedTuple
 
 from rich import box
 from rich.console import Console
 from rich.live import Live
 from rich.style import Style
 from rich.table import Column, Table
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .db import DBTask, Log, Part
 from .db._jobstatus import JobStatus
 from .db._loglevel import LogLevel
+from .db._sqla import Job
 from .exe import ExecutionMode
 
 _console = Console()
+
+
+def _part_label(pt: Part) -> str:
+    """Column label of a part: name plus region suffix (e.g. "RRa")."""
+    return pt.part + (pt.region or "")
+
+
+class _JobCount(NamedTuple):
+    """One aggregated `GROUP BY` row: #jobs of a part in a (mode, status) bucket."""
+
+    mode: ExecutionMode
+    status: JobStatus
+    current: bool  # job belongs to the current run tag
+    n: int
 
 
 class Monitor(DBTask):
@@ -38,85 +53,98 @@ class Monitor(DBTask):
     # @todo: poll_rate? --> config
 
     def __init__(self, *args, **kwargs):
-        """Initialize monitor state and static table layout."""
+        """Initialize static monitor state (no DB access at construction time)."""
         super().__init__(*args, **kwargs)
-        _console.print(f"Monitor::init:  {time.ctime(self.run_tag)}")
-
         self._refresh_delay = self.config["ui"].get("refresh_delay", 1.5)
-
         self._log_id: int = 0
-        with self.session as session:
-            last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
-            if last_log:
-                self._log_id = last_log.id
-
-        self._nchan: int = 0  # find maximum # of partonic channels (= # rows)
-        part_order: list[tuple[int, str]] = []
-        with self.session as session:
-            for pt in session.scalars(select(Part).where(Part.active.is_(True))):
-                self._nchan = max(self._nchan, pt.part_num)
-                ipt: tuple[int, str] = (
-                    abs(pt.order),
-                    pt.part if not pt.region else pt.part + pt.region,
-                )
-                if ipt not in part_order:
-                    part_order.append(ipt)
-        part_order.sort(key=itemgetter(1))  # alphabetically by name
-        part_order.sort(key=itemgetter(0))  # then finally by the order
-        self._map_col: dict[str, int] = dict((ipt[1], icol) for icol, ipt in enumerate(part_order, start=1))
-        self._data: list[list[str]] = [
-            ["-" for _ in range(len(part_order) + 1)] for _ in range(self._nchan + 1)
-        ]
-        self._data[0][0] = "#"
-        for irow in range(1, len(self._data)):
-            self._data[irow][0] = f"{irow}"
-        for pt_name, icol in self._map_col.items():
-            self._data[0][icol] = pt_name
-
         self.cross_line: str = "[blue]cross = ... (waiting for first update) [/blue]"
         self.cross_time: float = time.time()
 
-    def job_summary(self, pt: Part) -> str:
-        """Build one compact status string for a single active part."""
+    def _init_board(self, session: Session) -> None:
+        """Query the DB once to build the static table layout and the log cursor.
+
+        The layout is frozen for the lifetime of the monitor: parts activated
+        after this point are not displayed.
+        """
+        last_log = session.scalars(select(Log).order_by(Log.id.desc())).first()
+        if last_log:
+            self._log_id = last_log.id
+
+        parts: list[Part] = list(session.scalars(select(Part).where(Part.active.is_(True))))
+        nchan: int = max((pt.part_num for pt in parts), default=0)  # maximum # of partonic channels
+        # > columns: unique part labels sorted by order, then alphabetically
+        part_order: list[tuple[int, str]] = sorted({(abs(pt.order), _part_label(pt)) for pt in parts})
+        map_col: dict[str, int] = {label: icol for icol, (_, label) in enumerate(part_order, start=1)}
+        # > static (row, column) cell of each active part
+        self._cells: dict[int, tuple[int, int]] = {
+            pt.id: (pt.part_num, map_col[_part_label(pt)]) for pt in parts
+        }
+        self._data: list[list[str]] = [["-" for _ in range(len(part_order) + 1)] for _ in range(nchan + 1)]
+        self._data[0][0] = "#"
+        for irow in range(1, len(self._data)):
+            self._data[irow][0] = f"{irow}"
+        for pt_name, icol in map_col.items():
+            self._data[0][icol] = pt_name
+
+    def _collect_job_counts(self, session: Session) -> dict[int, list[_JobCount]]:
+        """One aggregate query per refresh: per-part (mode, status, is-current-run, count).
+
+        Replaces lazily loading every `Job` row of every part through the ORM
+        relationship on each refresh — the row count scales with the number of
+        distinct (part, mode, status) combinations, not with the number of jobs.
+        """
+        is_current = (Job.run_tag == self.run_tag).label("current")
+        rows = session.execute(
+            select(Job.part_id, Job.mode, Job.status, is_current, func.count(Job.id))
+            .join(Part, Job.part_id == Part.id)
+            .where(Part.active.is_(True))
+            .group_by(Job.part_id, Job.mode, Job.status, is_current)
+        ).all()
+        counts: dict[int, list[_JobCount]] = {}
+        for part_id, mode, status, current, n in rows:
+            counts.setdefault(part_id, []).append(
+                _JobCount(ExecutionMode(mode), JobStatus(status), bool(current), n)
+            )
+        return counts
+
+    def job_summary(self, part_counts: list[_JobCount]) -> str:
+        """Build one compact status string for a single active part from its counts."""
         display_mode: ExecutionMode = (
             ExecutionMode.WARMUP
             if any(
-                job.mode == ExecutionMode.WARMUP for job in pt.jobs if job.status in JobStatus.active_list()
+                c.mode == ExecutionMode.WARMUP and c.status in JobStatus.active_list()
+                for c in part_counts
             )
             else ExecutionMode.PRODUCTION
         )
-        n_active: list[int] = [0, 0]
-        n_running: list[int] = [0, 0]
-        n_success: list[int] = [0, 0]
-        n_failed: list[int] = [0, 0]
-        for job in pt.jobs:
-            if job.mode != display_mode:
+        # > only "running" needs the current-run split (drives the bold highlight);
+        # > all other counters are displayed as totals across run tags
+        n_active = n_success = n_failed = n_running_current = 0
+        for c in part_counts:
+            if c.mode != display_mode:
                 continue
-            idx: int = 0 if job.run_tag != self.run_tag else 1
-            if job.status in JobStatus.success_list():
-                n_success[idx] += 1
-            if job.status in JobStatus.active_list():
-                n_active[idx] += 1
-            if job.status == JobStatus.FAILED:
-                n_failed[idx] += 1
-            if job.status == JobStatus.RUNNING:
-                n_running[idx] += 1
+            if c.status in JobStatus.success_list():
+                n_success += c.n
+            if c.status in JobStatus.active_list():
+                n_active += c.n
+            if c.status == JobStatus.FAILED:
+                n_failed += c.n
+            if c.status == JobStatus.RUNNING and c.current:
+                n_running_current += c.n
         result: str = "[blue]WRM[/blue]" if display_mode == ExecutionMode.WARMUP else "[magenta]PRD[/magenta]"
-        result = f"[bold]{result}[/bold]" if n_running[1] > 0 else f"[dim]{result}[/dim]"
-        result += f" [yellow]A[dim][{n_running[1]}/{n_active[0] + n_active[1]}][/dim][/yellow]"
-        result += f" [green]D[dim][{n_success[0] + n_success[1]}][/dim][/green]"
-        if any(n > 0 for n in n_failed):
-            result += f" [red]F[dim][{n_failed[0] + n_failed[1]}][/dim][/red]"
+        result = f"[bold]{result}[/bold]" if n_running_current > 0 else f"[dim]{result}[/dim]"
+        result += f" [yellow]A[dim][{n_running_current}/{n_active}][/dim][/yellow]"
+        result += f" [green]D[dim][{n_success}][/dim][/green]"
+        if n_failed > 0:
+            result += f" [red]F[dim][{n_failed}][/dim][/red]"
         return result
 
     def _generate_table(self, session: Session) -> Table:
         """Generate the current table snapshot from DB state."""
-        # > collect data from DB
-        for pt in session.scalars(select(Part).where(Part.active.is_(True))):
-            pt_label: str = pt.part if not pt.region else pt.part + pt.region
-            irow: int = pt.part_num
-            icol: int = self._map_col[pt_label]
-            self._data[irow][icol] = self.job_summary(pt)
+        # > one aggregate query for all parts; cell positions are static from `_init_board`
+        counts = self._collect_job_counts(session)
+        for part_id, (irow, icol) in self._cells.items():
+            self._data[irow][icol] = self.job_summary(counts.get(part_id, []))
 
         # > create the table structure
         dt_str: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -160,7 +188,9 @@ class Monitor(DBTask):
         if not self.config["ui"]["monitor"]:
             return
 
+        _console.print(f"Monitor::run:  {time.ctime(self.run_tag)}")
         with self.session as session:
+            self._init_board(session)
             self._logger(session, "Monitor::run:  switching on the job status board...")
             initial_table = self._generate_table(session)
 
