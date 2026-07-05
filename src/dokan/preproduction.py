@@ -5,7 +5,7 @@ import luigi
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .db import DBTask, Job, JobStatus, Part
+from .db import DBTask, Job, JobStatus
 from .db._dbdispatch import DBDispatch
 from .db._dbresurrect import DBResurrect
 from .db._loglevel import LogLevel
@@ -58,6 +58,11 @@ class PreProduction(DBTask):
     def resources(self):  # type: ignore
         # > each part can only have one active pre-production
         return super().resources | {f"PreProduction_{self.part_id}": 1}
+
+    @property
+    def _logger_prefix(self) -> str:
+        # > lazy: the part-name lookup must not happen at construction time
+        return self.__class__.__name__ + f"[{self._part_name(self.part_id)}]"
 
     def complete(self) -> bool:
         with self.session as session:
@@ -335,40 +340,60 @@ class PreProduction(DBTask):
 
         return queue_production(PP_ncall, self.config["production"]["niter"])
 
-    def run(self):  # type: ignore[override]
+    def _dispatch_then_resurrect(self, job_id: int, stage: str):
+        """Yield the bounded dispatch of `job_id`, then a resurrection when reached inline.
+
+        Luigi only continues past a dynamic `yield` in the same pass when the
+        yielded task was already complete at yield time; for a bounded dispatch
+        that means `job_id` is no longer QUEUED, i.e. an already-active job from
+        a previous run that must be resurrected.  Its `rel_path` is re-read
+        *after* the yield: dispatch completion only guarantees DISPATCHED, and
+        a concurrent `DBRunner` may assign the path at any moment — a job that
+        still has none cannot be resurrected and is a loud error.
+        """
+        yield self.clone(cls=DBDispatch, id=job_id)
         with self.session as session:
-            pt: Part = session.get_one(Part, self.part_id)
-            self._logger(session, f"PreProduction::run[{pt.name}]:")
-            if (job_id := self._append_warmup(session)) > 0:
-                self._logger(
-                    session, f"PreProduction::run[{pt.name}]:  yield warmup [dim](job_id = {job_id})[/dim]"
-                )
-                yield self.clone(cls=DBDispatch, id=job_id)
-            if job_id > 0:
-                # > this is a resurrected warmup job
-                job: Job = session.get_one(Job, job_id)
-                self._logger(
-                    session,
-                    f"PreProduction::run[{pt.name}]:  resurrect warmup [dim](job_id = {job_id})[/dim]",
-                )
-                yield self.clone(cls=DBResurrect, rel_path=job.rel_path)
-            assert job_id < 0, f"PreProduction::run[{pt.name}]:  warmup job_id = {job_id} < 0 expected!"
             self._logger(
                 session,
-                f"PreProduction::run[{pt.name}]:  warmup done"
+                self._logger_prefix + f"::run:  resurrect {stage} [dim](job_id = {job_id})[/dim]",
+            )
+            rel_path: str | None = session.get_one(Job, job_id).rel_path
+        if rel_path is None:
+            raise RuntimeError(self._logger_prefix + f"::run:  job {job_id} has no path to resurrect")
+        yield self.clone(cls=DBResurrect, rel_path=rel_path)
+
+    def run(self):  # type: ignore[override]
+        """Drive the warmup/pre-production state machine.
+
+        Every `yield` sits outside a DB session: Luigi abandons the generator on
+        suspension (the `with` block would never exit and leak the session).
+        """
+        # > warmup stage
+        with self.session as session:
+            self._part_name(self.part_id, session)  # prime the log-prefix cache
+            self._logger(session, self._logger_prefix + "::run")
+            job_id: int = self._append_warmup(session)
+            if job_id > 0:
+                self._logger(
+                    session, self._logger_prefix + f"::run:  yield warmup [dim](job_id = {job_id})[/dim]"
+                )
+        if job_id > 0:
+            yield from self._dispatch_then_resurrect(job_id, "warmup")
+        assert job_id < 0, self._logger_prefix + f"::run:  warmup job_id = {job_id} < 0 expected!"
+
+        # > pre-production stage
+        with self.session as session:
+            self._logger(
+                session,
+                self._logger_prefix
+                + "::run:  warmup done"
                 + f" [dim]{WarmupFlag.print_flags(WarmupFlag(-job_id))}[/dim]",
             )
-            if (job_id := self._append_production(session)) > 0:
-                self._logger(
-                    session,
-                    f"PreProduction::run[{pt.name}]:  yield pre-production [dim](job_id = {job_id})[/dim]",
-                )
-                yield self.clone(cls=DBDispatch, id=job_id)
+            job_id = self._append_production(session)
             if job_id > 0:
-                # > this is a resurrected warmup job
                 self._logger(
                     session,
-                    f"PreProduction::run[{pt.name}]:  resurrect warmup [dim](job_id = {job_id})[/dim]",
+                    self._logger_prefix + f"::run:  yield pre-production [dim](job_id = {job_id})[/dim]",
                 )
-                job: Job = session.get_one(Job, job_id)
-                yield self.clone(cls=DBResurrect, rel_path=job.rel_path)
+        if job_id > 0:
+            yield from self._dispatch_then_resurrect(job_id, "pre-production")
