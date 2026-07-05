@@ -6,6 +6,7 @@ to the loss of a ssh connection or process termination.
 """
 
 import luigi
+from sqlalchemy import select
 
 from dokan.db._loglevel import LogLevel
 
@@ -93,35 +94,32 @@ class DBResurrect(DBTask):
 
         Resurrection mode returns True only when all ExeData jobs are
         terminated. Recovery-only mode returns True once all tracked recovery
-        jobs have moved out of `RECOVER`.
+        jobs have moved out of `RECOVER`.  One query for all job statuses
+        instead of one lookup per id: `complete()` is on the scheduler's hot
+        path and ExeData batches can be large.
         """
+        # > recovery-only: just the tracked jobs participate in completion
+        # > (the constructor guarantees they are a subset of the ExeData jobs)
+        job_ids: list[int] = list(self._recover_jobs or self.exe_data["jobs"])
         with self.session as session:
             self._debug(session, f"{self._logger_prefix}::complete: {self.rel_path}")
-            for job_id in self.exe_data["jobs"]:
-                job: Job | None = session.get(Job, job_id)
-
-                if self._recover_jobs:
-                    # > recovery-only: only tracked jobs participate in completion
-                    if job_id not in self._recover_jobs:
-                        continue
-                    if not job:
-                        self._logger(
-                            session,
-                            f"Job {job_id} not found in DB during resurrection",
-                            level=LogLevel.WARN,
-                        )
-                    elif job.status == JobStatus.RECOVER:
+            status_rows = session.execute(
+                select(Job.id, Job.status).where(Job.id.in_(job_ids))
+            ).all()
+            status_by_id: dict[int, int] = {job_id: status for job_id, status in status_rows}
+            for job_id in job_ids:
+                status = status_by_id.get(job_id)
+                if status is None:
+                    self._logger(
+                        session,
+                        f"Job {job_id} not found in DB during resurrection",
+                        level=LogLevel.WARN,
+                    )
+                elif self._recover_jobs:
+                    if status == JobStatus.RECOVER:
                         return False
-                else:
-                    # > resurrection:  not terminated, we are not complete.
-                    if not job:
-                        self._logger(
-                            session,
-                            f"Job {job_id} not found in DB during resurrection",
-                            level=LogLevel.WARN,
-                        )
-                    elif job.status not in JobStatus.terminated_list():
-                        return False
+                elif status not in JobStatus.terminated_list():
+                    return False
 
         return True
 
