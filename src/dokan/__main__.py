@@ -36,7 +36,7 @@ from .db._jobstatus import JobStatus
 from .db._loglevel import LogLevel
 from .db._sqla import Job, Log, Part
 from .entry import Entry
-from .exe import ExecutionPolicy, Executor
+from .exe import ExecutionPolicy, Executor, ExeData
 from .monitor import Monitor
 from .nnlojet import check_PDF, dry_run, get_lumi
 from .order import Order
@@ -86,6 +86,34 @@ class PrintCompletionAction(argparse.Action):
 
 # Keep Ctrl-C behavior consistent across CLI subcommands.
 signal.signal(signal.SIGINT, reset_and_exit)
+
+
+def _max_resurrect_batch_size(run_path: Path, resurrect_jobs: dict) -> int:
+    """Return the largest cluster-executor batch touched by resurrection jobs.
+
+    Only cluster backends reserve `jobs_concurrent` for the entire batch;
+    local executors reserve one unit per job and can never out-size the pool,
+    so local batches are skipped (0 if resurrection is purely local).
+    """
+    max_batch_size = 0
+    for rel_path in {job["rel_path"] for job in resurrect_jobs.values()}:
+        batch_path = run_path / rel_path
+        # > check existence first: `ExeData` would silently *create* a missing directory
+        if not batch_path.is_dir():
+            raise RuntimeError(f"cannot resurrect jobs: missing execution directory {batch_path}")
+        try:
+            exe_data = ExeData(batch_path)
+            # > resurrection re-runs a batch with its *original* policy, not the current config
+            if ExecutionPolicy(exe_data["policy"]) == ExecutionPolicy.LOCAL:
+                continue
+            batch_size = len(exe_data["jobs"])
+        except (KeyError, ValueError) as exc:
+            # > KeyError: metadata fields missing; ValueError: corrupt JSON or schema mismatch
+            raise RuntimeError(
+                f"cannot resurrect jobs: missing or invalid job metadata in {batch_path}: {exc}"
+            ) from exc
+        max_batch_size = max(max_batch_size, batch_size)
+    return max_batch_size
 
 
 class TimeIntervalPrompt(PromptBase[float]):
@@ -824,7 +852,6 @@ def main() -> None:
         )  # 'WARNING', 'INFO', 'DEBUG''
         if not luigi_result:
             sys.exit("DBInit failed")
-        # db_init.db_setup = False  # reset DB setup flag to allow re-use of DBInit for other tasks
 
         # > clear any old logs as well as jobs that were not assigned a run path
         with db_init.session as session:
@@ -957,9 +984,28 @@ def main() -> None:
                 if not luigi_result:
                     sys.exit("DBRemoveJob failed")
                 resurrect_jobs = {}
+            else:
+                # > leaving ACTIVE jobs untouched would stall dispatch & merge on them
+                sys.exit("cannot submit with unresolved ACTIVE jobs: recover or remove them")
 
         # > determine resources and dynamic job settings
         jobs_max: int = min(config["run"]["jobs_max_concurrent"], config["run"]["jobs_max_total"])
+        # > a resurrected cluster batch claims `jobs_concurrent == njobs` for its
+        # > *entire* original batch (the executor sizes itself from
+        # > `len(ExeData["jobs"])`, including batch members that already
+        # > terminated); a pool smaller than that can never schedule it and the
+        # > workflow hangs -> grow the pool to fit (recovery deliberately takes
+        # > precedence over the configured `jobs_max_concurrent` cap)
+        jobs_concurrent: int = jobs_max
+        if resurrect_jobs:
+            max_resurrect_batch = _max_resurrect_batch_size(Path(config["run"]["path"]), resurrect_jobs)
+            if max_resurrect_batch > jobs_max:
+                console.print(
+                    f"[yellow]resurrected batch of {max_resurrect_batch} jobs exceeds"
+                    f" the concurrency limit {jobs_max}: expanding the pool"
+                    " for this submission[/yellow]"
+                )
+                jobs_concurrent = max_resurrect_batch
         console.print(f"# CPU cores: {cpu_count}")
         local_ncores: int = jobs_max + 1 if config["exe"]["policy"] == ExecutionPolicy.LOCAL else cpu_count
         # > CLI override
@@ -1003,7 +1049,7 @@ def main() -> None:
                 # @todo properly set resources according to config
                 resources={
                     "local_ncores": local_ncores,
-                    "jobs_concurrent": jobs_max,
+                    "jobs_concurrent": jobs_concurrent,
                     "DBTask": nactive_part + 2,
                     "DBDispatch": 1,
                 },
