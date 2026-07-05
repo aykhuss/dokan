@@ -19,7 +19,6 @@ import h5py
 import luigi
 import numpy as np
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
 
 from .._types import GenericPath
 from ..exe._exe_config import ExecutionMode
@@ -56,17 +55,6 @@ class DBMerge(DBTask, metaclass=ABCMeta):
     def resources(self):  # type: ignore
         return super().resources | {"local_ncores": 1}
 
-    def _make_prefix(self, session: Session | None = None) -> str:
-        return (
-            self.__class__.__name__
-            + "["
-            + ", ".join(
-                ([f"force={self.force}"] if self.force else [])
-                + ([f"reset={time.ctime(self.reset_tag)}"] if self.reset_tag > 0.0 else [])
-            )
-            + "]"
-        )
-
 
 class MergePart(DBMerge):
     # > merge only a specific `Part`
@@ -82,19 +70,16 @@ class MergePart(DBMerge):
     # def select_part(self):
     #     return select(Part).where(Part.id == self.part_id).where(Part.active.is_(True))
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._logger_prefix: str = "MergePart"
-        with self.session as session:
-            pt: Part = session.get_one(Part, self.part_id)
-            self._logger_prefix = (
-                self._logger_prefix
-                + f"[{pt.name}"
-                + (f", force={self.force}" if self.force else "")
-                + (f", reset={time.ctime(self.reset_tag)}" if self.reset_tag > 0.0 else "")
-                + "]"
-            )
-            self._debug(session, self._logger_prefix + "::init")
+    @property
+    def _logger_prefix(self) -> str:
+        # > lazy: the part-name lookup must not happen at construction time
+        return (
+            "MergePart"
+            + f"[{self._part_name(self.part_id)}"
+            + (f", force={self.force}" if self.force else "")
+            + (f", reset={time.ctime(self.reset_tag)}" if self.reset_tag > 0.0 else "")
+            + "]"
+        )
 
     @property
     def select_job(self):
@@ -111,6 +96,7 @@ class MergePart(DBMerge):
     def complete(self) -> bool:
         with self.session as session:
             pt: Part = session.get_one(Part, self.part_id)
+            self._part_name(self.part_id, session)  # prime the log-prefix cache (identity-map hit)
 
             if pt.timestamp < self.reset_tag:
                 return False
@@ -195,31 +181,14 @@ class MergePart(DBMerge):
             return
 
         # > Phase 1: short DB session: collect job info, mark jobs MERGED, flag part as in-progress
+        job_rel_paths: list[str] = []
         with self.session as session:
             pt: Part = session.get_one(Part, self.part_id)
-            pt_name: str = pt.name
+            pt_name: str = self._part_name(self.part_id, session)  # also primes the log-prefix cache
             merge_in_progress = pt.timestamp < 0.0
             self._logger(
                 session, self._logger_prefix + "::run: " + ("fresh" if not merge_in_progress else "continue")
             )
-
-            # > output directory
-            mrg_path: Path = self._path.joinpath("result", "part", pt_name)
-            if not mrg_path.exists():
-                mrg_path.mkdir(parents=True)
-
-            # > raw data path: need to move output files if not already moved
-            if (raw_path := self.config["run"].get("raw_path")) is not None:
-                raw_path = Path(raw_path)
-
-            # > populate a dictionary with all histogram files (reduces IO)
-            in_files: dict[str, list[GenericPath]] = dict()
-            single_file: str | None = self.config["run"].get("histograms_single_file")
-            if single_file is None:
-                in_files = dict((obs, []) for obs in self.config["run"]["histograms"])
-            else:
-                in_files[single_file] = []  # all hist in single file
-            # > collect histograms from all jobs
             pt.Ttot = 0.0
             pt.ntot = 0
             for job in session.scalars(self.select_job):
@@ -239,29 +208,7 @@ class MergePart(DBMerge):
                 self._debug(session, self._logger_prefix + f"::run:  appending {job!r}")
                 pt.Ttot += job.elapsed_time
                 pt.ntot += job.niter * job.ncall
-                job_path: Path = self._path / job.rel_path
-                exe_data = ExeData(job_path)
-                if raw_path is not None:
-                    (raw_path / job.rel_path).mkdir(parents=True, exist_ok=True)
-
-                for out in exe_data["output_files"]:
-                    # > move to raw path
-                    if raw_path is not None:
-                        orig_file: Path = job_path / out
-                        dest_file: Path = raw_path / job.rel_path / out
-                        if orig_file.exists() and not orig_file.is_symlink():
-                            shutil.move(orig_file, dest_file)
-                            orig_file.symlink_to(dest_file)
-                    if dat := re.match(r"^.*\.([^.]+)\.s[0-9]+\.dat", out):
-                        if dat.group(1) in in_files:
-                            in_files[dat.group(1)].append(str((job_path / out).relative_to(self._path)))
-                        else:
-                            self._logger(
-                                session,
-                                self._logger_prefix
-                                + "::run:  "
-                                + f"unmatched observable {dat.group(1)}?! ({in_files.keys()})",
-                            )
+                job_rel_paths.append(job.rel_path)
                 if not merge_in_progress:
                     job.status = JobStatus.MERGED
             if not merge_in_progress:
@@ -269,7 +216,56 @@ class MergePart(DBMerge):
                 # > that persists across the MergeObs yielding below
                 pt.timestamp = -1.0
                 self._safe_commit(session)
-        # session closed — HDF5 I/O proceeds without holding a DB connection
+        # session closed — all file collection below proceeds without a DB connection.
+        # > NB: committing MERGED + the sentinel *before* the raw-path moves is safe: a
+        # > crash mid-move lands in the same `merge_in_progress` resume path as a crash
+        # > in the HDF5 phase (which the sentinel was designed for), and the moves are
+        # > idempotent (already-moved files are symlinks and get skipped).
+
+        # > output directory
+        mrg_path: Path = self._path.joinpath("result", "part", pt_name)
+        mrg_path.mkdir(parents=True, exist_ok=True)
+
+        # > raw data path: need to move output files if not already moved
+        if (raw_path := self.config["run"].get("raw_path")) is not None:
+            raw_path = Path(raw_path)
+
+        # > populate a dictionary with all histogram files (reduces IO)
+        in_files: dict[str, list[GenericPath]] = dict()
+        single_file: str | None = self.config["run"].get("histograms_single_file")
+        if single_file is None:
+            in_files = dict((obs, []) for obs in self.config["run"]["histograms"])
+        else:
+            in_files[single_file] = []  # all hist in single file
+        # > collect histograms from all jobs (defer any log messages to the next session)
+        deferred_logs: list[tuple[str, LogLevel]] = []
+        for rel_path in job_rel_paths:
+            job_path: Path = self._path / rel_path
+            exe_data = ExeData(job_path)
+            if raw_path is not None:
+                (raw_path / rel_path).mkdir(parents=True, exist_ok=True)
+
+            for out in exe_data["output_files"]:
+                # > move to raw path
+                if raw_path is not None:
+                    orig_file: Path = job_path / out
+                    dest_file: Path = raw_path / rel_path / out
+                    if orig_file.exists() and not orig_file.is_symlink():
+                        shutil.move(orig_file, dest_file)
+                        orig_file.symlink_to(dest_file)
+                if dat := re.match(r"^.*\.([^.]+)\.s[0-9]+\.dat", out):
+                    if dat.group(1) in in_files:
+                        in_files[dat.group(1)].append(str((job_path / out).relative_to(self._path)))
+                    else:
+                        deferred_logs.append(
+                            (
+                                self._logger_prefix
+                                + "::run:  "
+                                + f"unmatched observable {dat.group(1)}?! ({in_files.keys()})",
+                                LogLevel.INFO,
+                            )
+                        )
+        self._flush_logs(deferred_logs)
 
         #############################
         # > Phase 2: HDF5 I/O: no DB session held
@@ -324,10 +320,16 @@ class MergePart(DBMerge):
                 merge_in_progress=merge_in_progress,
             )
 
-        # > find all obs that have data in the HDF5 file
+        # > find all obs that have data in the HDF5 file; batch-read each group's freshness
+        # > identity `(ndat_valid, version token)` in the same pass so the completeness
+        # > checks below do not re-open the HDF5 file once per observable (expensive on
+        # > networked filesystems)
         hdf5_obs_ready: set[str] = set()
+        obs_identity: dict[str, tuple[int, float]] = {}
         hdf5_file = self._path / "raw" / f"{pt_name}.hdf5"
         with h5py.File(hdf5_file, "r") as h5f:
+            # > mtime fallback mirrors `MergeObs._hdf5_identity` for groups without a timestamp
+            fallback_ts: float = hdf5_file.stat().st_mtime
             if pt_name in h5f:
                 for obs in self.config["run"]["histograms"]:
                     if obs in h5f[pt_name] and "data" in h5f[pt_name][obs]:
@@ -335,6 +337,7 @@ class MergePart(DBMerge):
                         nv = int(h5grp.attrs.get("ndat_valid", h5grp["data"].shape[2]))
                         if nv > 0:
                             hdf5_obs_ready.add(obs)
+                            obs_identity[obs] = (nv, float(h5grp.attrs.get("timestamp", fallback_ts)))
 
         # > dispatch one MergeObs per observable that has data: MergeObs.complete() is the single
         # > freshness authority (new data, missing/stale `.dat`, reset epoch, merge-config change,
@@ -362,7 +365,12 @@ class MergePart(DBMerge):
             for obs, hist_info in self.config["run"]["histograms"].items()
             if obs in hdf5_obs_ready
         }
-        pending_obs = {obs: mrg_obs for obs, mrg_obs in mrg_obs_dict.items() if not mrg_obs.complete()}
+        # > pass the batch-read identity so each completeness check is sidecar-JSON only
+        pending_obs = {
+            obs: mrg_obs
+            for obs, mrg_obs in mrg_obs_dict.items()
+            if not mrg_obs.complete(obs_identity[obs])
+        }
         # > Stall-guard state must live on disk: with `workers > 1` Luigi forks a fresh
         # > process for every run() attempt, so instance attributes do not survive the
         # > restart after the yielded MergeObs complete.
@@ -377,7 +385,10 @@ class MergePart(DBMerge):
             # > (JSON round-trip normalizes tuples to lists so both sides compare equal.)
             pending_identity = json.loads(
                 json.dumps(
-                    sorted((obs, mrg_obs.expected_identity()) for obs, mrg_obs in pending_obs.items())
+                    sorted(
+                        (obs, mrg_obs.expected_identity(obs_identity[obs]))
+                        for obs, mrg_obs in pending_obs.items()
+                    )
                 )
             )
             prior_guard = read_json_sidecar(guard_file)
@@ -390,7 +401,8 @@ class MergePart(DBMerge):
                 # > (Rare false positive: a crash after the guard write but before MergeObs ran;
                 # > deleting the guard file forces a retry.)
                 diagnostics = "; ".join(
-                    f"{obs}: {mrg_obs.describe_incomplete()}" for obs, mrg_obs in sorted(pending_obs.items())
+                    f"{obs}: {mrg_obs.describe_incomplete(obs_identity[obs])}"
+                    for obs, mrg_obs in sorted(pending_obs.items())
                 )
                 raise RuntimeError(
                     self._logger_prefix
@@ -537,12 +549,8 @@ class MergeAll(DBMerge):
                 )
                 + "]"
             )
-        with self.session as session:
-            self._debug(session, self._logger_prefix + "::init")
-        # > output directory
+        # > output directory (created in run(): construction must stay side-effect free)
         self.mrg_path: Path = self._path.joinpath("result", "merge")
-        if not self.mrg_path.exists():
-            self.mrg_path.mkdir(parents=True)
         self.merge_marker: Path = self._path.joinpath("result", "merge_all.json")
 
     @property
@@ -614,101 +622,97 @@ class MergeAll(DBMerge):
             return max_part_timestamp <= marker_max_part_timestamp
 
     def run(self):  # type: ignore[override]
+        self.mrg_path.mkdir(parents=True, exist_ok=True)
+        mrg_parent: Path = self._path.joinpath("result", "part")
+
+        # > Phase 1: short DB session: part inventory & optimization target
         with self.session as session:
             self._logger(session, self._logger_prefix + "::run")
-            mrg_parent: Path = self._path.joinpath("result", "part")
-
-            # > collect all input files
-            in_files = dict((obs, []) for obs in self.config["run"]["histograms"])
+            part_names: list[str] = []
             active_part_ids: list[int] = []
             max_part_timestamp: float = -1.0
-            # > reconstruct optimisation target
-            opt_target: str = self.config["run"]["opt_target"]
-            opt_target_ref: float = 0.0
-            opt_target_rel: float = 0.0
             for pt in session.scalars(self.select_part):
                 active_part_ids.append(pt.id)
+                part_names.append(pt.name)
                 max_part_timestamp = max(max_part_timestamp, pt.timestamp)
                 self._debug(
                     session,
                     self._logger_prefix + f"::run:  processing part {pt.name}: {pt.result} +/- {pt.error}",
                 )
-                opt_target_ref += pt.result
-                opt_target_rel += pt.error**2
-                for obs in self.config["run"]["histograms"]:
-                    in_file: Path = mrg_parent / pt.name / f"{obs}.dat"
-                    if in_file.exists():
-                        in_files[obs].append(str(in_file.relative_to(self._path)))
-                    # > if we add new histograms to template.run later, need to allow the file not to exist
-                    # else:
-                    #     raise FileNotFoundError(f"MergeAll::run:  missing {in_file}")
-            if opt_target_ref != 0.0:
-                opt_target_rel = math.sqrt(opt_target_rel) / abs(opt_target_ref)  # relative uncertainty
-
-            # > use `distribute_time` to fetch optimization target
+            # > use `distribute_time` to fetch the optimization target (includes the
+            # > error-penalty adjustments a plain sum over parts would miss)
             # > use small 1s value; a non-zero time to avoid division by zero
-            # > the above does not include penalty, which is why we override it this way
+            opt_target: str = self.config["run"]["opt_target"]
             opt_dist = self._distribute_time(session, 1.0)
-            opt_target_ref = opt_dist["tot_result"]
-            opt_target_rel = (
+            opt_target_rel: float = (
                 abs(opt_dist["tot_error"] / opt_dist["tot_result"]) if opt_dist["tot_result"] != 0.0 else 0.0
             )
 
-            # > sum all parts
-            written_observables: list[str] = []
-            for obs, hist_info in self.config["run"]["histograms"].items():
-                out_file: Path = self.mrg_path / f"{obs}.dat"
-                nx: int = hist_info["nx"]
-                qwgt: bool = self.grids and _obs_has_grid(hist_info)
-                if len(in_files[obs]) == 0:
-                    self._logger(
-                        session,
-                        self._logger_prefix + f"::run:  no files for {obs}",
-                        level=LogLevel.ERROR,
-                    )
-                    continue
-                acc = _accumulate_dat(
-                    in_files[obs],
-                    nx,
-                    self._path,
-                    on_error=lambda f, e: self._logger(
-                        session, f"error reading file {f} ({e!r})", level=LogLevel.ERROR
-                    ),
+        # > Phase 2: filesystem I/O (collect & accumulate part files): no DB session
+        # > held; log messages produced here are deferred to the next session
+        deferred_logs: list[tuple[str, LogLevel]] = []
+        in_files = dict((obs, []) for obs in self.config["run"]["histograms"])
+        for pt_name in part_names:
+            for obs in self.config["run"]["histograms"]:
+                in_file: Path = mrg_parent / pt_name / f"{obs}.dat"
+                if in_file.exists():
+                    in_files[obs].append(str(in_file.relative_to(self._path)))
+                # > if we add new histograms to template.run later, need to allow the file not to exist
+                # else:
+                #     raise FileNotFoundError(f"MergeAll::run:  missing {in_file}")
+
+        # > sum all parts
+        written_observables: list[str] = []
+        for obs, hist_info in self.config["run"]["histograms"].items():
+            out_file: Path = self.mrg_path / f"{obs}.dat"
+            nx: int = hist_info["nx"]
+            qwgt: bool = self.grids and _obs_has_grid(hist_info)
+            if len(in_files[obs]) == 0:
+                deferred_logs.append(
+                    (self._logger_prefix + f"::run:  no files for {obs}", LogLevel.ERROR)
                 )
-                if acc is None:
-                    self._logger(
-                        session,
-                        self._logger_prefix + f"::run:  no usable files for {obs}",
-                        level=LogLevel.ERROR,
-                    )
-                    continue
-                labels, neval, xval, hist, used = acc
-                _write_dat(out_file, labels, neval, nx, xval, hist)
-                written_observables.append(obs)
-                if qwgt:
-                    weights_file = out_file.with_suffix(".weights.txt")
-                    filenames = [(self._path / f).as_posix() for f in used]
-                    weights = np.ones((hist.shape[0], len(filenames)), dtype=np.float64)
-                    _write_weights(weights_file, nx, xval, filenames, weights)
-                if obs == "cross":
-                    with open(out_file) as cross:
-                        for line in cross:
-                            if line.startswith("#"):
-                                continue
-                            col: list[float] = [float(c) for c in line.split()]
-                            res: float = col[0]
-                            # err: float = col[1]
-                            # rel: float = abs(err / res) if res != 0.0 else float("inf")
-                            self._logger(
-                                session,
-                                # f"[blue]cross = ({res} +/- {err}) fb  \[{rel * 1e2:.3}%][/blue]\n"
+                continue
+            acc = _accumulate_dat(
+                in_files[obs],
+                nx,
+                self._path,
+                on_error=lambda f, e: deferred_logs.append(
+                    (f"error reading file {f} ({e!r})", LogLevel.ERROR)
+                ),
+            )
+            if acc is None:
+                deferred_logs.append(
+                    (self._logger_prefix + f"::run:  no usable files for {obs}", LogLevel.ERROR)
+                )
+                continue
+            labels, neval, xval, hist, used = acc
+            _write_dat(out_file, labels, neval, nx, xval, hist)
+            written_observables.append(obs)
+            if qwgt:
+                weights_file = out_file.with_suffix(".weights.txt")
+                filenames = [(self._path / f).as_posix() for f in used]
+                weights = np.ones((hist.shape[0], len(filenames)), dtype=np.float64)
+                _write_weights(weights_file, nx, xval, filenames, weights)
+            if obs == "cross":
+                with open(out_file) as cross:
+                    for line in cross:
+                        if line.startswith("#"):
+                            continue
+                        col: list[float] = [float(c) for c in line.split()]
+                        res: float = col[0]
+                        deferred_logs.append(
+                            (
                                 f"[blue]cross = {res} fb[/blue]\n"
                                 + f'[magenta][dim]current "{opt_target}" error:[/dim]\n'
                                 + f"{opt_target_rel * 1e2:.3}%"
                                 + f" (requested: {self.config['run']['target_rel_acc'] * 1e2:.3}%)[/magenta]",
-                                level=LogLevel.SIG_UPDXS,
+                                LogLevel.SIG_UPDXS,
                             )
-                            break
+                        )
+                        break
+
+        # > Phase 3: short DB session: emit the deferred log messages
+        self._flush_logs(deferred_logs)
         marker = {
             "run_tag": self.run_tag,
             "active_part_ids": active_part_ids,
@@ -728,6 +732,9 @@ class MergeAll(DBMerge):
             if not fin_path.exists():
                 fin_path.mkdir(parents=True)
             mrg_parent_fin: Path = self._path.joinpath("result", "part")
+            # > short DB session: which orders can be written, and from which parts
+            deferred_logs = []
+            orders_to_write: list[tuple[Order, list[str]]] = []
             with self.session as session:
                 for out_order in Order:
                     select_order = select(Part)  # no need to be active: .where(Part.active.is_(True))
@@ -758,72 +765,77 @@ class MergeAll(DBMerge):
                         self._logger_prefix
                         + f"::run:  {out_order}: {list(map(lambda x: (x.id, x.ntot), matched_parts))}",
                     )
+                    orders_to_write.append((out_order, [pt.name for pt in matched_parts]))
 
-                    in_files_fin = dict((obs, []) for obs in self.config["run"]["histograms"])
-                    for pt in matched_parts:
-                        for obs in self.config["run"]["histograms"]:
-                            in_file: Path = mrg_parent_fin / pt.name / f"{obs}.dat"
-                            if in_file.exists():
-                                in_files_fin[obs].append(str(in_file.relative_to(self._path)))
-                            else:
-                                # > can happen when new histogram added manually
-                                self._logger(
-                                    session,
+            # > filesystem I/O + pineappl-merge subprocess: no DB session held
+            for out_order, matched_names in orders_to_write:
+                in_files_fin = dict((obs, []) for obs in self.config["run"]["histograms"])
+                for pt_name in matched_names:
+                    for obs in self.config["run"]["histograms"]:
+                        in_file: Path = mrg_parent_fin / pt_name / f"{obs}.dat"
+                        if in_file.exists():
+                            in_files_fin[obs].append(str(in_file.relative_to(self._path)))
+                        else:
+                            # > can happen when new histogram added manually
+                            deferred_logs.append(
+                                (
                                     self._logger_prefix + f"::run:  skipping missing file: {in_file}",
-                                    level=LogLevel.WARN,
+                                    LogLevel.WARN,
                                 )
+                            )
 
-                    # > sum all parts
-                    for obs, hist_info in self.config["run"]["histograms"].items():
-                        out_file: Path = fin_path / f"{out_order}.{obs}.dat"
-                        nx: int = hist_info["nx"]
-                        qwgt: bool = self.grids and _obs_has_grid(hist_info)
-                        if len(in_files_fin[obs]) == 0:
-                            self._logger(
-                                session,
-                                self._logger_prefix + f"::run:  no files for {obs}",
-                                level=LogLevel.ERROR,
-                            )
-                            continue
-                        acc = _accumulate_dat(
-                            in_files_fin[obs],
-                            nx,
-                            self._path,
-                            on_error=lambda f, e: self._logger(
-                                session,
-                                self._logger_prefix + f"::run:  error reading file {f} ({e!r})",
-                                level=LogLevel.ERROR,
-                            ),
+                # > sum all parts
+                for obs, hist_info in self.config["run"]["histograms"].items():
+                    out_file: Path = fin_path / f"{out_order}.{obs}.dat"
+                    nx: int = hist_info["nx"]
+                    qwgt: bool = self.grids and _obs_has_grid(hist_info)
+                    if len(in_files_fin[obs]) == 0:
+                        deferred_logs.append(
+                            (self._logger_prefix + f"::run:  no files for {obs}", LogLevel.ERROR)
                         )
-                        if acc is None:
-                            self._logger(
-                                session,
-                                self._logger_prefix + f"::run:  no usable files for {obs}",
-                                level=LogLevel.ERROR,
+                        continue
+                    acc = _accumulate_dat(
+                        in_files_fin[obs],
+                        nx,
+                        self._path,
+                        on_error=lambda f, e: deferred_logs.append(
+                            (
+                                self._logger_prefix + f"::run:  error reading file {f} ({e!r})",
+                                LogLevel.ERROR,
                             )
-                            continue
-                        labels, neval, xval, hist, used = acc
-                        _write_dat(out_file, labels, neval, nx, xval, hist)
-                        if qwgt:
-                            weights_file = out_file.with_suffix(".weights.txt")
-                            filenames = [(self._path / f).as_posix() for f in used]
-                            weights = np.ones((hist.shape[0], len(filenames)), dtype=np.float64)
-                            _write_weights(weights_file, nx, xval, filenames, weights)
-                            pine_merge: Path = (
-                                Path(self.config["exe"]["path"]).parent / "nnlojet-merge-pineappl"
-                            )
-                            if pine_merge.is_file() and os.access(pine_merge, os.X_OK):
-                                # > all parts ready -> combine into final grid
-                                grid_file: Path = out_file.with_suffix(".pineappl.lz4")
-                                _run_pineappl_merge(pine_merge, weights_file, grid_file, check=False)
-                            else:
-                                self._logger(
-                                    session,
+                        ),
+                    )
+                    if acc is None:
+                        deferred_logs.append(
+                            (self._logger_prefix + f"::run:  no usable files for {obs}", LogLevel.ERROR)
+                        )
+                        continue
+                    labels, neval, xval, hist, used = acc
+                    _write_dat(out_file, labels, neval, nx, xval, hist)
+                    if qwgt:
+                        weights_file = out_file.with_suffix(".weights.txt")
+                        filenames = [(self._path / f).as_posix() for f in used]
+                        weights = np.ones((hist.shape[0], len(filenames)), dtype=np.float64)
+                        _write_weights(weights_file, nx, xval, filenames, weights)
+                        pine_merge: Path = (
+                            Path(self.config["exe"]["path"]).parent / "nnlojet-merge-pineappl"
+                        )
+                        if pine_merge.is_file() and os.access(pine_merge, os.X_OK):
+                            # > all parts ready -> combine into final grid
+                            grid_file: Path = out_file.with_suffix(".pineappl.lz4")
+                            _run_pineappl_merge(pine_merge, weights_file, grid_file, check=False)
+                        else:
+                            deferred_logs.append(
+                                (
                                     f"[red]{self._logger_prefix}::run:"
                                     + "  missing nnlojet-merge-pineappl executable"
                                     + f"  at {pine_merge}[/red]",
-                                    level=LogLevel.ERROR,
+                                    LogLevel.ERROR,
                                 )
+                            )
+
+            # > short DB session: emit the deferred log messages
+            self._flush_logs(deferred_logs)
             # > re-write marker atomically with finalized flag added
             marker["finalized"] = True
             marker_tmp = self.merge_marker.with_suffix(".json.tmp")
@@ -839,12 +851,10 @@ class MergeFinal(DBMerge):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._logger_prefix: str = "MergeFinal"
-        with self.session as session:
-            if self.force or self.reset_tag > 0.0:
-                self._logger_prefix = (
-                    self._logger_prefix + f"[force={self.force}, reset={time.ctime(self.reset_tag)}]"
-                )
-            self._debug(session, self._logger_prefix + "::init")
+        if self.force or self.reset_tag > 0.0:
+            self._logger_prefix = (
+                self._logger_prefix + f"[force={self.force}, reset={time.ctime(self.reset_tag)}]"
+            )
 
         # > output directory
         self.fin_path: Path = self._path.joinpath("result", "final")
@@ -853,8 +863,6 @@ class MergeFinal(DBMerge):
         self.error = float("inf")
 
     def requires(self):
-        with self.session as session:
-            self._debug(session, self._logger_prefix + "::requires")
         return [self.clone(MergeAll, force=True, finalize=True)]
 
     def complete(self) -> bool:
