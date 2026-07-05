@@ -252,6 +252,19 @@ class DBTask(Task, metaclass=ABCMeta):
     def _debug(self, session: Session, message: str) -> None:
         self._logger(session, message, LogLevel.DEBUG)
 
+    def _flush_logs(self, entries: list[tuple[str, LogLevel]]) -> None:
+        """Emit `(message, level)` entries collected during session-free work.
+
+        Companion to the phased `run()` pattern: filesystem/HDF5 work that must
+        not hold a DB session defers its log messages and flushes them here in
+        one short session afterwards.  No session is opened for an empty list.
+        """
+        if not entries:
+            return
+        with self.session as session:
+            for message, level in entries:
+                self._logger(session, message, level=level)
+
     def _update_job(
         self,
         session: Session,
