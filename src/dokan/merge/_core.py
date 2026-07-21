@@ -832,7 +832,10 @@ class MergeObs(Task):
                 np.square(bin_cmlt["sumf"], out=bin_buf1, where=_mask)
                 np.divide(bin_buf1, bin_cmlt["neval"], out=bin_buf1, where=_mask)
                 np.subtract(bin_cmlt["sumf2"], bin_buf1, out=bin_buf1, where=_mask)
-                np.square(bin_cmlt["neval"], out=bin_buf2, where=_mask)
+                # > `out` does not influence NumPy's ufunc loop selection: without an
+                # > explicit dtype, int64 event counts overflow before reaching this
+                # > float64 buffer once a source or k-scan pseudo-job exceeds sqrt(INT64_MAX).
+                np.square(bin_cmlt["neval"], out=bin_buf2, where=_mask, dtype=np.float64)
                 np.divide(bin_buf2, bin_buf1, out=bin_buf1, where=_mask)
                 _error = np.sum(bin_buf1[_mask])
                 if _error > 0.0:
@@ -898,7 +901,9 @@ class MergeObs(Task):
                     np.multiply(bin_neval, bin_data["result"], out=bin_cmlt["sumf"][:ndat])
                     bin_buf1[:] = 0
                     bin_buf2[:] = 0
-                    np.square(bin_neval, out=bin_buf1[:ndat])
+                    # > force floating-point squaring; a float64 output alone would still
+                    # > execute NumPy's int64 square loop and only cast after overflowing
+                    np.square(bin_neval, out=bin_buf1[:ndat], dtype=np.float64)
                     np.multiply(bin_data["error2"], bin_buf1[:ndat], out=bin_buf1[:ndat])
                     np.square(bin_data["result"], out=bin_buf2[:ndat])
                     np.multiply(bin_neval, bin_buf2[:ndat], out=bin_buf2[:ndat])
@@ -1011,7 +1016,10 @@ class MergeObs(Task):
                                 # > the merged/absorbed data will be set in this "parent" active case
                                 # > the weight from the weighted average
                                 _neval, _sumf, _sumf2 = bin_cmlt[idat]
-                                _ierr2 = (_sumf2 - _sumf**2 / _neval) / _neval**2
+                                # > promote the NumPy int64 scalar before squaring it;
+                                # > otherwise large jobs silently receive zero grid weight
+                                _neval_float = np.float64(_neval)
+                                _ierr2 = (_sumf2 - _sumf**2 / _neval_float) / _neval_float**2
                                 if _ierr2 <= 0.0:
                                     # > near-constant integrand: floating-point rounding makes the
                                     # > variance estimate non-positive even though Σf² > 0.
