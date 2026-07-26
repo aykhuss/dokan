@@ -17,6 +17,7 @@ import signal
 import sys
 import time
 from pathlib import Path
+from typing import cast
 
 import luigi
 from rich.console import Console
@@ -36,10 +37,15 @@ from .db._jobstatus import JobStatus
 from .db._loglevel import LogLevel
 from .db._sqla import Job, Log, Part
 from .entry import Entry
-from .exe import ExecutionPolicy, Executor, ExeData
+from .exe import ExecutionMode, ExecutionPolicy, Executor, ExeData
 from .monitor import Monitor
 from .nnlojet import check_PDF, dry_run, get_lumi
 from .order import Order
+from .preproduction import (
+    PreProduction,
+    WarmupRestartPending,
+    WarmupRestartSeeded,
+)
 from .runcard import Runcard, RuncardTemplate
 from .scheduler import WorkerSchedulerFactory
 from .util import parse_time_interval
@@ -194,8 +200,7 @@ def main() -> None:
 
             if runcard.data["process_name"] != _cfg["process"]["name"]:
                 raise RuntimeError(
-                    f"process name in template {runcard.data['process_name']} does not match "
-                    f"the one in the config {_cfg['process']['name']}"
+                    f"process name in template {runcard.data['process_name']} does not match the one in the config {_cfg['process']['name']}"
                 ) from exc
             for pdf in runcard.data["PDFs"]:
                 if not check_PDF(_cfg["exe"]["path"], pdf):
@@ -270,7 +275,9 @@ def main() -> None:
     parser_submit.add_argument("--seed-offset", type=int, help="seed offset")
     parser_submit.add_argument("--local-cores", type=int, help="maximum number of local cores")
     parser_submit.add_argument(
-        "--skip-warmup", help="skip the warmup stage", action=argparse.BooleanOptionalAction
+        "--warmup",
+        action=argparse.BooleanOptionalAction,
+        help="re-open or skip (`--no-warmup`) the warmup phase",
     )
     parser_submit.add_argument(
         "--live-monitor", help="switch on/off the live monitor", action=argparse.BooleanOptionalAction
@@ -483,12 +490,6 @@ def main() -> None:
                 config["ui"]["log_level"] = new_log_level
                 console.print(f"[dim]log_level = {config['ui']['log_level']!r}[/dim]")
 
-                new_warmup_frozen: bool = Confirm.ask(
-                    "freeze the warmup?", default=config["warmup"]["frozen"]
-                )
-                config["warmup"]["frozen"] = new_warmup_frozen
-                console.print(f"[dim]frozen = {config['warmup']['frozen']!r}[/dim]")
-
                 if ((raw_path := config["run"].get("raw_path")) is not None) or (
                     Confirm.ask("Store the raw data at a separate location?", default=False)
                 ):
@@ -510,8 +511,7 @@ def main() -> None:
                     console.print(f"[dim]raw_path = {config['run']['raw_path']!r}[/dim]")
 
                 console.print(
-                    "[dim]more advanced settings in config.json "
-                    "(consult documentation in src/dokan/config.py)[/dim]"
+                    "[dim]more advanced settings in config.json (consult documentation in src/dokan/config.py)[/dim]"
                 )
 
                 # > config with flags skip the default config options
@@ -611,8 +611,7 @@ def main() -> None:
             'these defaults can be reconfigured later with the [italic]"config"[/italic] subcommand'
         )
         console.print(
-            "consult the subcommand help `submit --help` "
-            "how these settings can be overridden for each submission"
+            "consult the subcommand help `submit --help` how these settings can be overridden for each submission"
         )
 
         new_policy: ExecutionPolicy = ExecutionPolicyPrompt.ask(
@@ -782,8 +781,10 @@ def main() -> None:
                     config["run"]["jobs_max_concurrent"] = args.jobs_max_concurrent
                 if args.seed_offset is not None:
                     config["run"]["seed_offset"] = args.seed_offset
-                if args.skip_warmup is not None:
-                    config["warmup"]["frozen"] = args.skip_warmup
+                if args.warmup is False:
+                    # > `--no-warmup`: accept existing grids, skip the warmup QC
+                    # > for this submission (not persisted)
+                    config["warmup"]["skip_qc"] = True
                 if args.live_monitor is not None:
                     config["ui"]["monitor"] = args.live_monitor
                 if args.log_level is not None:
@@ -988,6 +989,52 @@ def main() -> None:
                 # > leaving ACTIVE jobs untouched would stall dispatch & merge on them
                 sys.exit("cannot submit with unresolved ACTIVE jobs: recover or remove them")
 
+        # > explicit warmup skip: `--no-warmup` set `warmup.skip_qc`
+        if args.warmup is False:
+            console.print("skip warmup QC (--no-warmup): accept existing grids")
+            with db_init.session as session:
+                parts_with_warmup: set[int] = set(
+                    session.scalars(
+                        select(Job.part_id)
+                        .where(Job.mode == ExecutionMode.WARMUP)
+                        .where(Job.status.in_(JobStatus.success_list()))
+                        .distinct()
+                    )
+                )
+                missing_warmup: list[str] = [
+                    pt.name
+                    for pt in session.scalars(select(Part).where(Part.active.is_(True)))
+                    if pt.id not in parts_with_warmup
+                ]
+            if missing_warmup:
+                console.print(
+                    " > no successful warmup yet (one warmup step will still run): "
+                    + ", ".join(missing_warmup)
+                )
+
+        # > explicit warmup restart: re-open the warmup phase for parts
+        # > whose QC criteria fail under the current configuration.
+        if args.warmup:
+            with db_init.session as session:
+                seed_parts: list[tuple[int, str]] = [
+                    (pt.id, pt.name) for pt in session.scalars(select(Part).where(Part.active.is_(True)))
+                ]
+            console.print("re-open warmup phase (--warmup)...")
+            for part_id, part_name in seed_parts:
+                preprod = cast(PreProduction, db_init.clone(PreProduction, config=config, part_id=part_id))
+                outcome = preprod.seed_warmup_restart()
+                if isinstance(outcome, WarmupRestartSeeded):
+                    console.print(f" > {part_name}: warmup re-opened [dim](job_id = {outcome.job.id})[/dim]")
+                elif isinstance(outcome, WarmupRestartPending):
+                    console.print(
+                        f" > {part_name}: warmup already pending" + f" [dim](job_id = {outcome.job.id})[/dim]"
+                    )
+                else:
+                    console.print(
+                        f" > {part_name}: QC already satisfied [dim]({outcome.flags})[/dim] —"
+                        + " adjust the warmup config to extend the warmup"
+                    )
+
         # > determine resources and dynamic job settings
         jobs_max: int = min(config["run"]["jobs_max_concurrent"], config["run"]["jobs_max_total"])
         # > a resurrected cluster batch claims `jobs_concurrent == njobs` for its
@@ -1001,9 +1048,7 @@ def main() -> None:
             max_resurrect_batch = _max_resurrect_batch_size(Path(config["run"]["path"]), resurrect_jobs)
             if max_resurrect_batch > jobs_max:
                 console.print(
-                    f"[yellow]resurrected batch of {max_resurrect_batch} jobs exceeds"
-                    f" the concurrency limit {jobs_max}: expanding the pool"
-                    " for this submission[/yellow]"
+                    f"[yellow]resurrected batch of {max_resurrect_batch} jobs exceeds the concurrency limit {jobs_max}: expanding the pool for this submission[/yellow]"
                 )
                 jobs_concurrent = max_resurrect_batch
         console.print(f"# CPU cores: {cpu_count}")

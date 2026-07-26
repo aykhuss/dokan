@@ -33,8 +33,7 @@
     "fac_increment": 4.0,
     "max_chi2dof": 1.2,
     "max_err_rel_var": 0.3,
-    "scaling_window": 0.3,
-    "frozen": false
+    "scaling_window": 0.3
   },
   "production": {
     "ncores": 1,

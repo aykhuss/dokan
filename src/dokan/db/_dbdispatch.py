@@ -100,8 +100,7 @@ class DBDispatch(DBTask):
         busy-loop re-yielding a non-progressing dispatcher.
         """
         signal_present = (
-            session.scalars(select(Log).where(Log.level == LogLevel.SIG_DISPATCH_DONE)).first()
-            is not None
+            session.scalars(select(Log).where(Log.level == LogLevel.SIG_DISPATCH_DONE)).first() is not None
         )
         if not signal_present:
             return False
@@ -590,9 +589,7 @@ class DBDispatch(DBTask):
             if queue_full:
                 # > only dynamic dispatch (id == 0) can be throttled: bounded dispatch
                 # > (`id > 0`) returns from `_repopulate` immediately with False
-                signal_tasks = self._poll_dispatch_signals_until(
-                    time.monotonic() + self._dispatch_interval()
-                )
+                signal_tasks = self._poll_dispatch_signals_until(time.monotonic() + self._dispatch_interval())
                 if signal_tasks:
                     yield self._with_dispatch_continuation(signal_tasks)
                     return

@@ -11,7 +11,9 @@ _schema : dict
     define the structure of Config
 """
 
+import copy
 import json
+import warnings
 from collections import UserDict
 from pathlib import Path
 
@@ -94,7 +96,7 @@ _schema: dict = {
         "max_chi2dof": float,  # maximum chi2/dof from iterations of the warmup to accept
         "max_err_rel_var": float,  # maximum relative variation of the errors between iterations to accept
         "scaling_window": float,  # tolerance for 1/sqrt(N) MC error scaling
-        "frozen": bool,  # flag to freeze the warmup stage
+        "skip_qc": bool,  # submit-time only (`--no-warmup`): accept the current grid, skip the QC
     },
     "production": {
         "ncores": int,  # #of cores to allocate to a single production run
@@ -111,6 +113,22 @@ _schema: dict = {
         "k_scan_maxdev_steps": float,  # maximum deviation to identify a plateau
     },
 }
+
+# > keys dropped from the schema but possibly persisted by older versions:
+# > pruned on load so validation keeps rejecting genuinely unknown keys
+_deprecated: list[tuple[str, str]] = [
+    ("warmup", "frozen"),  # superseded by `submit --warmup/--no-warmup` (ADR-0001)
+]
+
+# > keys that only ever live for one submission (set by the CLI, in-memory):
+# > pruned on load and stripped on write so they can never become persistent
+_transient: list[tuple[str, str]] = [
+    ("warmup", "skip_qc"),  # `submit --no-warmup`
+]
+
+# > sentinel to tell "key absent" apart from "key present with a falsy value"
+# > (e.g. `frozen: false`) when pruning: presence must decide the warning, not truthiness
+_MISSING = object()
 
 
 class Config(UserDict):
@@ -157,10 +175,7 @@ class Config(UserDict):
         ):
             return False
         if "production" in self.data:
-            if (
-                "min_number" in self.data["production"]
-                and self.data["production"]["min_number"] < 1
-            ):
+            if "min_number" in self.data["production"] and self.data["production"]["min_number"] < 1:
                 return False
             # > the merge trigger ratio (#done+#merged+1)/(#merged+1) is exactly 1.0 once a
             # > part is fully merged, so `fac_merge_trigger <= 1.0` would make MergePart.complete()
@@ -198,6 +213,15 @@ class Config(UserDict):
         if self.file_cfg and self.file_cfg.exists():
             with open(self.file_cfg) as fin:
                 self.data = json.load(fin)
+            for section, key in _deprecated:
+                if self.data.get(section, {}).pop(key, _MISSING) is not _MISSING:
+                    warnings.warn(f"Config: dropped deprecated setting {section}.{key}", stacklevel=2)
+            for section, key in _transient:
+                if self.data.get(section, {}).pop(key, _MISSING) is not _MISSING:
+                    warnings.warn(
+                        f"Config: {section}.{key} is submit-time only; ignored from file",
+                        stacklevel=2,
+                    )
         else:
             if not default_ok:
                 raise FileNotFoundError(f"Config file not found: {self.file_cfg}")
@@ -220,5 +244,8 @@ class Config(UserDict):
     def write(self) -> None:
         if not self.path or not self.file_cfg:
             raise RuntimeError("Config: no path set?!")
+        data: dict = copy.deepcopy(self.data)
+        for section, key in _transient:
+            data.get(section, {}).pop(key, None)
         with open(self.file_cfg, "w") as cfg:
-            json.dump(self.data, cfg, indent=2)
+            json.dump(data, cfg, indent=2)

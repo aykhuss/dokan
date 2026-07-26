@@ -112,8 +112,7 @@ class Monitor(DBTask):
         display_mode: ExecutionMode = (
             ExecutionMode.WARMUP
             if any(
-                c.mode == ExecutionMode.WARMUP and c.status in JobStatus.active_list()
-                for c in part_counts
+                c.mode == ExecutionMode.WARMUP and c.status in JobStatus.active_list() for c in part_counts
             )
             else ExecutionMode.PRODUCTION
         )

@@ -367,9 +367,7 @@ class MergePart(DBMerge):
         }
         # > pass the batch-read identity so each completeness check is sidecar-JSON only
         pending_obs = {
-            obs: mrg_obs
-            for obs, mrg_obs in mrg_obs_dict.items()
-            if not mrg_obs.complete(obs_identity[obs])
+            obs: mrg_obs for obs, mrg_obs in mrg_obs_dict.items() if not mrg_obs.complete(obs_identity[obs])
         }
         # > Stall-guard state must live on disk: with `workers > 1` Luigi forks a fresh
         # > process for every run() attempt, so instance attributes do not survive the
@@ -668,9 +666,7 @@ class MergeAll(DBMerge):
             nx: int = hist_info["nx"]
             qwgt: bool = self.grids and _obs_has_grid(hist_info)
             if len(in_files[obs]) == 0:
-                deferred_logs.append(
-                    (self._logger_prefix + f"::run:  no files for {obs}", LogLevel.ERROR)
-                )
+                deferred_logs.append((self._logger_prefix + f"::run:  no files for {obs}", LogLevel.ERROR))
                 continue
             acc = _accumulate_dat(
                 in_files[obs],
@@ -817,9 +813,7 @@ class MergeAll(DBMerge):
                         filenames = [(self._path / f).as_posix() for f in used]
                         weights = np.ones((hist.shape[0], len(filenames)), dtype=np.float64)
                         _write_weights(weights_file, nx, xval, filenames, weights)
-                        pine_merge: Path = (
-                            Path(self.config["exe"]["path"]).parent / "nnlojet-merge-pineappl"
-                        )
+                        pine_merge: Path = Path(self.config["exe"]["path"]).parent / "nnlojet-merge-pineappl"
                         if pine_merge.is_file() and os.access(pine_merge, os.X_OK):
                             # > all parts ready -> combine into final grid
                             grid_file: Path = out_file.with_suffix(".pineappl.lz4")

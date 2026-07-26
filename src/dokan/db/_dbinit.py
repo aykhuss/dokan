@@ -60,8 +60,7 @@ class DBInit(DBTask):
             with self._engine(_DBRole.JOB).connect() as conn:
                 conn.execute(
                     text(
-                        "CREATE UNIQUE INDEX IF NOT EXISTS ix_job_part_mode_seed"
-                        " ON job (part_id, mode, seed)"
+                        "CREATE UNIQUE INDEX IF NOT EXISTS ix_job_part_mode_seed ON job (part_id, mode, seed)"
                     )
                 )
                 conn.commit()

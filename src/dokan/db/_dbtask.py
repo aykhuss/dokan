@@ -20,6 +20,7 @@ from ._sqla import DokanDB, DokanLog, Job, Log, Part
 
 _console = Console()
 
+
 class _DBRole(Enum):
     """Which database an engine serves; determines its durability policy."""
 
@@ -113,9 +114,7 @@ def _cached_engine(url: str, role: _DBRole) -> Engine:
         # > check_same_thread=False: pooled connections may be checked out by a
         # > different thread than the one that created them; the pool serializes
         # > access so the sqlite3 objects are never used concurrently.
-        engine = create_engine(
-            url, connect_args={"timeout": _SQLITE_TIMEOUT, "check_same_thread": False}
-        )
+        engine = create_engine(url, connect_args={"timeout": _SQLITE_TIMEOUT, "check_same_thread": False})
         event.listen(engine, "connect", partial(_apply_pragmas, _CONNECT_PRAGMAS[role]))
         _ENGINE_CACHE[key] = engine
     return engine
@@ -202,9 +201,7 @@ class DBTask(Task, metaclass=ABCMeta):
                 f"(c)[dim][{dt_str}][/dim](ERROR): DBTask::_safe_commit failed"
                 f" [dim](changes rolled back, NOT committed)[/dim]: {e!r}"
             )
-            raise RuntimeError(
-                "DBTask::_safe_commit: commit failed; pending changes were rolled back"
-            ) from e
+            raise RuntimeError("DBTask::_safe_commit: commit failed; pending changes were rolled back") from e
 
     def output(self):
         # > DBTask has no output files but uses the DB itself to track the status
