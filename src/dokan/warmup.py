@@ -304,7 +304,7 @@ def resize_failed_preproduction(failed: JobSize, settings: PreProductionSettings
     PP_ntot: int = failed.ntot // 2
     PP_ncall: int = max(1, PP_ntot // settings.start.niter)
     warning: str | None = None
-    # if PP_ncall < settings.start.ncall:
-    #     PP_ncall = settings.start.ncall
-    #     warning = "pre-production failed after reaching minimum ncall"
+    if PP_ncall < settings.start.ncall:
+        PP_ncall = settings.start.ncall
+        warning = "pre-production failed after reaching minimum ncall"
     return SizingDecision(size=JobSize(ncall=PP_ncall, niter=settings.start.niter), warning=warning)

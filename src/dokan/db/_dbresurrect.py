@@ -85,7 +85,6 @@ class DBResurrect(DBTask):
             Executor.factory(
                 policy=self.exe_data["policy"],
                 path=str(self.exe_data.path.absolute()),
-                priority_bump=100,
             )
         ]
 

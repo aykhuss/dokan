@@ -200,7 +200,8 @@ def main() -> None:
 
             if runcard.data["process_name"] != _cfg["process"]["name"]:
                 raise RuntimeError(
-                    f"process name in template {runcard.data['process_name']} does not match the one in the config {_cfg['process']['name']}"
+                    f"process name in template {runcard.data['process_name']} "
+                    + f"does not match the one in the config {_cfg['process']['name']}"
                 ) from exc
             for pdf in runcard.data["PDFs"]:
                 if not check_PDF(_cfg["exe"]["path"], pdf):
@@ -511,7 +512,8 @@ def main() -> None:
                     console.print(f"[dim]raw_path = {config['run']['raw_path']!r}[/dim]")
 
                 console.print(
-                    "[dim]more advanced settings in config.json (consult documentation in src/dokan/config.py)[/dim]"
+                    "[dim]more advanced settings in config.json "
+                    + "(consult documentation in src/dokan/config.py)[/dim]"
                 )
 
                 # > config with flags skip the default config options
@@ -611,7 +613,8 @@ def main() -> None:
             'these defaults can be reconfigured later with the [italic]"config"[/italic] subcommand'
         )
         console.print(
-            "consult the subcommand help `submit --help` how these settings can be overridden for each submission"
+            "consult the subcommand help `submit --help` how these settings "
+            + "can be overridden for each submission"
         )
 
         new_policy: ExecutionPolicy = ExecutionPolicyPrompt.ask(
@@ -1048,7 +1051,9 @@ def main() -> None:
             max_resurrect_batch = _max_resurrect_batch_size(Path(config["run"]["path"]), resurrect_jobs)
             if max_resurrect_batch > jobs_max:
                 console.print(
-                    f"[yellow]resurrected batch of {max_resurrect_batch} jobs exceeds the concurrency limit {jobs_max}: expanding the pool for this submission[/yellow]"
+                    f"[yellow]resurrected batch of {max_resurrect_batch} jobs "
+                    + f"exceeds the concurrency limit {jobs_max}: "
+                    + "expanding the pool for this submission[/yellow]"
                 )
                 jobs_concurrent = max_resurrect_batch
         console.print(f"# CPU cores: {cpu_count}")

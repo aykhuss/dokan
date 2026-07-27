@@ -160,25 +160,26 @@ class Entry(DBTask):
             self._logger(session, f"{self._logger_prefix}::run:  complete preprods -> MergeAll")
         yield self.clone(MergeAll, force=True, reset_tag=reset_tag)
 
-        # > stage 3: production dispatch (+ production resurrection)
+        # > stage 3: production dispatch (+ production resurrection).  Do not
+        # > pre-populate here: yield recovery and dispatch together so Luigi can
+        # > prioritize resurrection while dispatch uses remaining resources.
         with self.session as session:
             self._logger(session, f"{self._logger_prefix}::run:  complete MergeAll -> dispatch")
-            dispatch_task = self.clone(DBDispatch, id=0, _n=0)
-            _ = dispatch_task._repopulate(session)  # type: ignore[attr-defined]
-            dispatch: list = [] if dispatch_task.complete() else [dispatch_task]
-            # > add production resurrection tasks
-            if self._resurrect_jobs:
-                dispatch = [
-                    self.clone(DBResurrect, run_tag=r[0], rel_path=r[1])
-                    for r in {
-                        (jd["run_tag"], jd["rel_path"])
-                        for jd in self._resurrect_jobs.values()
-                        if ExecutionMode(jd["mode"]) == ExecutionMode.PRODUCTION
-                    }
-                ] + dispatch
-            if dispatch:
-                self._debug(session, f"{self._logger_prefix}::run:  yield dispatch")
+
+        dispatch_task = self.clone(DBDispatch, id=0, _n=0)
+        dispatch: list = [] if dispatch_task.complete() else [dispatch_task]
+        if self._resurrect_jobs:
+            dispatch = [
+                self.clone(DBResurrect, run_tag=r[0], rel_path=r[1])
+                for r in {
+                    (jd["run_tag"], jd["rel_path"])
+                    for jd in self._resurrect_jobs.values()
+                    if ExecutionMode(jd["mode"]) == ExecutionMode.PRODUCTION
+                }
+            ] + dispatch
         if dispatch:
+            with self.session as session:
+                self._debug(session, f"{self._logger_prefix}::run:  yield dispatch")
             yield dispatch
 
         # > stage 4: final merge & completion signal
