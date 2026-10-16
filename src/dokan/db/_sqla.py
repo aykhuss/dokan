@@ -37,7 +37,7 @@ class Part(DokanDB):
 
     # > result of the last merge
     Ttot: Mapped[float] = mapped_column(default=0.0)
-    ntot: Mapped[float] = mapped_column(BigInteger(), default=0)
+    ntot: Mapped[int] = mapped_column(BigInteger(), default=0)
     result: Mapped[float] = mapped_column(default=0.0)
     error: Mapped[float] = mapped_column(default=math.inf)
     # number of jobs?

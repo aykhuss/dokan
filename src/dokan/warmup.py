@@ -11,6 +11,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import IntFlag, auto
 
+from ._types import JobSize
+
 
 class WarmupFlag(IntFlag):
     """QC criteria and termination reasons behind a warmup decision."""
@@ -35,24 +37,6 @@ class WarmupFlag(IntFlag):
 
 
 _NO_FLAGS: WarmupFlag = WarmupFlag(0)
-
-
-@dataclass(frozen=True)
-class JobSize:
-    """Validated statistics for one job."""
-
-    ncall: int
-    niter: int
-
-    def __post_init__(self) -> None:
-        if self.ncall <= 0:
-            raise ValueError(f"ncall must be positive, got {self.ncall}")
-        if self.niter <= 0:
-            raise ValueError(f"niter must be positive, got {self.niter}")
-
-    @property
-    def ntot(self) -> int:
-        return self.ncall * self.niter
 
 
 @dataclass(frozen=True)

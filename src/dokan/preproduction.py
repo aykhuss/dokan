@@ -4,6 +4,7 @@ import luigi
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ._types import JobSize
 from .db import DBTask, Job, JobStatus
 from .db._dbdispatch import DBDispatch
 from .db._dbresurrect import DBResurrect
@@ -11,7 +12,6 @@ from .db._loglevel import LogLevel
 from .exe import ExecutionMode
 from .exe._exe_data import ExeData
 from .warmup import (
-    JobSize,
     PreProductionSettings,
     SizingDecision,
     WarmupAssessmentQC,
@@ -159,7 +159,7 @@ class PreProduction(DBTask):
         Premature terminations can land DONE with `niter` rescaled to 0 (no
         statistics): no basis for QC or sizing, and `ntot` is a divisor in
         the assessment — exclude them (cf. the same guard in
-        `_distribute_time`).
+        `distribute_time`).
         """
         past_warmups = session.scalars(
             select(Job)
