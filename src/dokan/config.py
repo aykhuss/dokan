@@ -249,3 +249,16 @@ class Config(UserDict):
             data.get(section, {}).pop(key, None)
         with open(self.file_cfg, "w") as cfg:
             json.dump(data, cfg, indent=2)
+
+
+def submission_batch_size(config: Config, nactive_part: int) -> int:
+    """Batch size of a submission; it also sets the per-Part failure limit."""
+    jobs_max: int = min(config["run"]["jobs_max_concurrent"], config["run"]["jobs_max_total"])
+    # > cap batches at available slots: each executor reserves its entire batch
+    batch_size: int = min(
+        max(2 * (jobs_max // nactive_part) + 1, config["run"]["jobs_batch_unit_size"]),
+        jobs_max,
+    )
+    if config["exe"]["policy"] == ExecutionPolicy.SLURM:
+        batch_size = min(batch_size, 1000)
+    return batch_size
