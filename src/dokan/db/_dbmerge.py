@@ -21,6 +21,7 @@ import numpy as np
 from sqlalchemy import func, select
 
 from .._types import GenericPath
+from ..distribute import safe_rel_error
 from ..exe._exe_config import ExecutionMode
 from ..exe._exe_data import ExeData
 from ..merge._core import (
@@ -34,6 +35,7 @@ from ..merge._core import (
 )
 from ..order import Order
 from ..util import format_time_interval, read_json_sidecar, write_json_sidecar
+from ._dbproduction import distribute_production_time
 from ._dbtask import DBTask
 from ._jobstatus import JobStatus
 from ._loglevel import LogLevel
@@ -286,14 +288,16 @@ class MergePart(DBMerge):
         hdf5_obs_files: dict[str, set[GenericPath]] = {}
         if merge_in_progress and hdf5_file.is_file():
             with h5py.File(hdf5_file, "r", libver="latest", swmr=True) as h5f:
-                if pt_name in h5f:
-                    for obs in self.config["run"]["histograms"]:
-                        if obs in h5f[pt_name] and "data" in h5f[pt_name][obs]:
-                            h5grp = h5f[pt_name][obs]
-                            nv = int(h5grp.attrs.get("ndat_valid", h5grp["data"].shape[2]))
-                            if nv > 0:
-                                hdf5_obs_ready.add(obs)
-                                hdf5_obs_files[obs] = set(h5grp["files"].asstr()[:nv])
+                for obs in self.config["run"]["histograms"]:
+                    if f"{pt_name}/{obs}/data" not in h5f:
+                        continue
+                    h5grp = cast(h5py.Group, h5f[f"{pt_name}/{obs}"])
+                    data = cast(h5py.Dataset, h5grp["data"])
+                    nv = int(h5grp.attrs.get("ndat_valid", data.shape[2]))
+                    if nv > 0:
+                        hdf5_obs_ready.add(obs)
+                        files = cast(h5py.Dataset, h5grp["files"])
+                        hdf5_obs_files[obs] = set(files.asstr()[:nv])
 
         resume_hdf5 = (
             merge_in_progress
@@ -330,14 +334,15 @@ class MergePart(DBMerge):
         with h5py.File(hdf5_file, "r") as h5f:
             # > mtime fallback mirrors `MergeObs._hdf5_identity` for groups without a timestamp
             fallback_ts: float = hdf5_file.stat().st_mtime
-            if pt_name in h5f:
-                for obs in self.config["run"]["histograms"]:
-                    if obs in h5f[pt_name] and "data" in h5f[pt_name][obs]:
-                        h5grp = h5f[pt_name][obs]
-                        nv = int(h5grp.attrs.get("ndat_valid", h5grp["data"].shape[2]))
-                        if nv > 0:
-                            hdf5_obs_ready.add(obs)
-                            obs_identity[obs] = (nv, float(h5grp.attrs.get("timestamp", fallback_ts)))
+            for obs in self.config["run"]["histograms"]:
+                if f"{pt_name}/{obs}/data" not in h5f:
+                    continue
+                h5grp = cast(h5py.Group, h5f[f"{pt_name}/{obs}"])
+                data = cast(h5py.Dataset, h5grp["data"])
+                nv = int(h5grp.attrs.get("ndat_valid", data.shape[2]))
+                if nv > 0:
+                    hdf5_obs_ready.add(obs)
+                    obs_identity[obs] = (nv, float(h5grp.attrs.get("timestamp", fallback_ts)))
 
         # > dispatch one MergeObs per observable that has data: MergeObs.complete() is the single
         # > freshness authority (new data, missing/stale `.dat`, reset epoch, merge-config change,
@@ -602,7 +607,7 @@ class MergeAll(DBMerge):
                 self._logger_prefix
                 + f"::complete:  marker {datetime.datetime.fromtimestamp(marker_run_tag)}",
             )
-            active_parts: list[Part] = session.scalars(self.select_part).all()
+            active_parts = session.scalars(self.select_part).all()
             active_part_ids = [pt.id for pt in active_parts]
             if set(active_part_ids) != set(marker_part_ids):
                 return False
@@ -629,22 +634,20 @@ class MergeAll(DBMerge):
             part_names: list[str] = []
             active_part_ids: list[int] = []
             max_part_timestamp: float = -1.0
+            tot_result: float = 0.0
+            tot_variance: float = 0.0
             for pt in session.scalars(self.select_part):
                 active_part_ids.append(pt.id)
                 part_names.append(pt.name)
                 max_part_timestamp = max(max_part_timestamp, pt.timestamp)
+                tot_result += pt.result
+                tot_variance += pt.error**2 if math.isfinite(pt.error) else math.inf
                 self._debug(
                     session,
                     self._logger_prefix + f"::run:  processing part {pt.name}: {pt.result} +/- {pt.error}",
                 )
-            # > use `distribute_time` to fetch the optimization target (includes the
-            # > error-penalty adjustments a plain sum over parts would miss)
-            # > use small 1s value; a non-zero time to avoid division by zero
             opt_target: str = self.config["run"]["opt_target"]
-            opt_dist = self._distribute_time(session, 1.0)
-            opt_target_rel: float = (
-                abs(opt_dist["tot_error"] / opt_dist["tot_result"]) if opt_dist["tot_result"] != 0.0 else 0.0
-            )
+            opt_target_rel: float = safe_rel_error(math.sqrt(tot_variance), tot_result)
 
         # > Phase 2: filesystem I/O (collect & accumulate part files): no DB session
         # > held; log messages produced here are deferred to the next session
@@ -856,8 +859,8 @@ class MergeFinal(DBMerge):
         self.result = float("nan")
         self.error = float("inf")
 
-    def requires(self):
-        return [self.clone(MergeAll, force=True, finalize=True)]
+    def requires(self) -> list[MergeAll]:
+        return [cast(MergeAll, self.clone(MergeAll, force=True, finalize=True))]
 
     def complete(self) -> bool:
         with self.session as session:
@@ -869,10 +872,6 @@ class MergeFinal(DBMerge):
         return False
 
     def run(self):  # type: ignore[override]
-        def safe_rel(error: float, result: float) -> float:
-            """Relative accuracy that tolerates a vanishing result (maps to inf)."""
-            return abs(error / result) if result != 0.0 else float("inf")
-
         with self.session as session:
             self._logger(session, self._logger_prefix + "::run")
 
@@ -894,7 +893,7 @@ class MergeFinal(DBMerge):
                     self.result = float(line.split()[0])
                     self.error = float(line.split()[1])
                     break
-            rel_acc: float = safe_rel(self.error, self.result)
+            rel_acc: float = safe_rel_error(self.error, self.result)
             # > compute total runtime invested
             T_tot: float = sum(pt.Ttot for pt in session.scalars(select(Part).where(Part.active.is_(True))))
             self._logger(
@@ -902,18 +901,17 @@ class MergeFinal(DBMerge):
                 f"\n[blue]cross = ({self.result} +/- {self.error}) fb  [{rel_acc * 1e2:.3}%][/blue]"
                 + f"\n[dim](total runtime invested: {format_time_interval(T_tot)})[/dim]",
             )
-            # > use `distribute_time` to fetch optimization target
+            # > use `distribute_production_time` to fetch optimization target
             # > & time estimate to reach desired accuracy
             # > use small 1s value; a non-zero time to avoid division by zero
             prev_T_target: float = 1.0
-            opt_dist = self._distribute_time(session, prev_T_target)
-            # self._logger(session,f"{opt_dist}")
+            opt_dist = distribute_production_time(self, session, prev_T_target)
             opt_target: str = self.config["run"]["opt_target"]
             self._logger(
                 session,
                 f'option "[bold]{opt_target}[/bold]" chosen to target optimization of rel. acc.',
             )
-            rel_acc: float = safe_rel(opt_dist["tot_error"], opt_dist["tot_result"])
+            rel_acc: float = opt_dist.rel_acc
             if rel_acc <= self.config["run"]["target_rel_acc"] * (1.05):
                 self._logger(
                     session,
@@ -926,20 +924,30 @@ class MergeFinal(DBMerge):
                     f"[red]reached rel. acc. {rel_acc * 1e2:.3}% on {opt_target}[/red]"
                     + f" (requested: {self.config['run']['target_rel_acc'] * 1e2:.3}%)",
                 )
-                T_target: float = opt_dist["T_target"]
-                # > because of inequality constraints, need to loop to find reliable estimate
-                while T_target / prev_T_target > 1.3:
-                    opt_dist = self._distribute_time(session, T_target)
-                    prev_T_target = T_target
-                    T_target = opt_dist["T_target"]
-                njobs_target: int = sum(ires["njobs"] for _, ires in opt_dist["part"].items())
-                self._logger(
-                    session,
-                    "still require about"
-                    + f" [bold]{format_time_interval(T_target)}[/bold]"
-                    + " of runtime to reach desired target accuracy"
-                    + f" [dim](approx. {njobs_target} jobs)[/dim]",
-                )
+                # > the E-L estimate cannot account for Parts that get no further runtime
+                no_estimate = sorted({*opt_dist.unallocated_part_ids, *opt_dist.health.stuck})
+                if no_estimate:
+                    self._logger(
+                        session,
+                        "runtime estimate unavailable: parts without usable production statistics"
+                        + " or that cannot take further jobs: "
+                        + ", ".join(map(str, no_estimate)),
+                        level=LogLevel.WARN,
+                    )
+                else:
+                    T_target: float = opt_dist.T_target
+                    # > because of inequality constraints, need to loop to find reliable estimate
+                    while T_target / prev_T_target > 1.3:
+                        opt_dist = distribute_production_time(self, session, T_target)
+                        prev_T_target = T_target
+                        T_target = opt_dist.T_target
+                    self._logger(
+                        session,
+                        "still require about"
+                        + f" [bold]{format_time_interval(T_target)}[/bold]"
+                        + " of runtime to reach desired target accuracy"
+                        + f" [dim](approx. {opt_dist.njobs_total} jobs)[/dim]",
+                    )
 
             # > mark the workflow complete (also shuts down the monitor).  Written *last*
             # > so that a failure anywhere above leaves the run incomplete instead of
