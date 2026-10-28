@@ -274,12 +274,23 @@ class MergePart(DBMerge):
         # we create a separate file for each `Part` to allow for parallelised processing
         # * add a mask? -> no! MergeObs should only read
         # @todo refactor into separate member routine?
-        # @todo: add move to `raw_path`
         # @todo: better to save sumf & sumf2? more convenient for unweighted combination and the k-scan.
         # Could start by storing res & err, then switch to sumf & sumf2 later.
         # Maybe an attribute to flag what of the two is stored? Helper routine to convert could also help.
         resize_max: int = max(len(files) for files in in_files.values()) if in_files else 0
         hdf5_file = self._path / "raw" / f"{pt_name}.hdf5"
+
+        # > raw data path: keep the HDF5 file there, symlinked from its run-local path.
+        # > The target must exist before linking: h5py cannot create a file through a
+        # > dangling symlink (O_EXCL).
+        if raw_path is not None and not hdf5_file.is_symlink():
+            dest_hdf5: Path = raw_path / "raw" / hdf5_file.name
+            dest_hdf5.parent.mkdir(parents=True, exist_ok=True)
+            if hdf5_file.exists():
+                shutil.move(hdf5_file, dest_hdf5)
+            else:
+                h5py.File(dest_hdf5, "a", libver="latest").close()
+            hdf5_file.symlink_to(dest_hdf5)
 
         # > If Luigi resumed this task after yielding MergeObs, avoid touching
         # > the HDF5 file before checking MergeObs.complete(): its mtime is part
