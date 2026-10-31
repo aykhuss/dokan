@@ -501,6 +501,13 @@ def main() -> None:
                 raise RuntimeError(f'PDF set: "{pdf}" not found')
         run_template: RuncardTemplate = runcard.to_template(config.path / config["run"]["template"])
         config["run"]["md5"] = run_template.to_md5_hash()
+
+        # if there are grids to be filled, default to a single iteration for production
+        if any([hist.get("grid", False) for hist in config["run"].get("histograms", {}).values()]):
+            niter_default = config["production"]["niter"]
+            config["production"]["niter"] = 1
+            config["production"]["ncall_start"] *= niter_default
+
         config.write()
 
         # > do a dry run to check that the runcard is valid
