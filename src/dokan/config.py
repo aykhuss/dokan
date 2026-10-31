@@ -126,6 +126,16 @@ _transient: list[tuple[str, str]] = [
     ("warmup", "skip_qc"),  # `submit --no-warmup`
 ]
 
+# > suffixes (after `{policy}_`) of `exe.policy_settings` keys that may stay unset: every other
+# > `{policy}_*` key of the schema is required to submit with that policy
+# > (see `Config.missing_policy_settings`)
+_optional_policy_settings: frozenset[str] = frozenset(
+    {
+        "ncores",  # Luigi resource / executor default
+        "njobs_per_node",  # @todo: currently unused (future feature)
+    }
+)
+
 # > sentinel to tell "key absent" apart from "key present with a falsy value"
 # > (e.g. `frozen: false`) when pruning: presence must decide the warning, not truthiness
 _MISSING = object()
@@ -235,6 +245,28 @@ class Config(UserDict):
             # > skip the check if we don't have a md5 yet
             if (original_hash := self.data["run"].get("md5")) is not None and template_hash != original_hash:
                 raise RuntimeError("Template has been manually modified, this is not allowed.")
+
+    def missing_policy_settings(self) -> list[str]:
+        """List the policy settings the execution policy needs but this config lacks.
+
+        Each `{policy}_*` key of the schema is required unless its suffix is in
+        `_optional_policy_settings`. A configured template must also exist in the run
+        folder for `DBRunner` to find it.
+        """
+        prefix: str = f"{str(self.data['exe']['policy']).lower()}_"
+        settings: dict = self.data["exe"]["policy_settings"]
+        missing: list[str] = [
+            key
+            for key in _schema["exe"]["policy_settings"]
+            if key.startswith(prefix)
+            and key.removeprefix(prefix) not in _optional_policy_settings
+            and key not in settings
+        ]
+        if (template := settings.get(f"{prefix}template")) is not None and (
+            self.path is None or not (self.path / template).is_file()
+        ):
+            missing.append(f"{prefix}template file {template!r} in the run folder")
+        return missing
 
     def fill_defaults(self):
         with open(_default_config) as tmp:

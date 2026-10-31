@@ -5,6 +5,7 @@ and a factory design pattern to obtain tasks for the different policies.
 """
 
 import logging
+import string
 import time
 from abc import ABCMeta, abstractmethod
 from pathlib import Path
@@ -45,6 +46,9 @@ class Executor(luigi.Task, metaclass=ABCMeta):
     priority_bump: int = luigi.IntParameter(default=0)  # type: ignore[assignment]
 
     _priority_default: ClassVar[int] = 100
+
+    # > `${name}` placeholders of the submission template (empty: no template)
+    template_fields: ClassVar[tuple[str, ...]] = ()
 
     @property
     def priority(self) -> int:
@@ -196,6 +200,16 @@ class Executor(luigi.Task, metaclass=ABCMeta):
 
         """
         return []
+
+    @classmethod
+    def check_template(cls, path: GenericPath) -> None:
+        """Raise ValueError if the template at `path` would not render at submission."""
+        try:
+            string.Template(Path(path).read_text()).substitute(dict.fromkeys(cls.template_fields, ""))
+        except KeyError as exc:
+            raise ValueError(f"unknown placeholder ${{{exc.args[0]}}}") from exc
+        except ValueError as exc:
+            raise ValueError(f"{exc} (write $$ for a literal $)") from exc
 
     def output(self) -> list[luigi.Target]:
         """Get the task output.

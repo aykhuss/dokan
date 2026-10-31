@@ -10,10 +10,23 @@ import string
 import subprocess
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 from ..._types import GenericPath
 from ...db._loglevel import LogLevel
 from .._executor import Executor
+
+
+class HTCondorTemplateFields(NamedTuple):
+    """`${name}` placeholders available in an HTCondor submission template."""
+
+    exe: str
+    job_path: str
+    ncores: int
+    start_seed: int
+    nseed: int
+    input_files: str
+    max_runtime: int
 
 
 class HTCondorExec(Executor):
@@ -25,6 +38,7 @@ class HTCondorExec(Executor):
         name of the HTCondor submisison file
     """
 
+    template_fields = HTCondorTemplateFields._fields
     _file_sub: str = "job.sub"
 
     # @todo consider using `concurrency_limits` instead?
@@ -58,20 +72,20 @@ class HTCondorExec(Executor):
             return
 
         # > populate the submission template file
-        condor_settings: dict = {
-            "exe": self.exe_data["exe"],
-            "job_path": str(self.exe_data.path.absolute()),
-            "ncores": self.exe_data["policy_settings"].get("htcondor_ncores", 1),
-            "start_seed": min(job["seed"] for job in self.exe_data["jobs"].values()),
-            "nseed": self.njobs,
-            "input_files": ", ".join(self.exe_data["input_files"]),
-            "max_runtime": int(self.exe_data["policy_settings"]["max_runtime"]),
-        }
+        fields = HTCondorTemplateFields(
+            exe=self.exe_data["exe"],
+            job_path=str(self.exe_data.path.absolute()),
+            ncores=self.exe_data["policy_settings"].get("htcondor_ncores", 1),
+            start_seed=min(job["seed"] for job in self.exe_data["jobs"].values()),
+            nseed=self.njobs,
+            input_files=", ".join(self.exe_data["input_files"]),
+            max_runtime=int(self.exe_data["policy_settings"]["max_runtime"]),
+        )
         with open(self.htcondor_template) as t, open(self.file_sub, "w") as f:
-            f.write(string.Template(t.read()).substitute(condor_settings))
+            f.write(string.Template(t.read()).substitute(fields._asdict()))
 
         job_env = os.environ.copy()
-        job_env["OMP_NUM_THREADS"] = f"{condor_settings['ncores']}"
+        job_env["OMP_NUM_THREADS"] = f"{fields.ncores}"
         job_env["OMP_STACKSIZE"] = "1024M"
 
         cluster_id: int = -1  # init failed state

@@ -174,6 +174,103 @@ class LogLevelPrompt(PromptBase[LogLevel]):
         return parsed
 
 
+def _configure_cluster_settings(config: Config, console: Console) -> None:
+    """Prompt for the scheduler poll time of a cluster policy and fill in missing retry defaults.
+
+    Existing retry settings (possibly hand-edited in config.json) are preserved.
+    """
+    if config["exe"]["policy"] not in [ExecutionPolicy.HTCONDOR, ExecutionPolicy.SLURM]:
+        return
+    cluster: str = str(config["exe"]["policy"]).lower()
+    max_runtime: float = config["run"]["job_max_runtime"]
+    # > polling time intervals (aim for polling every 10% of job run but at least 10s)
+    default_poll_time: float = max(10.0, max_runtime / 10.0)
+    if f"{cluster}_poll_time" in config["exe"]["policy_settings"]:
+        default_poll_time = config["exe"]["policy_settings"][f"{cluster}_poll_time"]
+    while True:
+        new_poll_time: float = TimeIntervalPrompt.ask(
+            f"time interval between pinging {cluster} scheduler for job updates",
+            default=default_poll_time,
+        )
+        if new_poll_time >= 10.0 and new_poll_time < max_runtime / 2:
+            break
+        console.print(f"please enter a positive value between [10, {max_runtime / 2}] seconds")
+    config["exe"]["policy_settings"][f"{cluster}_poll_time"] = new_poll_time
+    console.print(f"[dim]poll_time = {config['exe']['policy_settings'][f'{cluster}_poll_time']!r}s[/dim]")
+    # > more cluster defaults, expert user can edit config.json
+    config["exe"]["policy_settings"].setdefault(f"{cluster}_nretry", 10)
+    config["exe"]["policy_settings"].setdefault(f"{cluster}_retry_delay", 30.0)
+
+
+def _configure_exe_template(config: Config, console: Console) -> None:
+    """Select the executor template of a cluster policy and copy it into the run folder.
+
+    An active template (configured and present in the run folder) is displayed and kept by
+    default; replacing it requires selecting a built-in and confirming the overwrite. The
+    config entry only changes once the template file in the run folder is settled.
+    """
+    exe_templates: list[Path] = [
+        Path(t) for t in Executor.get_cls(policy=config["exe"]["policy"]).templates()
+    ]
+    if not exe_templates:
+        return
+    if config.path is None:
+        raise RuntimeError("_configure_exe_template: no run path set")
+    cluster: str = str(config["exe"]["policy"]).lower()
+    key: str = f"{cluster}_template"
+
+    # > active template: show it and keep it unless the user explicitly asks for a new one
+    active: Path | None = None
+    if (active_name := config["exe"]["policy_settings"].get(key)) is not None and (
+        config.path / active_name
+    ).is_file():
+        active = config.path / active_name
+        console.print(f"active {cluster} template: [italic]{active.name}[/italic]")
+        with open(active) as run_exe_template:
+            console.print(Syntax(run_exe_template.read(), "shell", word_wrap=True))
+        if Confirm.ask(f"keep the active {cluster} template?", default=True):
+            return
+
+    exe_template: Path = exe_templates[0]
+    if len(exe_templates) > 1:
+        console.print(f"please select one of the following built-in {cluster} templates:")
+        for i, t in enumerate(exe_templates):
+            console.print(f" [italic]{i}:[/italic] {t.name}")
+        default_index: int = next(
+            (i for i, t in enumerate(exe_templates) if active is not None and t.name == active.name), 0
+        )
+        it: int = IntPrompt.ask(
+            "template index",
+            choices=[str(i) for i in range(len(exe_templates))],
+            default=default_index,
+        )
+        exe_template = exe_templates[it]
+
+    dst: Path = config.path / exe_template.name
+    if active is not None or dst.exists():
+        if active is not None:
+            overwrites: str = f" (overwrites {dst.name} in the run folder)" if dst.exists() else ""
+            question: str = (
+                f"replace the active {cluster} template {active.name} "
+                + f"with the built-in {exe_template.name}{overwrites}?"
+            )
+        else:
+            question = f"{cluster} template {dst.name} already exists in run folder, overwrite it?"
+        if not Confirm.ask(question, default=False):
+            # > keep whatever file the user already has in the run folder
+            kept: Path = active if active is not None else dst
+            config["exe"]["policy_settings"][key] = kept.name
+            console.print(f"keeping existing {cluster} template [italic]{kept.name}[/italic]")
+            return
+
+    shutil.copyfile(exe_template, dst)
+    config["exe"]["policy_settings"][key] = exe_template.name
+    console.print(f"{cluster} template: [italic]{exe_template.name}[/italic] copied to run folder:")
+    with open(dst) as run_exe_template:
+        console.print(Syntax(run_exe_template.read(), "shell", word_wrap=True))
+    console.print("please edit this file to your needs")
+
+
 def main() -> None:
     """Run the Dokan CLI dispatcher and selected subcommand workflow."""
     # > some action-global variables
@@ -688,66 +785,10 @@ def main() -> None:
         # @todo policy settings
 
         # > common cluster settings
-        cluster: str
-        if config["exe"]["policy"] in [ExecutionPolicy.HTCONDOR, ExecutionPolicy.SLURM]:
-            cluster = str(config["exe"]["policy"]).lower()
-            max_runtime: float = config["run"]["job_max_runtime"]
-            # > polling time intervals (aim for polling every 10% of job run but at least 10s)
-            default_poll_time: float = max(10.0, max_runtime / 10.0)
-            if f"{cluster}_poll_time" in config["exe"]["policy_settings"]:
-                default_poll_time = config["exe"]["policy_settings"][f"{cluster}_poll_time"]
-            while True:
-                new_poll_time: float = TimeIntervalPrompt.ask(
-                    f"time interval between pinging {cluster} scheduler for job updates",
-                    default=default_poll_time,
-                )
-                if new_poll_time > 10.0 and new_poll_time < max_runtime / 2:
-                    break
-                console.print(f"please enter a positive value between [10, {max_runtime / 2}] seconds")
-            config["exe"]["policy_settings"][f"{cluster}_poll_time"] = new_poll_time
-            console.print(
-                f"[dim]poll_time = {config['exe']['policy_settings'][f'{cluster}_poll_time']!r}s[/dim]"
-            )
-            # > more cluster defaults, expert user can edit config.json
-            config["exe"]["policy_settings"][f"{cluster}_nretry"] = 10
-            config["exe"]["policy_settings"][f"{cluster}_retry_delay"] = 30.0
+        _configure_cluster_settings(config, console)
 
         # > executor templates
-        if len(exe_templates := Executor.get_cls(policy=config["exe"]["policy"]).templates()) > 0:
-            cluster = str(config["exe"]["policy"]).lower()
-            # console.print(f"execution policy \"[bold]{cluster}[/bold]\" requires templates!")
-            exe_template: Path = Path(exe_templates[0])
-            if len(exe_templates) > 1:
-                console.print(f"please select one of the following built-in {cluster} templates:")
-                for i, t in enumerate(exe_templates):
-                    console.print(f" [italic]{i}:[/italic] {Path(t).name}")
-                it: int = IntPrompt.ask(
-                    "template index",
-                    choices=[str(i) for i in range(len(exe_templates))],
-                    default=0,
-                )
-                exe_template = Path(exe_templates[it])
-            config["exe"]["policy_settings"][f"{cluster}_template"] = exe_template.name
-            dst: Path = config.path / config["exe"]["policy_settings"][f"{cluster}_template"]
-            copy_template: bool = True
-            if dst.exists():
-                if Confirm.ask(
-                    f"{cluster} template already exists in run folder, do you want to overwrite it?",
-                    default=False,
-                ):
-                    dst.unlink()
-                else:
-                    console.print(f"keeping existing {cluster} template, skipping copy")
-                    copy_template = False
-            if copy_template:
-                shutil.copyfile(exe_template, dst)
-                console.print(
-                    f"{cluster} template: [italic]{exe_template.name}[/italic] copied to run folder:"
-                )
-                with open(dst) as run_exe_template:
-                    syntx = Syntax(run_exe_template.read(), "shell", word_wrap=True)
-                    console.print(syntx)
-                console.print("please edit this file to your needs")
+        _configure_exe_template(config, console)
 
         config.write()
 
@@ -815,6 +856,21 @@ def main() -> None:
                             skip_channels.extend(matches)
                         else:
                             console.print(f" > --skip-channels:  channel {ch!r} did not match, skipping")
+                # > fail early instead of in every executor batch (CLI overrides are not persisted)
+                if missing := config.missing_policy_settings():
+                    sys.exit(
+                        f"policy {str(config['exe']['policy']).lower()} is not configured for this run, "
+                        + f"missing: {', '.join(missing)}\n"
+                        + f'set it up with "nnlojet-run config {args.run_path}" first'
+                    )
+                exe_cls = Executor.get_cls(config["exe"]["policy"])
+                if exe_cls.template_fields:
+                    policy_name: str = str(config["exe"]["policy"]).lower()
+                    template: str = config["exe"]["policy_settings"][f"{policy_name}_template"]
+                    try:
+                        exe_cls.check_template(config.path / template)  # type: ignore[operator]
+                    except ValueError as exc:
+                        sys.exit(f"{policy_name} template {template}: {exc}")
             case "doctor":
                 # > no monitor needed for doctor
                 config["ui"]["monitor"] = False
