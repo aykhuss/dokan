@@ -183,7 +183,7 @@ class MergePart(DBMerge):
             return
 
         # > Phase 1: short DB session: collect job info, mark jobs MERGED, flag part as in-progress
-        job_rel_paths: list[str] = []
+        job_seeds_by_path: dict[str, set[int]] = {}
         with self.session as session:
             pt: Part = session.get_one(Part, self.part_id)
             pt_name: str = self._part_name(self.part_id, session)  # also primes the log-prefix cache
@@ -210,7 +210,9 @@ class MergePart(DBMerge):
                 self._debug(session, self._logger_prefix + f"::run:  appending {job!r}")
                 pt.Ttot += job.elapsed_time
                 pt.ntot += job.niter * job.ncall
-                job_rel_paths.append(job.rel_path)
+                seeds = job_seeds_by_path.setdefault(job.rel_path, set())
+                if job.seed is not None:
+                    seeds.add(job.seed)
                 if not merge_in_progress:
                     job.status = JobStatus.MERGED
             if not merge_in_progress:
@@ -241,7 +243,7 @@ class MergePart(DBMerge):
             in_files[single_file] = []  # all hist in single file
         # > collect histograms from all jobs (defer any log messages to the next session)
         deferred_logs: list[tuple[str, LogLevel]] = []
-        for rel_path in job_rel_paths:
+        for rel_path, seeds in job_seeds_by_path.items():
             job_path: Path = self._path / rel_path
             exe_data = ExeData(job_path)
             if raw_path is not None:
@@ -255,7 +257,10 @@ class MergePart(DBMerge):
                     if orig_file.exists() and not orig_file.is_symlink():
                         shutil.move(orig_file, dest_file)
                         orig_file.symlink_to(dest_file)
-                if dat := re.match(r"^.*\.([^.]+)\.s[0-9]+\.dat", out):
+                if dat := re.match(r"^.*\.([^.]+)\.s([0-9]+)\.dat", out):
+                    # A batch can contain partial histograms from failed seeds.
+                    if int(dat.group(2)) not in seeds:
+                        continue
                     if dat.group(1) in in_files:
                         in_files[dat.group(1)].append(str((job_path / out).relative_to(self._path)))
                     else:
