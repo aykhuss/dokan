@@ -461,7 +461,10 @@ def build_obs_group(
                 h5dat_neval: h5py.Dataset = h5grp_obs["neval"]
                 h5dat_data: h5py.Dataset = h5grp_obs["data"]
                 nrows, ncols, ndat_phys = h5dat_data.shape
-                ndat_old: int = int(h5grp_obs.attrs.get("ndat_valid", ndat_phys))
+                if "ndat_valid" not in h5grp_obs.attrs:
+                    h5grp_obs.attrs["ndat_valid"] = ndat_phys  # ensure exists.
+                ndat_old: int = int(h5grp_obs.attrs["ndat_valid"])
+
                 if nx > 0:
                     xval = h5dat_data.dims[0][0][...]
 
