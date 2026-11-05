@@ -340,7 +340,6 @@ def build_obs_group(
     histograms: dict,
     base_path: Path,
     single_file: str | None = None,
-    merge_in_progress: bool = False,
 ) -> dict[str, int]:
     """Ingest per-observable `.dat` files into an HDF5 group (DB-free).
 
@@ -475,7 +474,12 @@ def build_obs_group(
                 ]
                 ndat_new: int = len(in_files_new)
                 timestamp_old = float(h5grp_obs.attrs["timestamp"])
-                if ndat_new == 0 or (timestamp_old < 0 and not merge_in_progress):
+                if ndat_new == 0:
+                    if timestamp_old < 0:
+                        # > interrupted after committing `ndat_valid`: only the timestamp is missing
+                        h5grp_obs.attrs["timestamp"] = max(
+                            (base_path / file_path).stat().st_mtime for file_path in in_files_old
+                        )
                     continue
                 h5grp_obs.attrs["timestamp"] = -1.0  # flag merging state
                 # > resize datasets to accommodate new files (only extends, never shrinks)
@@ -576,6 +580,26 @@ def build_obs_group(
             # > single_file is not None
             raise NotImplementedError("single_file option not implemented yet")
     return resize_obs
+
+
+def has_stale_rows(hdf5_file: Path, group_name: str, in_files: dict[str, list[GenericPath]]) -> bool:
+    """Whether any committed row is not a fully written entry of the current inputs.
+
+    Older versions could commit rows that were never written (a failed first ingestion
+    recorded no `ndat_valid`; such rows keep the `neval` fill value 0) and rows of failed
+    seeds.  `build_obs_group` is append-only and never revisits them, so the caller must
+    rebuild the cache when this returns True.  `in_files` must list all current inputs.
+    """
+    with h5py.File(hdf5_file, "r", libver="latest", swmr=True) as h5f:
+        for obs, files in in_files.items():
+            h5grp_obs = h5f.get(f"{group_name}/{obs}")
+            if h5grp_obs is None or "data" not in h5grp_obs:
+                continue
+            ndat = int(h5grp_obs.attrs.get("ndat_valid", h5grp_obs["data"].shape[2]))
+            stored = set(h5grp_obs["files"].asstr()[:ndat])
+            if not stored <= set(files) or np.any(h5grp_obs["neval"][:ndat] == 0):
+                return True
+    return False
 
 
 def merge_settings(config: dict) -> dict:
