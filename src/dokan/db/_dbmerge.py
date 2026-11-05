@@ -224,7 +224,8 @@ class MergePart(DBMerge):
         # > NB: committing MERGED + the sentinel *before* the raw-path moves is safe: a
         # > crash mid-move lands in the same `merge_in_progress` resume path as a crash
         # > in the HDF5 phase (which the sentinel was designed for), and the moves are
-        # > idempotent (already-moved files are symlinks and get skipped).
+        # > idempotent (existing symlinks are skipped, and a missing link is restored
+        # > if a move completed before link creation was interrupted).
 
         # > output directory
         mrg_path: Path = self._path.joinpath("result", "part", pt_name)
@@ -256,6 +257,8 @@ class MergePart(DBMerge):
                     dest_file: Path = raw_path / rel_path / out
                     if orig_file.exists() and not orig_file.is_symlink():
                         shutil.move(orig_file, dest_file)
+                        orig_file.symlink_to(dest_file)
+                    elif not orig_file.exists() and not orig_file.is_symlink() and dest_file.exists():
                         orig_file.symlink_to(dest_file)
                 if dat := re.match(r"^.*\.([^.]+)\.s([0-9]+)\.dat", out):
                     # A batch can contain partial histograms from failed seeds.
