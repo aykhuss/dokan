@@ -383,10 +383,8 @@ class ExeData(UserDict):
             if len(log_matches) != 1:
                 continue
             try:
-                parsed_data = parse_log_file(Path(self.path) / log_matches[0])
-                for key in parsed_data:
-                    job_data[key] = parsed_data[key]
-            except Exception:
+                job_data.update(parse_log_file(Path(self.path) / log_matches[0]))
+            except OSError:
                 continue
 
     def remove_job(self, job_id: int, force: bool = False) -> None:

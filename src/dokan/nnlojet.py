@@ -333,6 +333,17 @@ def get_lumi(exe: GenericPath, proc: str, use_default: bool = False) -> dict:
     return chan_list
 
 
+# > numeric token, may touch the "*" banner border; the delimiter rejects a token cut off at EOF
+_NUM = r"([^\s*]+)(?=[\s*])"
+_LOG_HEADER = re.compile(r"\(\s*iteration\s+(\d+)\s*\)", re.IGNORECASE)
+_LOG_INTEGRAL = re.compile(rf"\bintegral\s*=\s*{_NUM}\s+accum\.\s+integral\s*=\s*{_NUM}", re.IGNORECASE)
+_LOG_STDDEV = re.compile(rf"\bstd\.\s+dev\.\s*=\s*{_NUM}\s+accum\.\s+std\.\s+dev\s*=\s*{_NUM}", re.IGNORECASE)
+_LOG_CHI2 = re.compile(rf"\bchi\*\*2/iteration\s*=\s*{_NUM}", re.IGNORECASE)
+_LOG_ELAPSED = re.compile(rf"\bElapsed\s+time\s*=\s*{_NUM}\s+(seconds|minutes|hours)\b", re.IGNORECASE)
+_TIME_UNIT: dict[str, float] = {"seconds": 1.0, "minutes": 60.0, "hours": 3600.0}
+_ITERATION_FIELDS = frozenset({"iteration", "result", "result_acc", "error", "error_acc", "chi2dof"})
+
+
 def parse_log_file(log_file: GenericPath) -> dict:
     """Parse information from an NNLOJET log file.
 
@@ -347,67 +358,46 @@ def parse_log_file(log_file: GenericPath) -> dict:
         parsed information as a dictionary following the structure of:
         ExeData["jobs"][<id>]["iterations"]
 
-    Raises
-    ------
-    RuntimeError
-        encountered parsing error of log file
+    Notes
+    -----
+    Only complete iterations are kept; a truncated or malformed iteration ends
+    parsing. Errors opening or reading the log propagate.
 
     """
-    job_data: dict = {}
-    job_data["iterations"] = []
-    # > parse the output file to extract some information
-    with open(log_file) as lf:
-        iteration = {}
-        for line in lf:
-            if match := re.search(r"\(\s*iteration\s+(\d+)\s*\)", line, re.IGNORECASE):
-                iteration["iteration"] = int(match.group(1))
+    iterations: list[dict] = []
+    job_data: dict = {"iterations": iterations}
+    iteration: dict = {}
+    with open(log_file, errors="replace") as lf:
+        try:
+            for line in lf:
+                if match := _LOG_HEADER.search(line):
+                    if iteration:
+                        break
+                    iteration["iteration"] = int(match.group(1))
+                if match := _LOG_INTEGRAL.search(line):
+                    iteration["result"], iteration["result_acc"] = map(float, match.groups())
+                if match := _LOG_STDDEV.search(line):
+                    iteration["error"], iteration["error_acc"] = map(float, match.groups())
+                if match := _LOG_CHI2.search(line):
+                    iteration["chi2dof"] = float(match.group(1))
+                    if not _ITERATION_FIELDS.issubset(iteration):
+                        break
+                    iterations.append(iteration)
+                    iteration = {}
+                if not iteration and (match := _LOG_ELAPSED.search(line)):
+                    elapsed = _TIME_UNIT[match.group(2).lower()] * float(match.group(1))
+                    if math.isfinite(elapsed) and elapsed > 0.0:
+                        job_data["elapsed_time"] = elapsed
+        except ValueError:  # malformed numeric token: keep the completed prefix
+            pass
 
-            if match := re.search(
-                r"\bintegral\s*=\s*(\S+)\s+accum\.\s+integral\s*=\s*(\S+)\b",
-                line,
-                re.IGNORECASE,
-            ):
-                iteration["result"] = float(match.group(1))
-                iteration["result_acc"] = float(match.group(2))
-
-            if match := re.search(
-                r"\bstd\.\s+dev\.\s*=\s*(\S+)\s+accum\.\s+std\.\s+dev\s*=\s*(\S+)\b",
-                line,
-                re.IGNORECASE,
-            ):
-                iteration["error"] = float(match.group(1))
-                iteration["error_acc"] = float(match.group(2))
-
-            if match := re.search(r"\schi\*\*2/iteration\s*=\s*(\S+)\b", line, re.IGNORECASE):
-                iteration["chi2dof"] = float(match.group(1))
-                job_data["iterations"].append(iteration)
-                iteration = {}
-
-            if match := re.search(r"\s*Elapsed\s+time\s*=\s*(\S+)\b\s*(\S+)\b", line, re.IGNORECASE):
-                unit_time: str = match.group(2).lower()
-                match unit_time:
-                    case "seconds":
-                        fac_time = 1.0
-                    case "minutes":
-                        fac_time = 60.0
-                    case "hours":
-                        fac_time = 3600.0
-                    case _:
-                        raise RuntimeError(f"unknown time unit: {unit_time}")
-
-                job_data["elapsed_time"] = fac_time * float(match.group(1))
-
-            # > the accumulated results
-            if job_data["iterations"]:
-                job_data["result"] = job_data["iterations"][-1]["result_acc"]
-                job_data["error"] = job_data["iterations"][-1]["error_acc"]
-                # > catch the case where the integral vanishes identically
-                if math.isnan(job_data["result"]) and all(
-                    it["result"] == 0.0 and it["error"] == 0.0 for it in job_data["iterations"]
-                ):
-                    job_data["result"] = 0.0
-                    job_data["error"] = 0.0
-                job_data["chi2dof"] = job_data["iterations"][-1]["chi2dof"]
+    if iterations:
+        last = iterations[-1]
+        job_data["result"], job_data["error"] = last["result_acc"], last["error_acc"]
+        # > catch the case where the integral vanishes identically
+        if math.isnan(job_data["result"]) and all(it["result"] == it["error"] == 0.0 for it in iterations):
+            job_data["result"] = job_data["error"] = 0.0
+        job_data["chi2dof"] = last["chi2dof"]
 
     return job_data
 
