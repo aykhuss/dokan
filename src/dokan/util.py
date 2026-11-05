@@ -8,8 +8,37 @@ refactor common functions and patterns here
 import json
 import math
 import re
+import shutil
 from datetime import timedelta
 from pathlib import Path
+
+
+def relocate_and_link(local: Path, dest: Path) -> None:
+    """Move `local` to `dest` and leave an absolute symlink in its place.
+
+    Safe to repeat after an interruption:
+    - existing link is left alone
+    - link lost after a completed move is restored
+    - copy left at `dest` by an interrupted cross-filesystem move is overwritten
+    - does nothing if neither exists.
+    Raises FileExistsError if `dest` is a symlink or directory: moving onto it would
+    overwrite the link target or nest the file inside the directory. Raises ValueError
+    if `local` exists but is not a regular file.
+    """
+    if local.is_symlink():
+        return
+    if dest.is_symlink() or dest.is_dir():
+        raise FileExistsError(f"destination is not a regular file: {dest}")
+    if local.is_file():
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(local, dest)
+    elif local.exists():
+        raise ValueError(f"source is not a regular file: {local}")
+    elif dest.exists():
+        local.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        return
+    local.symlink_to(dest.absolute())
 
 
 def validate_schema(struct, schema, convert_to_type: bool = True) -> bool:

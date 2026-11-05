@@ -9,7 +9,6 @@ import json
 import math
 import os
 import re
-import shutil
 import time
 from abc import ABCMeta
 from pathlib import Path
@@ -34,7 +33,7 @@ from ..merge._core import (
     build_obs_group,
 )
 from ..order import Order
-from ..util import format_time_interval, read_json_sidecar, write_json_sidecar
+from ..util import format_time_interval, read_json_sidecar, relocate_and_link, write_json_sidecar
 from ._dbproduction import distribute_production_time
 from ._dbtask import DBTask
 from ._jobstatus import JobStatus
@@ -224,8 +223,7 @@ class MergePart(DBMerge):
         # > NB: committing MERGED + the sentinel *before* the raw-path moves is safe: a
         # > crash mid-move lands in the same `merge_in_progress` resume path as a crash
         # > in the HDF5 phase (which the sentinel was designed for), and the moves are
-        # > idempotent (existing symlinks are skipped, and a missing link is restored
-        # > if a move completed before link creation was interrupted).
+        # > safe to repeat (see `relocate_and_link`).
 
         # > output directory
         mrg_path: Path = self._path.joinpath("result", "part", pt_name)
@@ -247,19 +245,10 @@ class MergePart(DBMerge):
         for rel_path, seeds in job_seeds_by_path.items():
             job_path: Path = self._path / rel_path
             exe_data = ExeData(job_path)
-            if raw_path is not None:
-                (raw_path / rel_path).mkdir(parents=True, exist_ok=True)
-
             for out in exe_data["output_files"]:
                 # > move to raw path
                 if raw_path is not None:
-                    orig_file: Path = job_path / out
-                    dest_file: Path = raw_path / rel_path / out
-                    if orig_file.exists() and not orig_file.is_symlink():
-                        shutil.move(orig_file, dest_file)
-                        orig_file.symlink_to(dest_file)
-                    elif not orig_file.exists() and not orig_file.is_symlink() and dest_file.exists():
-                        orig_file.symlink_to(dest_file)
+                    relocate_and_link(job_path / out, raw_path / rel_path / out)
                 if dat := re.match(r"^.*\.([^.]+)\.s([0-9]+)\.dat", out):
                     # A batch can contain partial histograms from failed seeds.
                     if int(dat.group(2)) not in seeds:
@@ -291,14 +280,12 @@ class MergePart(DBMerge):
         # > raw data path: keep the HDF5 file there, symlinked from its run-local path.
         # > The target must exist before linking: h5py cannot create a file through a
         # > dangling symlink (O_EXCL).
-        if raw_path is not None and not hdf5_file.is_symlink():
+        if raw_path is not None:
             dest_hdf5: Path = raw_path / "raw" / hdf5_file.name
-            dest_hdf5.parent.mkdir(parents=True, exist_ok=True)
-            if hdf5_file.exists():
-                shutil.move(hdf5_file, dest_hdf5)
-            else:
-                h5py.File(dest_hdf5, "a", libver="latest").close()
-            hdf5_file.symlink_to(dest_hdf5)
+            if not hdf5_file.exists() and not dest_hdf5.exists():
+                dest_hdf5.parent.mkdir(parents=True, exist_ok=True)
+                h5py.File(dest_hdf5, "x", libver="latest").close()
+            relocate_and_link(hdf5_file, dest_hdf5)
 
         # > If Luigi resumed this task after yielding MergeObs, avoid touching
         # > the HDF5 file before checking MergeObs.complete(): its mtime is part
