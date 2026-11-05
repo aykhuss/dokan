@@ -468,7 +468,7 @@ def build_obs_group(
                 if nx > 0:
                     xval = h5dat_data.dims[0][0][...]
 
-                in_files_old: list[GenericPath] = [file_path for file_path in h5dat_files.asstr()[:ndat_old]]
+                in_files_old: set[GenericPath] = set(h5dat_files.asstr()[:ndat_old])
                 in_files_cur: list[GenericPath] = list(dict.fromkeys(in_files[obs]))
                 in_files_new: list[GenericPath] = [
                     file_path for file_path in in_files_cur if file_path not in in_files_old
@@ -556,7 +556,7 @@ def build_obs_group(
                         buf_data[:chunk_len].transpose(1, 2, 0)
                     )
                     resize_obs[obs] += chunk_len
-                expected_nfiles = len(set(in_files_old).union(in_files_cur))
+                expected_nfiles = len(in_files_old.union(in_files_cur))
                 assert resize_obs[obs] == expected_nfiles
                 # > update ndat_valid as the final step — crash before this leaves
                 # > old ndat_valid intact, excess data invisible, next run re-appends idempotently
@@ -566,7 +566,7 @@ def build_obs_group(
                 # > filesystem mtimes can make a freshly-written .dat look stale on fast resumes.
                 h5grp_obs.attrs["timestamp"] = max(
                     (base_path / file_path).stat().st_mtime
-                    for file_path in set(in_files_old) | set(in_files_cur)
+                    for file_path in in_files_old | set(in_files_cur)
                 )
 
         else:
