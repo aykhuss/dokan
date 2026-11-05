@@ -474,7 +474,8 @@ def build_obs_group(
                     file_path for file_path in in_files_cur if file_path not in in_files_old
                 ]
                 ndat_new: int = len(in_files_new)
-                if ndat_new == 0 or (h5grp_obs.attrs["timestamp"] < 0 and not merge_in_progress):
+                timestamp_old = float(h5grp_obs.attrs["timestamp"])
+                if ndat_new == 0 or (timestamp_old < 0 and not merge_in_progress):
                     continue
                 h5grp_obs.attrs["timestamp"] = -1.0  # flag merging state
                 # > resize datasets to accommodate new files (only extends, never shrinks)
@@ -558,16 +559,18 @@ def build_obs_group(
                     resize_obs[obs] += chunk_len
                 expected_nfiles = len(in_files_old.union(in_files_cur))
                 assert resize_obs[obs] == expected_nfiles
+                # > timestamp = max input mtime: a stable token for MergeObs to check freshness
+                # > never use wall-clock!
+                # > inputs are append-only, so fold the new files into the stored maximum
+                files_to_stat = in_files_old.union(in_files_new) if timestamp_old < 0 else in_files_new
+                timestamp_new = max(
+                    timestamp_old,
+                    max((base_path / file_path).stat().st_mtime for file_path in files_to_stat),
+                )
                 # > update ndat_valid as the final step — crash before this leaves
                 # > old ndat_valid intact, excess data invisible, next run re-appends idempotently
                 h5grp_obs.attrs["ndat_valid"] = resize_obs[obs]
-                # > stable input timestamp for MergeObs freshness checks: max mtime across
-                # > all stored files (old + new).  Never use wall-clock here — coarse-grained
-                # > filesystem mtimes can make a freshly-written .dat look stale on fast resumes.
-                h5grp_obs.attrs["timestamp"] = max(
-                    (base_path / file_path).stat().st_mtime
-                    for file_path in in_files_old | set(in_files_cur)
-                )
+                h5grp_obs.attrs["timestamp"] = timestamp_new
 
         else:
             # > single_file is not None
